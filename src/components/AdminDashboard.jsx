@@ -94,6 +94,68 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    try {
+      const res = await fetch(`/api/admin/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          full_name: editingUser.full_name,
+          email: editingUser.email,
+          role: editingUser.role,
+          company_id: editingUser.company_id,
+          is_active: editingUser.is_active,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to update user');
+        return;
+      }
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? data.user : u));
+      setEditingUser(null);
+    } catch {
+      setError('Failed to update user');
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Failed to delete user');
+        return;
+      }
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } catch {
+      setError('Failed to delete user');
+    }
+  };
+
+  const handleDeleteCompany = async (companyId) => {
+    if (!window.confirm('Are you sure you want to delete this company? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/admin/companies/${companyId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Failed to delete company');
+        return;
+      }
+      setCompanies(prev => prev.filter(c => c.id !== companyId));
+    } catch {
+      setError('Failed to delete company');
+    }
+  };
+
   const handleCreateUser = async () => {
     if (!newUser?.email || !newUser?.password) {
       setError('Email and password are required');
@@ -385,6 +447,44 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* Edit user form */}
+          {editingUser && (
+            <div className="admin-form-card">
+              <h4>Edit User: {editingUser.email}</h4>
+              <div className="admin-form-row">
+                <input placeholder="Full name" value={editingUser.full_name || ''}
+                  onChange={e => setEditingUser(p => ({ ...p, full_name: e.target.value }))} />
+                <input placeholder="Email" type="email" value={editingUser.email}
+                  onChange={e => setEditingUser(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div className="admin-form-row">
+                <select value={editingUser.role} onChange={e => setEditingUser(p => ({ ...p, role: e.target.value }))}>
+                  {roleOptions.map(r => (
+                    <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                  ))}
+                </select>
+                {isSuperAdmin && (
+                  <select value={editingUser.company_id || ''}
+                    onChange={e => setEditingUser(p => ({ ...p, company_id: e.target.value }))}>
+                    <option value="">No company</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  <input type="checkbox" checked={editingUser.is_active}
+                    onChange={e => setEditingUser(p => ({ ...p, is_active: e.target.checked }))} />
+                  Active
+                </label>
+              </div>
+              <div className="admin-form-actions">
+                <button className="admin-btn" onClick={handleUpdateUser}>Save Changes</button>
+                <button className="admin-btn secondary" onClick={() => setEditingUser(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
           {users.length === 0 ? (
             <p className="admin-empty">No users found.</p>
           ) : (
@@ -424,14 +524,28 @@ export default function AdminDashboard() {
                         {u.is_active ? 'Active' : 'Inactive'}
                       </td>
                       <td>{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}</td>
-                      <td>
+                      <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                         {u.id !== user.id && (
-                          <button
-                            className={`admin-btn-sm ${u.is_active ? 'danger' : 'success'}`}
-                            onClick={() => handleToggleActive(u.id, !u.is_active)}
-                          >
-                            {u.is_active ? 'Deactivate' : 'Activate'}
-                          </button>
+                          <>
+                            <button
+                              className="admin-btn-sm"
+                              onClick={() => setEditingUser({ ...u })}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className={`admin-btn-sm ${u.is_active ? 'danger' : 'success'}`}
+                              onClick={() => handleToggleActive(u.id, !u.is_active)}
+                            >
+                              {u.is_active ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button
+                              className="admin-btn-sm danger"
+                              onClick={() => handleDeleteUser(u.id)}
+                            >
+                              Delete
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -574,6 +688,12 @@ export default function AdminDashboard() {
                             onClick={() => handleToggleUnlimited(c)}
                           >
                             {isUnlimited ? 'Remove Unlimited' : 'Set Unlimited'}
+                          </button>
+                          <button
+                            className="admin-btn-sm danger"
+                            onClick={() => handleDeleteCompany(c.id)}
+                          >
+                            Delete
                           </button>
                         </td>
                       </tr>

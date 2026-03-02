@@ -153,6 +153,76 @@ router.put('/users/:id/active', requireRole('admin', 'super_admin'), async (req,
   }
 });
 
+// ── PUT /api/admin/users/:id ───────────────────────────────────────
+// Super admin: update user profile fields
+router.put('/users/:id', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { full_name, email, company_id, role, is_active } = req.body;
+    const targetId = req.params.id;
+
+    if (targetId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot edit yourself from admin panel' });
+    }
+
+    const updates = {};
+    if (full_name !== undefined) updates.full_name = full_name;
+    if (email !== undefined) updates.email = email;
+    if (company_id !== undefined) updates.company_id = company_id || null;
+    if (role !== undefined) updates.role = role;
+    if (is_active !== undefined) updates.is_active = is_active;
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', targetId)
+      .select('*, companies(name, slug)')
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    // If email changed, update auth user too
+    if (email !== undefined) {
+      await supabase.auth.admin.updateUserById(targetId, { email });
+    }
+
+    res.json({ user: data });
+  } catch (err) {
+    console.error('[ADMIN] Update user error:', err);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// ── DELETE /api/admin/users/:id ───────────────────────────────────
+// Super admin: delete a user account
+router.delete('/users/:id', requireRole('super_admin'), async (req, res) => {
+  try {
+    const targetId = req.params.id;
+
+    if (targetId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete yourself' });
+    }
+
+    // Delete from users table first
+    const { error: profileError } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', targetId);
+
+    if (profileError) return res.status(400).json({ error: profileError.message });
+
+    // Delete from Supabase Auth
+    const { error: authError } = await supabase.auth.admin.deleteUser(targetId);
+    if (authError) {
+      console.error('[ADMIN] Auth deletion error (profile already removed):', authError.message);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ADMIN] Delete user error:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 // ── GET /api/admin/companies ────────────────────────────────────────
 router.get('/companies', requireRole('super_admin'), async (req, res) => {
   try {
@@ -216,6 +286,37 @@ router.put('/companies/:id', requireRole('super_admin'), async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update company' });
+  }
+});
+
+// ── DELETE /api/admin/companies/:id ────────────────────────────────
+router.delete('/companies/:id', requireRole('super_admin'), async (req, res) => {
+  try {
+    const companyId = req.params.id;
+
+    // Check if company has users
+    const { data: companyUsers, error: usersError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('company_id', companyId)
+      .limit(1);
+
+    if (usersError) return res.status(400).json({ error: usersError.message });
+
+    if (companyUsers && companyUsers.length > 0) {
+      return res.status(400).json({ error: 'Cannot delete company with existing users. Remove or reassign users first.' });
+    }
+
+    const { error } = await supabase
+      .from('companies')
+      .delete()
+      .eq('id', companyId);
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ADMIN] Delete company error:', err);
+    res.status(500).json({ error: 'Failed to delete company' });
   }
 });
 
