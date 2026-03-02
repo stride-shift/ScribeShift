@@ -230,6 +230,9 @@ export default function App() {
           headers: authHeaders,
           body: formData,
         });
+        if (!res.ok && res.headers.get('content-type')?.indexOf('application/json') === -1) {
+          throw new Error(`Server error (${res.status}). The request may have timed out.`);
+        }
         const data = await res.json();
 
         if (!data.success) {
@@ -268,6 +271,9 @@ export default function App() {
           }),
         });
 
+        if (!imgRes.ok && imgRes.headers.get('content-type')?.indexOf('application/json') === -1) {
+          throw new Error(`Image generation timed out (${imgRes.status}). Try fewer styles.`);
+        }
         const imgData = await imgRes.json();
         if (imgData.success) {
           setImages(imgData.images);

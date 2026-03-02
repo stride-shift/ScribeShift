@@ -64,35 +64,39 @@ router.post('/generate-image-suite', verifyToken, async (req, res) => {
       'Use a different visual metaphor or perspective.',
     ];
 
-    const results = [];
-    let generated = 0;
-
+    // Build all generation tasks upfront
+    const tasks = [];
     for (const { key, promptTemplate } of styleEntries) {
       const basePrompt = injectBrand(promptTemplate, { ...brandData, topicSummary });
-
       for (let v = 0; v < 3; v++) {
-        if (generated > 0) {
-          const delay = 2000 + (generated * 500);
-          console.log(`[SUITE] Waiting ${delay}ms before next...`);
-          await new Promise(r => setTimeout(r, delay));
-        }
-
         let prompt = `${basePrompt}\n\nVariant ${v + 1} of 3: ${variantInstructions[v]}`;
         if (customGuidelines && customGuidelines.trim()) {
           prompt += `\n\nAdditional user guidelines: ${customGuidelines.trim()}`;
         }
-
-        const parts = buildImageParts(prompt, brandData?.logoBase64);
-        console.log(`[SUITE] Generating ${key} variant ${v + 1}...`);
-        const result = await geminiImageWithParts(parts);
-        results.push({ style: key, variant: v, prompt, ...result });
-        generated++;
+        tasks.push({ key, variant: v, prompt });
       }
+    }
+
+    // Generate in parallel batches of 3 to stay within rate limits
+    const BATCH_SIZE = 3;
+    const results = [];
+    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+      const batch = tasks.slice(i, i + BATCH_SIZE);
+      if (i > 0) {
+        console.log(`[SUITE] Waiting 2s before next batch...`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      const batchResults = await Promise.all(batch.map(({ key, variant, prompt }) => {
+        const parts = buildImageParts(prompt, brandData?.logoBase64);
+        console.log(`[SUITE] Generating ${key} variant ${variant + 1}...`);
+        return geminiImageWithParts(parts).then(result => ({ style: key, variant, prompt, ...result }));
+      }));
+      results.push(...batchResults);
     }
 
     await deductCredits(req.user.id, req.user.company_id, 'generate_image_suite', creditCheck.cost, {
       styles: styleKeys,
-      image_count: generated,
+      image_count: tasks.length,
     });
 
     res.json({ success: true, images: results });
