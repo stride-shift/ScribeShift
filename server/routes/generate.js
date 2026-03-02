@@ -191,18 +191,12 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
       }
     }
 
-    // Generate remaining types
+    // Generate remaining types in parallel for speed
     const remaining = contentTypes.filter(t => t !== 'blog');
-    for (let i = 0; i < remaining.length; i++) {
-      const type = remaining[i];
-      if (i > 0) {
-        console.log('[GEN] Waiting 3s...');
-        await new Promise(r => setTimeout(r, 3000));
-      }
-
+    const generateOne = async (type) => {
       try {
         const skill = SKILL_MAP[type];
-        if (!skill) { results[type] = `Unknown type: ${type}`; continue; }
+        if (!skill) return { type, result: `Unknown type: ${type}` };
 
         const input = ['video', 'newsletter'].includes(type) ? blogContent : allInput;
         const prompt = injectBrand(skill, brandData);
@@ -216,13 +210,19 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
           : '\n\nCRITICAL REMINDER: Your output MUST be entirely derived from the source content below. Cover the actual topics, arguments, and insights from the source. Do NOT invent new topics or add information not present in the source material.';
 
         console.log(`[GEN] Generating ${type}...`);
-        results[type] = await geminiText(
+        const result = await geminiText(
           `${prompt}${styleDirectives}${sourceEnforcement}\n\nIMPORTANT: Output ONLY the final content. Do NOT wrap in code blocks. Do NOT include preambles like "Here are X posts". Start directly with the content.\n\n${contentLabel}\n${input}\n\nOptions: ToneMode=${options.toneMode || 'preset'}, Tone=${options.tone}, Polish=${options.polish || 'natural'}, Length=${options.length}, Audience=${options.audience}, Industry=${options.industry || 'general'}, Goal=${options.goal || 'none'}`
         );
+        return { type, result };
       } catch (err) {
         console.error(`[GEN] Error generating ${type}:`, err.message);
-        results[type] = `Error generating ${type}: ${err.message}`;
+        return { type, result: `Error generating ${type}: ${err.message}` };
       }
+    };
+
+    const generated = await Promise.all(remaining.map(generateOne));
+    for (const { type, result } of generated) {
+      results[type] = result;
     }
 
     // Deduct credits
