@@ -33,7 +33,7 @@ const app = express();
 // ── Middleware ───────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use('/generated', express.static(path.join(ROOT_DIR, 'generated')));
+app.use('/generated', express.static(process.env.VERCEL ? '/tmp/generated' : path.join(ROOT_DIR, 'generated')));
 
 // ── Routes ──────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

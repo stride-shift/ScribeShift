@@ -115,7 +115,7 @@ export async function geminiImageWithParts(parts, maxRetries = 3) {
         continue;
       }
 
-      const outputDir = path.join(ROOT_DIR, 'generated');
+      const outputDir = process.env.VERCEL ? '/tmp/generated' : path.join(ROOT_DIR, 'generated');
       await fs.mkdir(outputDir, { recursive: true });
       const filename = `image_${Date.now()}.png`;
       await fs.writeFile(path.join(outputDir, filename), Buffer.from(base64, 'base64'));

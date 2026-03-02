@@ -10,7 +10,8 @@ import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 
 const router = Router();
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 200 * 1024 * 1024 } });
+const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads/';
+const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
 
 const MAX_ANALYSIS_CHARS = 50_000;
 
