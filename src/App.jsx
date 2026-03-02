@@ -247,14 +247,12 @@ export default function App() {
 
       if (wantImages) {
         setIsImageGenerating(true);
-        const totalImages = imageConfig.selectedStyles.size * 3 + (imageConfig.customStylePrompt.trim() ? 3 : 0);
-        setProgress(prev => ({ ...prev, label: `Generating ${totalImages} images (${imageConfig.selectedStyles.size} styles x 3 variants)...` }));
-
         const topicSummary = brand.brandName
           ? `Professional content for ${brand.brandName}`
           : 'Content based on uploaded materials';
 
-        const imgRes = await fetch('/api/generate-image-suite', {
+        // Step 1: Get prompts from server (fast, no image generation)
+        const promptRes = await fetch('/api/build-image-prompts', {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -270,17 +268,34 @@ export default function App() {
             customStylePrompt: imageConfig.customStylePrompt,
           }),
         });
-
-        if (!imgRes.ok && imgRes.headers.get('content-type')?.indexOf('application/json') === -1) {
-          throw new Error(`Image generation timed out (${imgRes.status}). Try fewer styles.`);
-        }
-        const imgData = await imgRes.json();
-        if (imgData.success) {
-          setImages(imgData.images);
+        const promptData = await promptRes.json();
+        if (!promptData.success) {
+          setError(prev => prev ? `${prev}\n${promptData.error}` : promptData.error);
+          setIsImageGenerating(false);
         } else {
-          setError(prev => prev ? `${prev}\nImage generation failed: ${imgData.error}` : `Image generation failed: ${imgData.error}`);
+          // Step 2: Generate each image individually (each call < 60s)
+          const totalImages = promptData.prompts.length;
+          const imageResults = [];
+          let completed = 0;
+
+          for (const { style, variant, prompt } of promptData.prompts) {
+            setProgress(prev => ({ ...prev, label: `Generating image ${completed + 1} of ${totalImages} (${style})...` }));
+            try {
+              const res = await fetch('/api/generate-image', {
+                method: 'POST',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, logoBase64: brand.logoBase64 }),
+              });
+              const data = await res.json();
+              imageResults.push({ style, variant, prompt, ...data });
+            } catch (imgErr) {
+              imageResults.push({ style, variant, prompt, success: false, error: imgErr.message });
+            }
+            completed++;
+            setImages([...imageResults]);
+          }
+          setIsImageGenerating(false);
         }
-        setIsImageGenerating(false);
       }
 
       setProgress({ current: totalSteps, total: totalSteps, label: 'Done!' });

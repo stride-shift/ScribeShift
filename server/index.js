@@ -39,7 +39,7 @@ app.use('/generated', express.static(process.env.VERCEL ? '/tmp/generated' : pat
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/generate', generateRoutes);
-app.use('/api', imageRoutes);           // /api/generate-image, /api/generate-image-suite
+app.use('/api', imageRoutes);           // /api/generate-image, /api/build-image-prompts
 app.use('/api/brands', brandRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/schedule', scheduleRoutes);
