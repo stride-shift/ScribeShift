@@ -65,12 +65,16 @@ app.get('/api/health', (req, res) => {
 app.use(errorHandler);
 
 // ── Start ───────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 4321;
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`[SCRIBESHIFT] API on http://localhost:${PORT}`);
-  console.log(`[SCRIBESHIFT] Text: ${TEXT_MODEL} | Image: ${IMAGE_MODEL}`);
-  console.log(`[SCRIBESHIFT] Supabase: ${process.env.SUPABASE_URL ? 'connected' : 'not configured'}`);
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 4321;
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`[SCRIBESHIFT] API on http://localhost:${PORT}`);
+    console.log(`[SCRIBESHIFT] Text: ${TEXT_MODEL} | Image: ${IMAGE_MODEL}`);
+    console.log(`[SCRIBESHIFT] Supabase: ${process.env.SUPABASE_URL ? 'connected' : 'not configured'}`);
 
-  // Start post scheduler
-  startScheduler();
-});
+    // Start post scheduler
+    startScheduler();
+  });
+}
+
+export default app;

@@ -9,3 +9,6 @@ playwright-data/
 # Debug files
 debug-*.png
 debug-*.mjs
+
+# Vercel
+.vercel/
