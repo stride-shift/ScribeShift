@@ -1,15 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
-
-const PLATFORM_MAP = {
-  linkedin: 'linkedin',
-  twitter: 'twitter',
-  facebook: 'facebook',
-  instagram: 'instagram',
-  blog: 'blog',
-  newsletter: 'newsletter',
-  video: 'video',
-};
 
 const TYPE_LABELS = {
   blog: 'Blog Post',
@@ -27,12 +17,25 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
   const [editing, setEditing] = useState(null); // type being edited
   const [editText, setEditText] = useState('');
   const [editedTexts, setEditedTexts] = useState({}); // { itemId: editedText }
-  const [scheduleDate, setScheduleDate] = useState('');
-  const [scheduleTime, setScheduleTime] = useState('09:00');
-  const [scheduling, setScheduling] = useState(false);
-  const [regenerating, setRegenerating] = useState(null);
+  const [selectedPillar, setSelectedPillar] = useState('');
+  const [pillars, setPillars] = useState([]);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const headers = getAuthHeaders();
+    if (!headers.Authorization) {
+      try {
+        const saved = localStorage.getItem('scribeshift-pillars-v2');
+        if (saved) { const p = JSON.parse(saved); setPillars(p); if (p.length > 0) setSelectedPillar(p[0].id); }
+      } catch { /* empty */ }
+      return;
+    }
+    fetch('/api/planner/pillars', { headers }).then(r => r.json()).then(data => {
+      if (data.pillars) { setPillars(data.pillars); if (data.pillars.length > 0) setSelectedPillar(data.pillars[0].id); }
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Parse social posts into individual items
   const parseContent = () => {
@@ -99,62 +102,67 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
     setEditText('');
   };
 
-  const handleSchedule = async () => {
-    if (!scheduleDate) {
-      setError('Please select a date');
-      return;
-    }
+  const handleAddToPillars = async () => {
     if (selected.size === 0) {
-      setError('Please select at least one item to schedule');
+      setError('Please select at least one item');
       return;
     }
 
-    setScheduling(true);
+    setSaving(true);
     setError('');
     setSuccess('');
 
-    const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+    const headers = getAuthHeaders();
     const selectedItems = items.filter(i => selected.has(i.id));
-    let scheduledCount = 0;
+    let addedCount = 0;
 
     for (const item of selectedItems) {
-      try {
-        const res = await fetch('/api/schedule', {
-          method: 'POST',
-          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            platform: item.platform,
-            post_text: editedTexts[item.id] ?? item.text,
-            scheduled_at: scheduledAt,
-            status: 'scheduled',
-          }),
-        });
-        if (res.ok) scheduledCount++;
-      } catch {
-        // continue with others
+      const postText = editedTexts[item.id] ?? item.text;
+      const piece = {
+        title: item.label,
+        body: postText,
+        pillarId: selectedPillar || '',
+        platform: item.platform.charAt(0).toUpperCase() + item.platform.slice(1),
+        contentType: ({ linkedin: 'Post', twitter: 'Post', facebook: 'Post', instagram: 'Post', blog: 'Article', video: 'Video', newsletter: 'Newsletter' })[item.platform] || 'Post',
+        status: 'draft',
+        notes: '',
+      };
+
+      if (headers.Authorization) {
+        try {
+          const res = await fetch('/api/planner/pieces', {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(piece),
+          });
+          if (res.ok) addedCount++;
+        } catch { /* continue */ }
+      } else {
+        try {
+          const saved = localStorage.getItem('scribeshift-content-pieces');
+          const pieces = saved ? JSON.parse(saved) : [];
+          pieces.push({ ...piece, id: Date.now().toString() + '-' + item.id, createdAt: new Date().toISOString() });
+          localStorage.setItem('scribeshift-content-pieces', JSON.stringify(pieces));
+          addedCount++;
+        } catch { /* continue */ }
       }
     }
 
-    setScheduling(false);
-    if (scheduledCount > 0) {
-      setSuccess(`Scheduled ${scheduledCount} post${scheduledCount > 1 ? 's' : ''} successfully!`);
+    setSaving(false);
+    if (addedCount > 0) {
+      setSuccess(`Added ${addedCount} piece${addedCount > 1 ? 's' : ''} to pillars!`);
       if (onScheduled) onScheduled();
       setTimeout(() => onClose(), 2000);
     } else {
-      setError('Failed to schedule posts. Please try again.');
+      setError('Failed to add content. Please try again.');
     }
   };
-
-  // Set default date to tomorrow
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = new Date().toISOString().split('T')[0];
 
   return (
     <div className="schedule-overlay">
       <div className="schedule-modal">
         <div className="schedule-modal-header">
-          <h3>Schedule Content</h3>
+          <h3>Add to Pillars</h3>
           <button className="schedule-modal-close" onClick={onClose}>&times;</button>
         </div>
 
@@ -202,27 +210,23 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
             ))}
           </div>
 
-          <div className="schedule-datetime">
-            <div className="schedule-field">
-              <label>Date</label>
-              <input
-                type="date"
-                value={scheduleDate}
-                onChange={e => setScheduleDate(e.target.value)}
-                min={minDate}
-                className="brand-input"
-              />
+          {pillars.length > 0 && (
+            <div className="schedule-datetime">
+              <div className="schedule-field" style={{ flex: 1 }}>
+                <label>Add to Pillar</label>
+                <select
+                  value={selectedPillar}
+                  onChange={e => setSelectedPillar(e.target.value)}
+                  className="brand-input"
+                >
+                  <option value="">No pillar (uncategorized)</option>
+                  {pillars.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="schedule-field">
-              <label>Time</label>
-              <input
-                type="time"
-                value={scheduleTime}
-                onChange={e => setScheduleTime(e.target.value)}
-                className="brand-input"
-              />
-            </div>
-          </div>
+          )}
 
           {error && <div className="admin-error">{error}</div>}
           {success && <div className="schedule-success">{success}</div>}
@@ -232,10 +236,10 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
           <button className="admin-btn" onClick={onClose}>Cancel</button>
           <button
             className="btn btn-primary"
-            onClick={handleSchedule}
-            disabled={scheduling || selected.size === 0}
+            onClick={handleAddToPillars}
+            disabled={saving || selected.size === 0}
           >
-            {scheduling ? 'Scheduling...' : `Schedule ${selected.size} Post${selected.size !== 1 ? 's' : ''}`}
+            {saving ? 'Adding...' : `Add ${selected.size} Post${selected.size !== 1 ? 's' : ''} to Pillars`}
           </button>
         </div>
       </div>
