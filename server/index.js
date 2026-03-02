@@ -17,12 +17,15 @@ import metricsRoutes from './routes/metrics.js';
 import ttsRoutes from './routes/tts.js';
 import credentialsRoutes from './routes/credentials.js';
 import linkedinOAuthRoutes from './routes/linkedin-oauth.js';
+import twitterOAuthRoutes from './routes/twitter-oauth.js';
+import facebookOAuthRoutes from './routes/facebook-oauth.js';
+import instagramOAuthRoutes from './routes/instagram-oauth.js';
 import campaignRoutes from './routes/campaign.js';
 import detectToneRoutes from './routes/detect-tone.js';
 import plannerRoutes from './routes/planner.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { TEXT_MODEL, IMAGE_MODEL } from './config/gemini.js';
-import { startScheduler } from './services/scheduler.js';
+import { checkDuePosts } from './services/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,7 +36,7 @@ const app = express();
 // ── Middleware ───────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use('/generated', express.static(process.env.VERCEL ? '/tmp/generated' : path.join(ROOT_DIR, 'generated')));
+// Images now served from Supabase Storage public URLs
 
 // ── Routes ──────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -47,6 +50,9 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/generate-tts', ttsRoutes);
 app.use('/api/credentials', credentialsRoutes);
 app.use('/api/auth/linkedin', linkedinOAuthRoutes);
+app.use('/api/auth/twitter', twitterOAuthRoutes);
+app.use('/api/auth/facebook', facebookOAuthRoutes);
+app.use('/api/auth/instagram', instagramOAuthRoutes);
 app.use('/api/campaign', campaignRoutes);
 app.use('/api/detect-tone', detectToneRoutes);
 app.use('/api/planner', plannerRoutes);
@@ -72,8 +78,8 @@ if (!process.env.VERCEL) {
     console.log(`[SCRIBESHIFT] Text: ${TEXT_MODEL} | Image: ${IMAGE_MODEL}`);
     console.log(`[SCRIBESHIFT] Supabase: ${process.env.SUPABASE_URL ? 'connected' : 'not configured'}`);
 
-    // Start post scheduler
-    startScheduler();
+    // Check for due posts on startup (cron handles ongoing checks)
+    checkDuePosts();
   });
 }
 

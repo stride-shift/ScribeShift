@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../config/supabase.js';
+import { uploadBase64 } from '../config/storage.js';
 import { verifyToken, scopeByRole } from '../middleware/auth.js';
 
 const router = Router();
@@ -67,6 +68,29 @@ router.put('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update brand' });
+  }
+});
+
+// ── POST /api/brands/:id/logo ──────────────────────────────────────
+router.post('/:id/logo', async (req, res) => {
+  try {
+    const { base64, mimeType } = req.body;
+    if (!base64) return res.status(400).json({ error: 'No image data provided' });
+
+    const ext = (mimeType || 'image/png').split('/')[1] || 'png';
+    const filePath = `${req.user.id}/${req.params.id}.${ext}`;
+    const publicUrl = await uploadBase64('brand-logos', filePath, base64, mimeType || 'image/png');
+
+    // Save URL to brand record
+    await supabase
+      .from('brands')
+      .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    res.json({ success: true, logo_url: publicUrl });
+  } catch (err) {
+    console.error('[BRANDS] Logo upload error:', err.message);
+    res.status(500).json({ error: 'Failed to upload logo' });
   }
 });
 

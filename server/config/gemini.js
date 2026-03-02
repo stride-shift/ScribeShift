@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { uploadBase64 } from './storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,13 +116,19 @@ export async function geminiImageWithParts(parts, maxRetries = 3) {
         continue;
       }
 
-      const outputDir = process.env.VERCEL ? '/tmp/generated' : path.join(ROOT_DIR, 'generated');
-      await fs.mkdir(outputDir, { recursive: true });
       const filename = `image_${Date.now()}.png`;
-      await fs.writeFile(path.join(outputDir, filename), Buffer.from(base64, 'base64'));
       console.log(`[IMAGE] Generated (${(base64.length / 1024).toFixed(0)}KB)`);
 
-      return { success: true, base64, mimeType, filename };
+      // Upload to Supabase Storage for a persistent public URL
+      let publicUrl = null;
+      try {
+        publicUrl = await uploadBase64('generated-images', filename, base64, mimeType);
+        console.log(`[IMAGE] Uploaded to Supabase Storage: ${filename}`);
+      } catch (storageErr) {
+        console.warn(`[IMAGE] Supabase Storage upload failed, continuing without URL: ${storageErr.message}`);
+      }
+
+      return { success: true, base64, mimeType, filename, publicUrl };
     } catch (err) {
       console.error(`[IMAGE] Exception (attempt ${attempt}):`, err.message);
       if (attempt === maxRetries) return { success: false, error: err.message };

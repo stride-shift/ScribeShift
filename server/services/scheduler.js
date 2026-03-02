@@ -1,32 +1,43 @@
-import cron from 'node-cron';
 import { supabase } from '../config/supabase.js';
 
-let playwrightService = null;
+let twitterApiService = null;
+let facebookApiService = null;
+let instagramApiService = null;
 let linkedinApiService = null;
 
-/**
- * Lazily load playwright service (used for Twitter, Facebook, Instagram).
- */
-async function getPlaywright() {
-  if (!playwrightService) {
-    try {
-      playwrightService = await import('./playwright.js');
-    } catch {
-      console.warn('[SCHEDULER] Playwright not available - non-LinkedIn posts will be marked as failed');
+async function getTwitterApi() {
+  if (!twitterApiService) {
+    try { twitterApiService = await import('./twitter-api.js'); } catch {
+      console.warn('[SCHEDULER] Twitter API service not available');
       return null;
     }
   }
-  return playwrightService;
+  return twitterApiService;
 }
 
-/**
- * Lazily load LinkedIn API service.
- */
+async function getFacebookApi() {
+  if (!facebookApiService) {
+    try { facebookApiService = await import('./facebook-api.js'); } catch {
+      console.warn('[SCHEDULER] Facebook API service not available');
+      return null;
+    }
+  }
+  return facebookApiService;
+}
+
+async function getInstagramApi() {
+  if (!instagramApiService) {
+    try { instagramApiService = await import('./instagram-api.js'); } catch {
+      console.warn('[SCHEDULER] Instagram API service not available');
+      return null;
+    }
+  }
+  return instagramApiService;
+}
+
 async function getLinkedInApi() {
   if (!linkedinApiService) {
-    try {
-      linkedinApiService = await import('./linkedin-api.js');
-    } catch {
+    try { linkedinApiService = await import('./linkedin-api.js'); } catch {
       console.warn('[SCHEDULER] LinkedIn API service not available');
       return null;
     }
@@ -35,8 +46,7 @@ async function getLinkedInApi() {
 }
 
 /**
- * Process a single scheduled post.
- * LinkedIn uses the official API; other platforms still use Playwright.
+ * Process a single scheduled post using official APIs for all platforms.
  */
 export async function processPost(post) {
   console.log(`[SCHEDULER] Processing post ${post.id} (${post.platform}) scheduled for ${post.scheduled_at}`);
@@ -50,37 +60,34 @@ export async function processPost(post) {
   let result;
 
   try {
-    if (post.platform === 'linkedin') {
-      // Use LinkedIn official API
-      const linkedinApi = await getLinkedInApi();
-      if (!linkedinApi) {
-        result = { success: false, message: 'LinkedIn API service not available' };
-      } else {
-        result = await linkedinApi.createLinkedInPostViaAPI(
-          post.user_id,
-          post.post_text,
-          post.post_image_url
-        );
-      }
-    } else {
-      // Other platforms use Playwright
-      const pw = await getPlaywright();
-      if (!pw) {
-        result = { success: false, message: 'Playwright not available' };
-      } else {
-        const platformHandlers = {
-          twitter: () => pw.createTwitterPost(post.post_text, post.post_image_url, post.user_id),
-          facebook: () => pw.createFacebookPost(post.post_text, post.post_image_url, post.user_id),
-          instagram: () => pw.createInstagramPost(post.post_text, post.post_image_url, post.user_id),
-        };
+    const handlers = {
+      linkedin: async () => {
+        const api = await getLinkedInApi();
+        if (!api) return { success: false, message: 'LinkedIn API service not available' };
+        return api.createLinkedInPostViaAPI(post.user_id, post.post_text, post.post_image_url);
+      },
+      twitter: async () => {
+        const api = await getTwitterApi();
+        if (!api) return { success: false, message: 'Twitter API service not available' };
+        return api.createTwitterPost(post.user_id, post.post_text, post.post_image_url);
+      },
+      facebook: async () => {
+        const api = await getFacebookApi();
+        if (!api) return { success: false, message: 'Facebook API service not available' };
+        return api.createFacebookPost(post.user_id, post.post_text, post.post_image_url);
+      },
+      instagram: async () => {
+        const api = await getInstagramApi();
+        if (!api) return { success: false, message: 'Instagram API service not available' };
+        return api.createInstagramPost(post.user_id, post.post_text, post.post_image_url);
+      },
+    };
 
-        const handler = platformHandlers[post.platform];
-        if (!handler) {
-          result = { success: false, message: `Platform ${post.platform} not supported` };
-        } else {
-          result = await handler();
-        }
-      }
+    const handler = handlers[post.platform];
+    if (!handler) {
+      result = { success: false, message: `Platform ${post.platform} not supported` };
+    } else {
+      result = await handler();
     }
 
     if (result.success) {
@@ -121,7 +128,6 @@ export async function processPost(post) {
 
 /**
  * Recover posts stuck in 'posting' for more than 5 minutes.
- * This handles cases where the server crashed mid-post.
  */
 async function recoverStalePosts() {
   try {
@@ -148,10 +154,10 @@ async function recoverStalePosts() {
 
 /**
  * Check for due posts and process them.
+ * Returns the number of posts processed.
  */
-async function checkDuePosts() {
+export async function checkDuePosts() {
   try {
-    // First recover any posts stuck in 'posting'
     await recoverStalePosts();
 
     const now = new Date().toISOString();
@@ -165,7 +171,7 @@ async function checkDuePosts() {
 
     if (error) {
       console.error('[SCHEDULER] Error fetching due posts:', error.message);
-      return;
+      return 0;
     }
 
     if (duePosts && duePosts.length > 0) {
@@ -173,23 +179,12 @@ async function checkDuePosts() {
       for (const post of duePosts) {
         await processPost(post);
       }
+      return duePosts.length;
     }
+
+    return 0;
   } catch (err) {
     console.error('[SCHEDULER] Error in scheduler tick:', err.message);
+    return 0;
   }
-}
-
-/**
- * Start the scheduler cron job.
- * Runs every minute to check for due posts.
- */
-export function startScheduler() {
-  console.log('[SCHEDULER] Starting post scheduler (checks every minute)');
-
-  cron.schedule('* * * * *', () => {
-    checkDuePosts();
-  });
-
-  // Also check immediately on startup
-  checkDuePosts();
 }

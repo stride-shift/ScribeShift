@@ -5,9 +5,19 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 60
+    },
+    "api/cron/check-posts.js": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/check-posts",
+      "schedule": "0 * * * *"
+    }
+  ],
   "rewrites": [
+    { "source": "/api/cron/:path*", "destination": "/api/cron/:path*" },
     { "source": "/api/:path*", "destination": "/api" },
     { "source": "/:path*", "destination": "/index.html" }
   ]
