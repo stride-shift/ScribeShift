@@ -9,7 +9,10 @@ const LINKEDIN_REDIRECT_URI = process.env.LINKEDIN_REDIRECT_URI || 'http://local
 const LINKEDIN_AUTH_URL = 'https://www.linkedin.com/oauth/v2/authorization';
 const LINKEDIN_TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken';
 const LINKEDIN_API_BASE = 'https://api.linkedin.com';
-const LINKEDIN_VERSION = '202401';
+// LinkedIn Versioned API — format YYYYMM. LinkedIn keeps each version active
+// for ~12 months before EOL. '202401' was rejected 2026-04 with
+// NONEXISTENT_VERSION. Bump this roughly annually; set via env to override.
+const LINKEDIN_VERSION = process.env.LINKEDIN_API_VERSION || '202505';
 
 // Scopes needed: OpenID profile + post on behalf of user
 const SCOPES = 'openid profile email w_member_social';
