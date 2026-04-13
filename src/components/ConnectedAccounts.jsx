@@ -383,7 +383,12 @@ export default function ConnectedAccounts() {
                                 Session expired
                               </span>
                             )}
-                            {status.expiresAt && !status.isExpired && (
+                            {!status.isExpired && status.canRefresh && (
+                              <span className="credential-last-used">
+                                Auto-refreshes
+                              </span>
+                            )}
+                            {!status.isExpired && !status.canRefresh && status.expiresAt && (
                               <span className="credential-last-used">
                                 Expires {new Date(status.expiresAt).toLocaleDateString()}
                               </span>

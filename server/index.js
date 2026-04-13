@@ -1,8 +1,12 @@
 import 'dotenv/config';
 import { Agent, setGlobalDispatcher } from 'undici';
 // Fix Node 22 fetch timeout on Windows — disable IPv6 auto-select
-// which causes ETIMEDOUT on LinkedIn, Twitter, and other APIs
-setGlobalDispatcher(new Agent({ connect: { autoSelectFamily: false } }));
+// which causes ETIMEDOUT on LinkedIn, Twitter, and other APIs.
+// Linux runtimes (Vercel) need the default dispatcher — forcing this there
+// breaks outbound HTTPS to the same providers ("fetch failed").
+if (process.platform === 'win32') {
+  setGlobalDispatcher(new Agent({ connect: { autoSelectFamily: false } }));
+}
 
 import express from 'express';
 import cors from 'cors';
