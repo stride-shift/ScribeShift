@@ -47,7 +47,9 @@ async function getLinkedInApi() {
 }
 
 const MAX_RETRIES = 3;
-const RETRY_DELAYS = [0, 30_000, 120_000]; // immediate, 30s, 2min
+// Delays must sum (plus API wall time) to well under Vercel's 60s function
+// cap. Previously [0, 30s, 120s] blew past it and left posts stuck in 'posting'.
+const RETRY_DELAYS = [0, 5_000, 15_000]; // immediate, 5s, 15s
 
 /**
  * Attempt to publish a post via the official API for the platform.
@@ -139,34 +141,38 @@ export async function processPost(post) {
         return;
       }
 
-      // Transient failure — retry if attempts remain
+      // Transient failure — retry if attempts remain.
+      // Persist the latest error on every attempt so stuck posts are diagnosable
+      // even if the function is killed before MAX_RETRIES completes.
       console.warn(`[SCHEDULER] Post ${post.id} attempt ${attempt + 1} failed: ${result.message}`);
 
-      if (attempt === MAX_RETRIES - 1) {
-        await supabase
-          .from('scheduled_posts')
-          .update({
-            status: 'failed',
-            error_message: `Failed after ${MAX_RETRIES} attempts: ${result.message}`,
-            retry_count: MAX_RETRIES,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', post.id);
-      }
+      const isFinal = attempt === MAX_RETRIES - 1;
+      await supabase
+        .from('scheduled_posts')
+        .update({
+          status: isFinal ? 'failed' : 'posting',
+          error_message: isFinal
+            ? `Failed after ${MAX_RETRIES} attempts: ${result.message}`
+            : `Attempt ${attempt + 1}/${MAX_RETRIES} failed: ${result.message}`,
+          retry_count: attempt + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', post.id);
     } catch (err) {
       console.error(`[SCHEDULER] Post ${post.id} attempt ${attempt + 1} threw:`, err.message);
 
-      if (attempt === MAX_RETRIES - 1) {
-        await supabase
-          .from('scheduled_posts')
-          .update({
-            status: 'failed',
-            error_message: `Failed after ${MAX_RETRIES} attempts: ${err.message}`,
-            retry_count: MAX_RETRIES,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', post.id);
-      }
+      const isFinal = attempt === MAX_RETRIES - 1;
+      await supabase
+        .from('scheduled_posts')
+        .update({
+          status: isFinal ? 'failed' : 'posting',
+          error_message: isFinal
+            ? `Failed after ${MAX_RETRIES} attempts: ${err.message}`
+            : `Attempt ${attempt + 1}/${MAX_RETRIES} threw: ${err.message}`,
+          retry_count: attempt + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', post.id);
     }
   }
 }
