@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 
+// ── Lazy-loaded API services ───────────────────────────────────────
 let twitterApiService = null;
 let facebookApiService = null;
 let instagramApiService = null;
@@ -45,84 +46,128 @@ async function getLinkedInApi() {
   return linkedinApiService;
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [0, 30_000, 120_000]; // immediate, 30s, 2min
+
 /**
- * Process a single scheduled post using official APIs for all platforms.
+ * Attempt to publish a post via the official API for the platform.
+ * Returns { success, postUrl?, message }.
+ */
+async function attemptPost(post) {
+  const apiHandlers = {
+    linkedin: async () => {
+      const api = await getLinkedInApi();
+      if (!api) return { success: false, message: 'LinkedIn API service not available' };
+      return api.createLinkedInPostViaAPI(post.user_id, post.post_text, post.post_image_url);
+    },
+    twitter: async () => {
+      const api = await getTwitterApi();
+      if (!api) return { success: false, message: 'Twitter API service not available' };
+      return api.createTwitterPost(post.user_id, post.post_text, post.post_image_url);
+    },
+    facebook: async () => {
+      const api = await getFacebookApi();
+      if (!api) return { success: false, message: 'Facebook API service not available' };
+      return api.createFacebookPost(post.user_id, post.post_text, post.post_image_url);
+    },
+    instagram: async () => {
+      const api = await getInstagramApi();
+      if (!api) return { success: false, message: 'Instagram API service not available' };
+      return api.createInstagramPost(post.user_id, post.post_text, post.post_image_url);
+    },
+  };
+
+  const handler = apiHandlers[post.platform];
+  if (!handler) return { success: false, message: `Platform ${post.platform} not supported` };
+  return handler();
+}
+
+/**
+ * Process a single scheduled post with retry logic.
+ * Retries up to 3 times with exponential backoff (0s, 30s, 2min).
+ * Permanent failures (expired tokens, missing connections) are not retried.
  */
 export async function processPost(post) {
   console.log(`[SCHEDULER] Processing post ${post.id} (${post.platform}) scheduled for ${post.scheduled_at}`);
 
-  // Mark as posting
-  await supabase
-    .from('scheduled_posts')
-    .update({ status: 'posting', updated_at: new Date().toISOString() })
-    .eq('id', post.id);
+  const permanentFailures = [
+    'session expired', 'please reconnect', 'no valid',
+    'not configured', 'not supported', 'not available',
+    'connect', 'token expired',
+  ];
 
-  let result;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = RETRY_DELAYS[attempt] || 120_000;
+        console.log(`[SCHEDULER] Retry ${attempt}/${MAX_RETRIES - 1} for post ${post.id} in ${delay / 1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
 
-  try {
-    const handlers = {
-      linkedin: async () => {
-        const api = await getLinkedInApi();
-        if (!api) return { success: false, message: 'LinkedIn API service not available' };
-        return api.createLinkedInPostViaAPI(post.user_id, post.post_text, post.post_image_url);
-      },
-      twitter: async () => {
-        const api = await getTwitterApi();
-        if (!api) return { success: false, message: 'Twitter API service not available' };
-        return api.createTwitterPost(post.user_id, post.post_text, post.post_image_url);
-      },
-      facebook: async () => {
-        const api = await getFacebookApi();
-        if (!api) return { success: false, message: 'Facebook API service not available' };
-        return api.createFacebookPost(post.user_id, post.post_text, post.post_image_url);
-      },
-      instagram: async () => {
-        const api = await getInstagramApi();
-        if (!api) return { success: false, message: 'Instagram API service not available' };
-        return api.createInstagramPost(post.user_id, post.post_text, post.post_image_url);
-      },
-    };
+      const result = await attemptPost(post);
 
-    const handler = handlers[post.platform];
-    if (!handler) {
-      result = { success: false, message: `Platform ${post.platform} not supported` };
-    } else {
-      result = await handler();
+      if (result.success) {
+        await supabase
+          .from('scheduled_posts')
+          .update({
+            status: 'posted',
+            external_post_url: result.postUrl || null,
+            posted_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', post.id);
+
+        console.log(`[SCHEDULER] Post ${post.id} published successfully (attempt ${attempt + 1})`);
+        return;
+      }
+
+      // Check if this is a permanent failure (no point retrying)
+      const msgLower = (result.message || '').toLowerCase();
+      const isPermanent = permanentFailures.some(f => msgLower.includes(f));
+
+      if (isPermanent) {
+        console.error(`[SCHEDULER] Post ${post.id} permanently failed: ${result.message}`);
+        await supabase
+          .from('scheduled_posts')
+          .update({
+            status: 'failed',
+            error_message: result.message,
+            retry_count: attempt + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', post.id);
+        return;
+      }
+
+      // Transient failure — retry if attempts remain
+      console.warn(`[SCHEDULER] Post ${post.id} attempt ${attempt + 1} failed: ${result.message}`);
+
+      if (attempt === MAX_RETRIES - 1) {
+        await supabase
+          .from('scheduled_posts')
+          .update({
+            status: 'failed',
+            error_message: `Failed after ${MAX_RETRIES} attempts: ${result.message}`,
+            retry_count: MAX_RETRIES,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', post.id);
+      }
+    } catch (err) {
+      console.error(`[SCHEDULER] Post ${post.id} attempt ${attempt + 1} threw:`, err.message);
+
+      if (attempt === MAX_RETRIES - 1) {
+        await supabase
+          .from('scheduled_posts')
+          .update({
+            status: 'failed',
+            error_message: `Failed after ${MAX_RETRIES} attempts: ${err.message}`,
+            retry_count: MAX_RETRIES,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', post.id);
+      }
     }
-
-    if (result.success) {
-      await supabase
-        .from('scheduled_posts')
-        .update({
-          status: 'posted',
-          external_post_url: result.postUrl || null,
-          posted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', post.id);
-
-      console.log(`[SCHEDULER] Post ${post.id} published successfully`);
-    } else {
-      console.error(`[SCHEDULER] Post ${post.id} failed: ${result.message}`);
-      await supabase
-        .from('scheduled_posts')
-        .update({
-          status: 'failed',
-          error_message: result.message,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', post.id);
-    }
-  } catch (err) {
-    console.error(`[SCHEDULER] Error processing post ${post.id}:`, err.message);
-    await supabase
-      .from('scheduled_posts')
-      .update({
-        status: 'failed',
-        error_message: err.message,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', post.id);
   }
 }
 
@@ -154,6 +199,8 @@ async function recoverStalePosts() {
 
 /**
  * Check for due posts and process them.
+ * Uses an atomic status transition (scheduled → posting) to prevent
+ * duplicate processing when multiple cron instances run concurrently.
  * Returns the number of posts processed.
  */
 export async function checkDuePosts() {
@@ -161,28 +208,30 @@ export async function checkDuePosts() {
     await recoverStalePosts();
 
     const now = new Date().toISOString();
-    const { data: duePosts, error } = await supabase
+
+    // Atomically claim posts: only rows still in 'scheduled' state get updated.
+    // Concurrent cron runs will not claim the same row twice because Supabase
+    // (PostgreSQL) applies row-level locking on UPDATE.
+    const { data: claimed, error } = await supabase
       .from('scheduled_posts')
-      .select('*')
+      .update({ status: 'posting', updated_at: now })
       .eq('status', 'scheduled')
       .lte('scheduled_at', now)
-      .order('scheduled_at', { ascending: true })
+      .select('*')
       .limit(5);
 
     if (error) {
-      console.error('[SCHEDULER] Error fetching due posts:', error.message);
+      console.error('[SCHEDULER] Error claiming due posts:', error.message);
       return 0;
     }
 
-    if (duePosts && duePosts.length > 0) {
-      console.log(`[SCHEDULER] Found ${duePosts.length} due post(s) at ${now}`);
-      for (const post of duePosts) {
-        await processPost(post);
-      }
-      return duePosts.length;
-    }
+    if (!claimed || claimed.length === 0) return 0;
 
-    return 0;
+    console.log(`[SCHEDULER] Claimed ${claimed.length} due post(s) at ${now}`);
+    for (const post of claimed) {
+      await processPost(post);
+    }
+    return claimed.length;
   } catch (err) {
     console.error('[SCHEDULER] Error in scheduler tick:', err.message);
     return 0;

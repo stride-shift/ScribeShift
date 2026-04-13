@@ -1,6 +1,6 @@
-import crypto from 'crypto';
 import { encrypt, decrypt } from './encryption.js';
 import { supabase } from '../config/supabase.js';
+import { createState, consumeState } from './oauth-state.js';
 
 const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
@@ -14,22 +14,11 @@ const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 const SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list';
 const PLATFORM = 'instagram';
 
-// ── In-memory OAuth state store ─────────────────────────────────────
-const pendingStates = new Map();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, data] of pendingStates) {
-    if (now - data.createdAt > 10 * 60 * 1000) pendingStates.delete(state);
-  }
-}, 10 * 60 * 1000);
-
 // ── Generate OAuth authorization URL ────────────────────────────────
 export function getAuthorizationUrl(userId, companyId) {
   if (!FACEBOOK_APP_ID) throw new Error('FACEBOOK_APP_ID not configured');
 
-  const state = crypto.randomUUID();
-  pendingStates.set(state, { userId, companyId, createdAt: Date.now() });
+  const state = createState({ userId, companyId });
 
   const params = new URLSearchParams({
     client_id: FACEBOOK_APP_ID,
@@ -42,12 +31,7 @@ export function getAuthorizationUrl(userId, companyId) {
   return { url: `${FB_AUTH_URL}?${params}`, state };
 }
 
-export function consumeState(state) {
-  const data = pendingStates.get(state);
-  if (!data) return null;
-  pendingStates.delete(state);
-  return data;
-}
+export { consumeState };
 
 // ── Exchange code for tokens ────────────────────────────────────────
 export async function exchangeCodeForTokens(code) {

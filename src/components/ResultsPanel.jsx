@@ -55,6 +55,7 @@ export default function ResultsPanel({
   brand,
   onContentUpdate,
   onRegenerateImage,
+  onEditImage,
   onGenerateVariations,
   isImageRegenerating,
 }) {
@@ -252,6 +253,7 @@ export default function ResultsPanel({
       <ImageGallery
         images={images}
         onRegenerateImage={onRegenerateImage}
+        onEditImage={onEditImage}
         onGenerateVariations={onGenerateVariations}
         isRegenerating={isImageRegenerating}
       />

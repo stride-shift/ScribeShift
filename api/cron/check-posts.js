@@ -5,7 +5,12 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('[CRON] CRON_SECRET env var is not set — refusing to run');
+    return res.status(500).json({ error: 'Cron not configured' });
+  }
+
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

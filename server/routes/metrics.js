@@ -10,15 +10,17 @@ router.use(verifyToken);
 router.get('/posts', async (req, res) => {
   try {
     const { platform, is_boosted, from, to, sort_by = 'reactions', order = 'desc' } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
 
     let query = supabase
       .from('post_metrics')
-      .select('*, scheduled_posts(post_text, platform, scheduled_at, status, external_post_url)')
-      .order(sort_by, { ascending: order === 'asc' });
+      .select('*, scheduled_posts(post_text, platform, scheduled_at, status, external_post_url)', { count: 'exact' })
+      .order(sort_by, { ascending: order === 'asc' })
+      .range(offset, offset + limit - 1);
 
     // Scope by role
     if (req.user.role === 'user') {
-      // Join through scheduled_posts to filter by user
       query = query.eq('scheduled_posts.user_id', req.user.id);
     } else if (req.user.role === 'admin') {
       query = query.eq('company_id', req.user.company_id);
@@ -29,10 +31,10 @@ router.get('/posts', async (req, res) => {
     if (from) query = query.gte('created_at', from);
     if (to) query = query.lte('created_at', to);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ metrics: data });
+    res.json({ metrics: data, total: count, limit, offset });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch metrics' });
   }

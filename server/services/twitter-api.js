@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { encrypt, decrypt } from './encryption.js';
 import { supabase } from '../config/supabase.js';
+import { createState, consumeState } from './oauth-state.js';
 
 const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
 const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
@@ -14,16 +15,6 @@ const TWITTER_UPLOAD_BASE = 'https://upload.twitter.com';
 const SCOPES = 'tweet.read tweet.write users.read offline.access';
 const PLATFORM = 'twitter';
 
-// ── In-memory OAuth state + PKCE store ─────────────────────────────
-const pendingStates = new Map();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, data] of pendingStates) {
-    if (now - data.createdAt > 10 * 60 * 1000) pendingStates.delete(state);
-  }
-}, 10 * 60 * 1000);
-
 function generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -36,11 +27,11 @@ function generateCodeChallenge(verifier) {
 export function getAuthorizationUrl(userId, companyId) {
   if (!TWITTER_CLIENT_ID) throw new Error('TWITTER_CLIENT_ID not configured');
 
-  const state = crypto.randomUUID();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
-  pendingStates.set(state, { userId, companyId, codeVerifier, createdAt: Date.now() });
+  // codeVerifier is embedded in the signed state JWT so it survives across instances
+  const state = createState({ userId, companyId, codeVerifier });
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -55,12 +46,7 @@ export function getAuthorizationUrl(userId, companyId) {
   return { url: `${TWITTER_AUTH_URL}?${params}`, state };
 }
 
-export function consumeState(state) {
-  const data = pendingStates.get(state);
-  if (!data) return null;
-  pendingStates.delete(state);
-  return data;
-}
+export { consumeState };
 
 // ── Exchange authorization code for tokens ──────────────────────────
 export async function exchangeCodeForTokens(code, codeVerifier) {

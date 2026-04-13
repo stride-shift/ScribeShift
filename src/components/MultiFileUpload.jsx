@@ -7,6 +7,7 @@ export default function MultiFileUpload({ files, onFilesChange, videoUrls, onVid
   const [dragOver, setDragOver] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
 
@@ -31,7 +32,7 @@ export default function MultiFileUpload({ files, onFilesChange, videoUrls, onVid
       mediaRecorder.start();
       setIsRecording(true);
     } catch {
-      // Microphone permission denied or not available
+      setUploadError('Microphone access denied. Please allow microphone permissions and try again.');
     }
   };
 
@@ -42,9 +43,22 @@ export default function MultiFileUpload({ files, onFilesChange, videoUrls, onVid
     }
   };
 
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+
   const addFiles = (newFiles) => {
+    setUploadError('');
     const existing = new Set(files.map(f => f.name + f.size));
     const unique = [...newFiles].filter(f => !existing.has(f.name + f.size));
+
+    // Validate file sizes
+    const oversized = unique.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      setUploadError(`File too large: ${oversized.map(f => f.name).join(', ')} (max 200MB)`);
+      const valid = unique.filter(f => f.size <= MAX_FILE_SIZE);
+      if (valid.length > 0) onFilesChange([...files, ...valid]);
+      return;
+    }
+
     onFilesChange([...files, ...unique]);
   };
 
@@ -84,6 +98,8 @@ export default function MultiFileUpload({ files, onFilesChange, videoUrls, onVid
     <div className="card">
       <div className="card-title"><span className="step">2</span> Upload Content</div>
 
+      {uploadError && <div className="error-msg" style={{ marginBottom: '0.75rem' }}>{uploadError}</div>}
+
       <div
         className={`upload-zone ${dragOver ? 'drag-over' : ''} ${files.length ? 'has-file' : ''}`}
         onClick={() => inputRef.current?.click()}
@@ -108,7 +124,7 @@ export default function MultiFileUpload({ files, onFilesChange, videoUrls, onVid
         <div className="label">
           {files.length > 0 ? `${files.length} file${files.length > 1 ? 's' : ''} selected` : 'Drop files here or click to browse'}
         </div>
-        <div className="hint">Supports documents, images, video & audio files — up to 20 files</div>
+        <div className="hint">Supports documents, images, video & audio — up to 20 files, max 200MB each</div>
       </div>
 
       {files.length > 0 && (

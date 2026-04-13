@@ -390,9 +390,9 @@ Continue through POST 5.`;
 
 // ── IMAGE STYLE PROMPTS ─────────────────────────────────────────────
 
-export const IMAGE_STYLE_MINIMAL = `Generate a clean, minimal promotional image about the following topic.
+export const IMAGE_STYLE_MINIMAL = `Generate a clean, minimal social media graphic about the following topic.
 
-STYLE: Flat design, geometric shapes, limited 3-4 color palette, generous white space, modern sans-serif typography. Think Apple keynote slide meets Swiss poster design.
+STYLE: Flat design, geometric shapes, limited 3-4 color palette, generous white space, modern sans-serif typography. Think Swiss poster design — a single standalone graphic, NOT a webpage or screenshot.
 
 COLORS: Use these brand colors as the primary palette:
 - Primary: {{PRIMARY_COLOR}}
@@ -405,18 +405,20 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name tastefully (small, corner placement)
 - One clear headline or key message (5-8 words max)
 - 1-2 simple geometric icons or shapes that represent the topic
 - Generous negative space — less is more
 - Professional and polished look
 - No stock photo feel — this should look designed
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_VIBRANT = `Generate a bold, vibrant promotional image about the following topic.
+export const IMAGE_STYLE_VIBRANT = `Generate a bold, vibrant social media graphic about the following topic.
 
-STYLE: Rich gradients, dynamic composition, bold typography, eye-catching contrast, energetic feel. Think music festival poster meets tech conference branding.
+STYLE: Rich gradients, dynamic composition, bold typography, eye-catching contrast, energetic feel. Think music festival poster meets concert flyer — a single standalone graphic, NOT a webpage.
 
 COLORS: Build a vibrant palette from these brand colors:
 - Primary: {{PRIMARY_COLOR}} (dominant)
@@ -429,18 +431,20 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name prominently
 - Bold headline text with impact (5-10 words)
 - Dynamic composition — angles, overlapping elements, depth layers
 - Gradient backgrounds or color transitions
 - Abstract shapes or patterns that suggest motion/energy
 - Modern, trendy aesthetic
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible against the background`;
 
-export const IMAGE_STYLE_EDITORIAL = `Generate a professional, editorial-style image about the following topic.
+export const IMAGE_STYLE_EDITORIAL = `Generate a professional, editorial-style social media graphic about the following topic.
 
-STYLE: Photography-inspired, sophisticated, business-ready. Think Harvard Business Review cover meets premium corporate report. Subtle textures, refined typography, muted tones with brand color accents.
+STYLE: Photography-inspired, sophisticated, business-ready. Think premium magazine cover — a single standalone graphic, NOT a webpage or article screenshot. Subtle textures, refined typography, muted tones with brand color accents.
 
 COLORS: Refined palette based on brand:
 - Primary accent: {{PRIMARY_COLOR}} (used sparingly for emphasis)
@@ -453,18 +457,20 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
+- Do NOT render article body text or paragraph content — only a short headline
 - Include the brand name in a refined placement
 - Elegant headline typography (5-8 words)
-- Professional feel suitable for presentations, reports, or executive communication
+- Professional feel suitable for social media sharing
 - Subtle background texture or pattern
 - Structured layout with clear visual hierarchy
-- Optional: data visualization element or diagram style
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_ARTISTIC = `Generate an artistic, expressive promotional image about the following topic.
+export const IMAGE_STYLE_ARTISTIC = `Generate an artistic, expressive social media graphic about the following topic.
 
-STYLE: Painterly textures, mixed-media collage feel, hand-drawn elements blended with digital precision. Think museum exhibition poster meets indie album cover. Organic shapes, brush strokes, textured paper backgrounds.
+STYLE: Painterly textures, mixed-media collage feel, hand-drawn elements blended with digital precision. Think museum exhibition poster meets indie album cover — a single standalone graphic, NOT a webpage. Organic shapes, brush strokes, textured paper backgrounds.
 
 COLORS: Artistic palette derived from brand:
 - Primary: {{PRIMARY_COLOR}} (washed out or saturated for artistic effect)
@@ -477,17 +483,19 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name in a hand-lettered or artistic typeface style
 - Headline with character (5-8 words max)
 - Mixed media feel — combine illustration elements with clean typography
 - Organic, non-grid compositions welcome
 - Artistic but still readable and professional
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_RETRO = `Generate a retro/vintage-inspired promotional image about the following topic.
+export const IMAGE_STYLE_RETRO = `Generate a retro/vintage-inspired social media graphic about the following topic.
 
-STYLE: Nostalgic aesthetics — think 70s/80s design revival. Halftone patterns, rounded fonts, warm color casts, film grain overlay, retro geometric patterns. Inspired by vintage print ads and old-school poster design.
+STYLE: Nostalgic aesthetics — think 70s/80s design revival. Halftone patterns, rounded fonts, warm color casts, film grain overlay, retro geometric patterns. Inspired by vintage print ads and old-school poster design — a single standalone graphic, NOT a webpage.
 
 COLORS: Warm retro palette:
 - Primary: {{PRIMARY_COLOR}} (with warm vintage cast)
@@ -500,17 +508,19 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name in retro-styled typography
 - Bold headline in a rounded or slab-serif style (5-8 words)
 - Retro patterns: halftone dots, sunburst rays, or rounded rectangles
 - Warm, nostalgic feel that still reads as modern
 - Optional: VHS-style scan lines or film grain texture
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_MODERN = `Generate a sleek, ultra-modern promotional image about the following topic.
+export const IMAGE_STYLE_MODERN = `Generate a sleek, ultra-modern social media graphic about the following topic.
 
-STYLE: Cutting-edge digital design. Glass-morphism, frosted panels, thin-line icons, soft shadows, layered translucent elements. Think iOS design language meets high-end SaaS landing page.
+STYLE: Cutting-edge digital design. Glass-morphism effects, frosted translucent elements, thin-line icons, soft shadows, layered depth. Think premium brand advertisement — a single standalone graphic, NOT a webpage or app screenshot.
 
 COLORS: Modern palette:
 - Primary: {{PRIMARY_COLOR}} (used for glass highlights and accents)
@@ -523,17 +533,19 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, app UI, or landing page
+- Do NOT include browser chrome, navigation bars, scroll bars, cards with body text, containers, or any web interface elements
 - Include the brand name with modern, clean sans-serif typography
 - Headline with impact (5-8 words max)
-- Glass-morphism cards or frosted panels as design elements
+- Glass-morphism as a decorative style element, not as UI components
 - Layered depth with soft shadows and translucency
 - Clean, airy feel with intentional white space
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_FUTURISTIC = `Generate a futuristic, sci-fi inspired promotional image about the following topic.
+export const IMAGE_STYLE_FUTURISTIC = `Generate a futuristic, sci-fi inspired social media graphic about the following topic.
 
-STYLE: Cyberpunk meets high-tech UI. Neon accents, dark environments, holographic effects, circuit-board patterns, data visualization aesthetics. Think Blade Runner title sequence meets SpaceX branding.
+STYLE: Cyberpunk meets high-tech aesthetics. Neon accents, dark environments, holographic effects, circuit-board patterns. Think Blade Runner movie poster meets SpaceX branding — a single standalone graphic, NOT a webpage or software UI.
 
 COLORS: Futuristic palette:
 - Primary: {{PRIMARY_COLOR}} (as neon glow/accent)
@@ -546,17 +558,19 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, dashboard, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name with a tech/futuristic typeface style
 - Headline with authority (5-8 words max)
 - Neon glow effects, light trails, or holographic elements
 - Dark background with high-contrast luminous accents
-- Techy details: grid lines, data streams, or particle effects
-- 16:9 aspect ratio, 2K resolution
+- Techy details as decorative elements: grid lines, particle effects
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
-export const IMAGE_STYLE_CINEMATIC = `Generate a cinematic, movie-poster style promotional image about the following topic.
+export const IMAGE_STYLE_CINEMATIC = `Generate a cinematic, movie-poster style social media graphic about the following topic.
 
-STYLE: Dramatic lighting, wide-format composition, cinematic color grading. Think movie poster meets premium brand campaign. Moody atmosphere with deliberate light sources, dramatic shadows, and depth of field effects.
+STYLE: Dramatic lighting, wide-format composition, cinematic color grading. Think movie poster meets premium brand campaign — a single standalone graphic, NOT a webpage. Moody atmosphere with deliberate light sources, dramatic shadows, and depth of field effects.
 
 COLORS: Cinematic palette:
 - Primary: {{PRIMARY_COLOR}} (as dramatic light source or accent)
@@ -569,12 +583,14 @@ BRAND: {{BRAND_NAME}}
 CONTENT TOPIC: {{TOPIC_SUMMARY}}
 
 REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
 - Include the brand name in premium cinematic typography
 - Dramatic headline (5-8 words max)
 - Strong directional lighting — dramatic light and shadow
 - Cinematic aspect and composition
 - Atmospheric depth — haze, bokeh, or lens flare
-- 16:9 aspect ratio, 2K resolution
+- 16:9 aspect ratio
 - All text must be clearly legible`;
 
 // ── MAPS ────────────────────────────────────────────────────────────

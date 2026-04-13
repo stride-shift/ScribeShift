@@ -8,14 +8,11 @@
     },
     "api/cron/check-posts.js": {
       "maxDuration": 60
+    },
+    "api/cron/daily-reminder.js": {
+      "maxDuration": 60
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/check-posts",
-      "schedule": "0 * * * *"
-    }
-  ],
   "rewrites": [
     { "source": "/api/cron/:path*", "destination": "/api/cron/:path*" },
     { "source": "/api/:path*", "destination": "/api" },

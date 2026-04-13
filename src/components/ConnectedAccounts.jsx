@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 
-// All platforms now use OAuth
+// All platforms connect via OAuth API
 const PLATFORMS = [
   {
     id: 'linkedin',
@@ -52,6 +52,7 @@ const PLATFORMS = [
 export default function ConnectedAccounts() {
   const { getAuthHeaders } = useAuth();
   const [statuses, setStatuses] = useState({});
+  const [gcalStatus, setGcalStatus] = useState({ connected: false, configured: true });
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(null);
   const [error, setError] = useState('');
@@ -78,6 +79,43 @@ export default function ConnectedAccounts() {
       })
     );
     setStatuses(results);
+
+    try {
+      const res = await fetch('/api/auth/google-calendar/status', { headers: getAuthHeaders() });
+      setGcalStatus(await res.json());
+    } catch {
+      setGcalStatus({ connected: false, configured: false });
+    }
+  };
+
+  const handleConnectGcal = async () => {
+    setConnecting('google-calendar');
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch('/api/auth/google-calendar', { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setConnecting(null);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setError('Failed to start Google Calendar connection');
+      setConnecting(null);
+    }
+  };
+
+  const handleDisconnectGcal = async () => {
+    if (!confirm('Disconnect Google Calendar? Future scheduled posts will no longer be auto-added to your calendar.')) return;
+    try {
+      await fetch('/api/auth/google-calendar', { method: 'DELETE', headers: getAuthHeaders() });
+      setGcalStatus({ connected: false, configured: gcalStatus.configured });
+      setSuccess('Google Calendar disconnected');
+    } catch {
+      setError('Failed to disconnect Google Calendar');
+    }
   };
 
   // Check for OAuth callback results in URL params
@@ -99,6 +137,14 @@ export default function ConnectedAccounts() {
         window.history.replaceState({}, '', window.location.pathname);
         break;
       }
+    }
+
+    if (params.get('gcal_connected')) {
+      setSuccess('Google Calendar connected — new scheduled posts will auto-create events.');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('gcal_error')) {
+      setError(`Google Calendar connection failed: ${params.get('gcal_error')}`);
+      window.history.replaceState({}, '', window.location.pathname);
     }
 
     // Facebook page selection flow
@@ -140,6 +186,15 @@ export default function ConnectedAccounts() {
     fetchStatuses().finally(() => setLoading(false));
   }, []);
 
+  // Refresh statuses when the user returns to the tab (e.g. after completing OAuth)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchStatuses();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   // Initiate OAuth connect for any platform
   const handleConnect = async (platform) => {
     setConnecting(platform.id);
@@ -163,7 +218,7 @@ export default function ConnectedAccounts() {
     }
   };
 
-  // Disconnect any platform
+  // Disconnect a platform
   const handleDisconnect = async (platform) => {
     if (!confirm(`Disconnect ${platform.name}? Scheduled posts will no longer be published.`)) return;
 
@@ -319,13 +374,13 @@ export default function ConnectedAccounts() {
                         <div className="credential-info">
                           <div className="credential-platform-name">{p.name}</div>
                           <div className="credential-email">
-                            {status.personName || 'Connected via OAuth'}
+                            {status.personName || 'Connected'}
                           </div>
                           <div className="credential-status">
                             <span className="credential-status-ok">Connected via official API</span>
                             {status.isExpired && (
                               <span className="credential-status-fail" style={{ marginLeft: 8 }}>
-                                Token expired — reconnect needed
+                                Session expired
                               </span>
                             )}
                             {status.expiresAt && !status.isExpired && (
@@ -390,6 +445,78 @@ export default function ConnectedAccounts() {
               </div>
             </div>
           </>
+        )}
+      </div>
+
+      {/* ── Google Calendar integration ──────────────────────── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          Calendar
+        </div>
+
+        <div className="credentials-info-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <div>
+            <strong>Auto-add scheduled posts to your calendar</strong>
+            <p>Connect Google Calendar and every post you schedule will automatically show up as an event on the day it's going out.</p>
+          </div>
+        </div>
+
+        {!gcalStatus.configured ? (
+          <div className="schedule-success" style={{ background: '#fef3c7', color: '#92400e' }}>
+            Google Calendar integration isn't configured on the server yet. Ask an admin to add <code>GOOGLE_CALENDAR_CLIENT_ID</code>, <code>GOOGLE_CALENDAR_CLIENT_SECRET</code>, and <code>GOOGLE_CALENDAR_REDIRECT_URI</code>.
+          </div>
+        ) : gcalStatus.connected ? (
+          <div className="credentials-list">
+            <div className="credential-card">
+              <div className="credential-card-left">
+                <div className="credential-platform-icon" style={{ color: '#4285F4' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
+                  </svg>
+                </div>
+                <div className="credential-info">
+                  <div className="credential-platform-name">Google Calendar</div>
+                  <div className="credential-email">{gcalStatus.email || 'Connected'}</div>
+                  <div className="credential-status">
+                    <span className="credential-status-ok">Auto-creating events for scheduled posts</span>
+                  </div>
+                </div>
+              </div>
+              <div className="credential-card-actions">
+                <button className="admin-btn-sm credential-delete-btn" onClick={handleDisconnectGcal}>
+                  Disconnect
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="credentials-add-section">
+            <div className="credentials-platform-buttons">
+              <button
+                className="credential-platform-btn"
+                onClick={handleConnectGcal}
+                disabled={connecting === 'google-calendar'}
+                style={{ '--platform-color': '#4285F4' }}
+              >
+                <span className="credential-btn-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#4285F4">
+                    <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
+                  </svg>
+                </span>
+                <span>{connecting === 'google-calendar' ? 'Connecting...' : 'Connect Google Calendar'}</span>
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

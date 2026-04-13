@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
 import {
@@ -7,17 +6,14 @@ import {
   exchangeCodeForTokens,
   getLongLivedToken,
   getUserPages,
-  getUserProfile,
   storeTokens,
   getConnectionStatus,
   disconnect,
   FACEBOOK_APP_ID,
 } from '../services/facebook-api.js';
+import { createSelectionToken, consumeSelectionToken } from '../services/oauth-selection.js';
 
 const router = Router();
-
-// Temp storage for tokens awaiting page selection
-const pendingPageSelections = new Map();
 
 // ── GET /api/auth/facebook — Initiate OAuth flow ────────────────────
 router.get('/', verifyToken, async (req, res) => {
@@ -77,20 +73,15 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${frontendUrl}/?facebook_success=true&facebook_name=${encodeURIComponent(page.pageName)}`);
     }
 
-    // Multiple pages — store temporarily and redirect for selection
-    const selectionId = crypto.randomUUID();
-    pendingPageSelections.set(selectionId, {
+    // Multiple pages — encode selection data as an encrypted token (no in-memory state)
+    const selectionToken = createSelectionToken({
       userId: stateData.userId,
       companyId: stateData.companyId,
       pages,
       expiresIn: longTokens.expiresIn,
-      createdAt: Date.now(),
     });
 
-    // Clean up after 10 minutes
-    setTimeout(() => pendingPageSelections.delete(selectionId), 10 * 60 * 1000);
-
-    res.redirect(`${frontendUrl}/?facebook_select_page=${selectionId}`);
+    res.redirect(`${frontendUrl}/?facebook_select_page=${encodeURIComponent(selectionToken)}`);
   } catch (err) {
     console.error('[FACEBOOK-OAUTH] Callback error:', err.message);
     res.redirect(`${frontendUrl}/?facebook_error=${encodeURIComponent(err.message)}`);
@@ -99,7 +90,7 @@ router.get('/callback', async (req, res) => {
 
 // ── GET /api/auth/facebook/pages/:selectionId — Get page options ────
 router.get('/pages/:selectionId', verifyToken, (req, res) => {
-  const data = pendingPageSelections.get(req.params.selectionId);
+  const data = consumeSelectionToken(decodeURIComponent(req.params.selectionId));
   if (!data) return res.status(404).json({ error: 'Selection expired. Please reconnect.' });
 
   res.json({
@@ -107,13 +98,16 @@ router.get('/pages/:selectionId', verifyToken, (req, res) => {
       pageId: p.pageId,
       pageName: p.pageName,
       picture: p.picture,
+      // Pass token back so the client can use it in the select call
+      _token: req.params.selectionId,
     })),
+    _token: req.params.selectionId,
   });
 });
 
 // ── POST /api/auth/facebook/pages/:selectionId/select — Pick a page ─
 router.post('/pages/:selectionId/select', verifyToken, async (req, res) => {
-  const data = pendingPageSelections.get(req.params.selectionId);
+  const data = consumeSelectionToken(decodeURIComponent(req.params.selectionId));
   if (!data) return res.status(404).json({ error: 'Selection expired. Please reconnect.' });
 
   const { pageId } = req.body;
@@ -126,7 +120,6 @@ router.post('/pages/:selectionId/select', verifyToken, async (req, res) => {
       page.pageAccessToken, page.pageId, page.pageName,
       data.expiresIn
     );
-    pendingPageSelections.delete(req.params.selectionId);
     res.json({ success: true, pageName: page.pageName });
   } catch (err) {
     res.status(500).json({ error: err.message });

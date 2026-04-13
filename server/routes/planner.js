@@ -1,6 +1,25 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { supabase } from '../config/supabase.js';
 import { verifyToken, scopeByRole } from '../middleware/auth.js';
+
+const pillarSchema = z.object({
+  label: z.string().min(1, 'Label is required').max(100),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Invalid color hex').optional(),
+  description: z.string().max(500).optional(),
+  topics: z.array(z.string().max(100)).optional(),
+});
+
+const pieceSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(200),
+  body: z.string().max(10000).optional(),
+  link: z.string().url().optional().or(z.literal('')),
+  pillarId: z.string().uuid().optional().nullable(),
+  platform: z.string().max(50).optional(),
+  contentType: z.string().max(50).optional(),
+  status: z.enum(['idea', 'draft', 'ready', 'published']).optional(),
+  notes: z.string().max(1000).optional(),
+});
 
 const router = Router();
 router.use(verifyToken);
@@ -42,8 +61,9 @@ router.get('/pillars', async (req, res) => {
 // ── POST /api/planner/pillars ────────────────────────────────
 router.post('/pillars', async (req, res) => {
   try {
-    const { label, color, description, topics } = req.body;
-    if (!label?.trim()) return res.status(400).json({ error: 'Label is required' });
+    const parsed = pillarSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+    const { label, color, description, topics } = parsed.data;
 
     const { data, error } = await supabase
       .from('planner_pillars')
@@ -133,18 +153,21 @@ router.delete('/pillars/:id', async (req, res) => {
 router.get('/pieces', async (req, res) => {
   try {
     const { pillar_id, status } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const offset = parseInt(req.query.offset) || 0;
 
     let query = supabase
       .from('planner_pieces')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     query = scopeByRole(req)(query);
 
     if (pillar_id) query = query.eq('pillar_id', pillar_id);
     if (status) query = query.eq('status', status);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
 
     // Transform to frontend format
@@ -161,7 +184,7 @@ router.get('/pieces', async (req, res) => {
       createdAt: row.created_at,
     }));
 
-    res.json({ pieces });
+    res.json({ pieces, total: count, limit, offset });
   } catch (err) {
     console.error('[PLANNER] Get pieces error:', err.message);
     res.status(500).json({ error: 'Failed to fetch content pieces' });
@@ -171,8 +194,9 @@ router.get('/pieces', async (req, res) => {
 // ── POST /api/planner/pieces ─────────────────────────────────
 router.post('/pieces', async (req, res) => {
   try {
-    const { title, body, link, pillarId, platform, contentType, status, notes } = req.body;
-    if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+    const parsed = pieceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+    const { title, body, link, pillarId, platform, contentType, status, notes } = parsed.data;
 
     const { data, error } = await supabase
       .from('planner_pieces')

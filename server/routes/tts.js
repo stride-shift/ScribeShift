@@ -6,7 +6,7 @@ import { supabase } from '../config/supabase.js';
 const router = Router();
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const TTS_MODEL = 'gemini-2.0-flash';
+const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 // ── POST /api/generate-tts ──────────────────────────────────────────
 router.post('/', verifyToken, async (req, res) => {

@@ -9,7 +9,7 @@ import {
 import {
   SKILL_MAP, SKILL_TRANSCRIPT_TO_BLOG, injectBrand,
   TONE_DIRECTIVES, POLISH_DIRECTIVES, GOAL_DIRECTIVES,
-} from '../../skills.js';
+} from '../config/skills.js';
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
@@ -232,17 +232,20 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     });
 
     // Save generated content to database
-    const sourceSummary = allInput.substring(0, 500);
+    // Strip null bytes (\u0000) that Gemini sometimes returns — PostgreSQL rejects them
+    const stripNulls = (str) => typeof str === 'string' ? str.replace(/\u0000/g, '') : str;
+    const sourceSummary = stripNulls(allInput.substring(0, 500));
     for (const [type, body] of Object.entries(results)) {
       if (body && !body.startsWith('Error generating') && !body.startsWith('Unknown type')) {
         try {
+          const cleanBody = stripNulls(body);
           const insertObj = {
             user_id: req.user.id,
             company_id: req.user.company_id || null,
             brand_id: brandData.brandId || null,
             content_type: type,
-            title: body.split('\n')[0]?.replace(/^#+\s*/, '').substring(0, 200) || type,
-            body,
+            title: cleanBody.split('\n')[0]?.replace(/^#+\s*/, '').substring(0, 200) || type,
+            body: cleanBody,
             source_summary: sourceSummary,
             options: {
               tone: options.tone,
@@ -270,10 +273,12 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     res.json({ success: true, content: results });
   } catch (err) {
     console.error('[GEN] Fatal error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    // Always clean up uploaded temp files
     if (req.files) {
       for (const f of req.files) await fs.unlink(f.path).catch(() => {});
     }
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 

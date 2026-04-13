@@ -11,19 +11,23 @@ router.use(verifyToken);
 // Admin: list company users / Super Admin: list all users
 router.get('/users', requireRole('admin', 'super_admin'), async (req, res) => {
   try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+
     let query = supabase
       .from('users')
-      .select('*, companies(name, slug)')
-      .order('created_at', { ascending: false });
+      .select('*, companies(name, slug)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (req.user.role === 'admin') {
       query = query.eq('company_id', req.user.company_id);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ users: data });
+    res.json({ users: data, total: count, limit, offset });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users' });
   }

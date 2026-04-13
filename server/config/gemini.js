@@ -10,7 +10,7 @@ const ROOT_DIR = path.resolve(__dirname, '../..');
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 export const TEXT_MODEL = 'gemini-2.0-flash';
-export const IMAGE_MODEL = 'gemini-3-pro-image-preview';
+export const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 // ── Clean AI response (strip code fences, error patterns) ──────────
 export function cleanResponse(text) {

@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
 import {
@@ -11,11 +10,9 @@ import {
   disconnect,
   FACEBOOK_APP_ID,
 } from '../services/instagram-api.js';
+import { createSelectionToken, consumeSelectionToken } from '../services/oauth-selection.js';
 
 const router = Router();
-
-// Temp storage for tokens awaiting account selection
-const pendingSelections = new Map();
 
 // ── GET /api/auth/instagram — Initiate OAuth flow ───────────────────
 router.get('/', verifyToken, async (req, res) => {
@@ -69,20 +66,16 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${frontendUrl}/?instagram_success=true&instagram_name=${encodeURIComponent(account.igUsername)}`);
     }
 
-    // Multiple accounts — store temporarily and redirect for selection
-    const selectionId = crypto.randomUUID();
-    pendingSelections.set(selectionId, {
+    // Multiple accounts — encode as encrypted token (no in-memory state)
+    const selectionToken = createSelectionToken({
       userId: stateData.userId,
       companyId: stateData.companyId,
       accounts,
       accessToken: tokens.accessToken,
       expiresIn: tokens.expiresIn,
-      createdAt: Date.now(),
     });
 
-    setTimeout(() => pendingSelections.delete(selectionId), 10 * 60 * 1000);
-
-    res.redirect(`${frontendUrl}/?instagram_select_account=${selectionId}`);
+    res.redirect(`${frontendUrl}/?instagram_select_account=${encodeURIComponent(selectionToken)}`);
   } catch (err) {
     console.error('[INSTAGRAM-OAUTH] Callback error:', err.message);
     res.redirect(`${frontendUrl}/?instagram_error=${encodeURIComponent(err.message)}`);
@@ -91,7 +84,7 @@ router.get('/callback', async (req, res) => {
 
 // ── GET /api/auth/instagram/accounts/:selectionId — Get IG accounts ─
 router.get('/accounts/:selectionId', verifyToken, (req, res) => {
-  const data = pendingSelections.get(req.params.selectionId);
+  const data = consumeSelectionToken(decodeURIComponent(req.params.selectionId));
   if (!data) return res.status(404).json({ error: 'Selection expired. Please reconnect.' });
 
   res.json({
@@ -101,12 +94,13 @@ router.get('/accounts/:selectionId', verifyToken, (req, res) => {
       igPicture: a.igPicture,
       pageName: a.pageName,
     })),
+    _token: req.params.selectionId,
   });
 });
 
 // ── POST /api/auth/instagram/accounts/:selectionId/select ───────────
 router.post('/accounts/:selectionId/select', verifyToken, async (req, res) => {
-  const data = pendingSelections.get(req.params.selectionId);
+  const data = consumeSelectionToken(decodeURIComponent(req.params.selectionId));
   if (!data) return res.status(404).json({ error: 'Selection expired. Please reconnect.' });
 
   const { igUserId } = req.body;
@@ -119,7 +113,6 @@ router.post('/accounts/:selectionId/select', verifyToken, async (req, res) => {
       data.accessToken, account.igUserId, account.igUsername,
       data.expiresIn
     );
-    pendingSelections.delete(req.params.selectionId);
     res.json({ success: true, igUsername: account.igUsername });
   } catch (err) {
     res.status(500).json({ error: err.message });

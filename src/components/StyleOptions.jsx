@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const TONE_DESCRIPTIONS = {
   conversational: 'Like explaining to a friend over coffee',
@@ -34,12 +34,14 @@ export default function StyleOptions({
   setIsDetectingTone,
   getAuthHeaders,
 }) {
+  const [toneError, setToneError] = useState('');
   const set = (key, val) => onChange({ ...options, [key]: val });
   const hasContent = files.length > 0 || videoUrls.length > 0 || (textPrompt && textPrompt.trim().length > 0);
 
   const handleDetectTone = async () => {
     if (!hasContent || isDetectingTone) return;
     setIsDetectingTone(true);
+    setToneError('');
 
     try {
       const formData = new FormData();
@@ -53,6 +55,11 @@ export default function StyleOptions({
         headers: authHeaders,
         body: formData,
       });
+
+      if (!res.ok) {
+        throw new Error(`Server error (${res.status})`);
+      }
+
       const data = await res.json();
 
       if (data.success && data.detectedTone) {
@@ -62,10 +69,10 @@ export default function StyleOptions({
           toneMode: 'detected',
         });
       } else {
-        console.error('[TONE] Detection failed:', data.error);
+        setToneError(data.error || 'Could not detect tone from your content. Try a different file or use a preset tone.');
       }
     } catch (err) {
-      console.error('[TONE] Detection error:', err.message);
+      setToneError(`Tone detection failed: ${err.message}. You can use a preset or custom tone instead.`);
     } finally {
       setIsDetectingTone(false);
     }
@@ -109,6 +116,12 @@ export default function StyleOptions({
             Custom
           </button>
         </div>
+
+        {toneError && (
+          <div className="error-msg" style={{ marginTop: '0.5rem', fontSize: '0.85em' }}>
+            {toneError}
+          </div>
+        )}
 
         {/* Preset mode */}
         {options.toneMode === 'preset' && (

@@ -19,7 +19,7 @@ const VARIATION_PRESETS = [
   { label: 'Softer / more minimal', suffix: 'Make this image softer and more minimal. Reduce visual complexity, add more white space, soften colors, and simplify the composition. Less is more.' },
 ];
 
-export default function ImageGallery({ images, onRegenerateImage, isRegenerating, onGenerateVariations }) {
+export default function ImageGallery({ images, onRegenerateImage, onEditImage, isRegenerating, onGenerateVariations }) {
   const [expandedIndex, setExpandedIndex] = useState(null);
   const [editPrompt, setEditPrompt] = useState('');
   const [changeDescription, setChangeDescription] = useState('');
@@ -45,10 +45,14 @@ export default function ImageGallery({ images, onRegenerateImage, isRegenerating
 
   const handleRegenerate = () => {
     if (expandedIndex === null) return;
-    const finalPrompt = changeDescription
-      ? `${editPrompt}\n\nAdditional changes requested: ${changeDescription}`
-      : editPrompt;
-    onRegenerateImage(expandedIndex, finalPrompt);
+
+    // If user typed a change description, use the edit endpoint (preserves original image)
+    // If user only modified the prompt text, do a full regeneration
+    if (changeDescription.trim()) {
+      onEditImage(expandedIndex, changeDescription.trim());
+    } else {
+      onRegenerateImage(expandedIndex, editPrompt);
+    }
   };
 
   const handleVariation = (preset) => {
@@ -115,6 +119,14 @@ export default function ImageGallery({ images, onRegenerateImage, isRegenerating
                       <div className="gallery-cell-error">
                         <span>Failed</span>
                         <span className="error-detail">{img.error?.substring(0, 60)}</span>
+                        <button
+                          className="admin-btn-sm"
+                          style={{ marginTop: '0.5rem' }}
+                          onClick={(e) => { e.stopPropagation(); onRegenerateImage(globalIndex, img.prompt); }}
+                          disabled={isRegenerating}
+                        >
+                          {isRegenerating ? 'Retrying...' : 'Retry'}
+                        </button>
                       </div>
                     )}
                     <div className="gallery-cell-overlay">
@@ -175,15 +187,7 @@ export default function ImageGallery({ images, onRegenerateImage, isRegenerating
 
               <div className="overlay-divider" />
 
-              <label className="option-label">Edit Prompt</label>
-              <textarea
-                className="overlay-prompt"
-                value={editPrompt}
-                onChange={(e) => setEditPrompt(e.target.value)}
-                rows={4}
-              />
-
-              <label className="option-label">Describe changes</label>
+              <label className="option-label">Describe changes (edits this image)</label>
               <input
                 type="text"
                 className="brand-input"
@@ -192,13 +196,28 @@ export default function ImageGallery({ images, onRegenerateImage, isRegenerating
                 onChange={(e) => setChangeDescription(e.target.value)}
               />
 
+              <div className="overlay-divider" />
+
+              <details style={{ marginBottom: '0.5rem' }}>
+                <summary className="option-label" style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Full prompt (regenerates from scratch)
+                </summary>
+                <textarea
+                  className="overlay-prompt"
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  rows={4}
+                  style={{ marginTop: '0.5rem' }}
+                />
+              </details>
+
               <div className="overlay-actions">
                 <button
                   className={`btn btn-primary ${isRegenerating ? 'loading' : ''}`}
                   onClick={handleRegenerate}
                   disabled={isRegenerating}
                 >
-                  {isRegenerating ? '' : 'Regenerate'}
+                  {isRegenerating ? '' : changeDescription.trim() ? 'Apply Edit' : 'Regenerate'}
                 </button>
                 <button className="btn" onClick={() => handleDownload(expandedImg, expandedIndex)}>
                   Download

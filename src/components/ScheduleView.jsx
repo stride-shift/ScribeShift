@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import CampaignPlanner from './CampaignPlanner';
+import SchedulePostModal from './SchedulePostModal';
+import { StatCard } from './ui/stat-card';
+import { Tabs } from './ui/tabs';
+import { RailPanel, EmptyPanel } from './ui/empty-panel';
 
 const STATUS_FILTERS = [
   { value: '', label: 'All Status' },
@@ -17,60 +21,66 @@ const PLATFORM_COLORS = {
   instagram: '#E4405F',
 };
 
-const PLATFORM_LABELS = {
-  linkedin: 'LI',
-  twitter: 'X',
-  facebook: 'FB',
-  instagram: 'IG',
+const PLATFORM_ICONS = {
+  linkedin: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>,
+  twitter: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>,
+  facebook: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>,
+  instagram: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678a6.162 6.162 0 100 12.324 6.162 6.162 0 100-12.324zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405a1.441 1.441 0 11-2.882 0 1.441 1.441 0 012.882 0z"/></svg>,
 };
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const PLATFORM_LABELS = {
+  linkedin: 'LinkedIn',
+  twitter: 'Twitter / X',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+};
+
+const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+const Icons = {
+  health: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+  star: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+  clock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+  alert: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+  bulb: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"/></svg>,
+};
 
 export default function ScheduleView() {
   const { getAuthHeaders } = useAuth();
   const [posts, setPosts] = useState([]);
+  const [reusePool, setReusePool] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState('');
   const [viewMode, setViewMode] = useState('calendar');
+  const [calendarMode, setCalendarMode] = useState('month'); // 'month' | 'week'
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [showNewPost, setShowNewPost] = useState(false);
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const start = new Date(now);
+    start.setDate(now.getDate() - day);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  });
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [modalInitialDate, setModalInitialDate] = useState(null);
+  const [modalInitialText, setModalInitialText] = useState('');
   const [showCampaignPlanner, setShowCampaignPlanner] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [newPost, setNewPost] = useState({
-    post_text: '',
-    platform: 'linkedin',
-    scheduled_at: '',
-    is_boosted: false,
-    boost_spend: '',
-    pillar: '',
-  });
-  // Interactive calendar features
-  const [quickAddDate, setQuickAddDate] = useState(null);
-  const [quickAddText, setQuickAddText] = useState('');
-  const [quickAddPlatform, setQuickAddPlatform] = useState('linkedin');
   const [dragPost, setDragPost] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
-  const quickAddRef = useRef(null);
 
   const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
 
-  useEffect(() => {
-    loadPosts();
-  }, [statusFilter]);
-
-  // Focus quick-add textarea when shown
-  useEffect(() => {
-    if (quickAddDate && quickAddRef.current) {
-      quickAddRef.current.focus();
-    }
-  }, [quickAddDate]);
+  useEffect(() => { loadPosts(); }, [statusFilter]);
+  useEffect(() => { loadReusePool(); }, []);
 
   const loadPosts = async () => {
     setLoading(true);
@@ -89,77 +99,45 @@ export default function ScheduleView() {
     }
   };
 
-  const handleCreatePost = async () => {
-    if (!newPost.post_text.trim() || !newPost.scheduled_at) {
-      setError('Post text and scheduled date are required');
-      return;
-    }
+  const loadReusePool = async () => {
     try {
-      const payload = { ...newPost, scheduled_at: new Date(newPost.scheduled_at).toISOString() };
-      const res = await fetch('/api/schedule', { method: 'POST', headers, body: JSON.stringify(payload) });
+      const res = await fetch('/api/content?pinned=true&limit=4', { headers: getAuthHeaders() });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed to schedule post'); return; }
-      setPosts(prev => [data.post, ...prev].sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)));
-      setShowNewPost(false);
-      setNewPost({ post_text: '', platform: 'linkedin', scheduled_at: '', is_boosted: false, boost_spend: '', pillar: '' });
-    } catch {
-      setError('Failed to schedule post');
-    }
+      if (res.ok) setReusePool(data.content || []);
+    } catch { /* silent */ }
   };
 
-  const handleQuickAdd = async (date) => {
-    if (!quickAddText.trim()) { setQuickAddDate(null); return; }
-    const d = new Date(date);
-    d.setHours(9, 0, 0, 0);
-    try {
-      const payload = {
-        post_text: quickAddText.trim(),
-        platform: quickAddPlatform,
-        scheduled_at: d.toISOString(),
-        is_boosted: false,
-        boost_spend: '',
-        pillar: '',
-      };
-      const res = await fetch('/api/schedule', { method: 'POST', headers, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed to schedule post'); return; }
-      setPosts(prev => [data.post, ...prev].sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)));
-      setQuickAddText('');
-      setQuickAddDate(null);
-    } catch {
-      setError('Failed to schedule post');
-    }
+  const openNewPostModal = (date, text) => {
+    setModalInitialDate(date || null);
+    setModalInitialText(text || '');
+    setEditingPost(null);
+    setShowPostModal(true);
   };
 
-  const handleUpdatePost = async () => {
-    if (!editingPost) return;
-    try {
-      const res = await fetch(`/api/schedule/${editingPost.id}`, {
-        method: 'PUT', headers,
-        body: JSON.stringify({
-          post_text: editingPost.post_text,
-          scheduled_at: new Date(editingPost.scheduled_at).toISOString(),
-          platform: editingPost.platform,
-          is_boosted: editingPost.is_boosted,
-          boost_spend: editingPost.boost_spend,
-        }),
-      });
-      if (!res.ok) { const data = await res.json(); setError(data.error || 'Failed to update'); return; }
-      setPosts(prev => prev.map(p => p.id === editingPost.id ? { ...p, ...editingPost } : p));
-      setEditingPost(null);
-    } catch {
-      setError('Failed to update post');
-    }
+  const openEditModal = (post) => {
+    setEditingPost(post);
+    setModalInitialDate(null);
+    setModalInitialText('');
+    setShowPostModal(true);
+  };
+
+  const handleModalClose = () => {
+    setShowPostModal(false);
+    setEditingPost(null);
+    setModalInitialDate(null);
+    setModalInitialText('');
+  };
+
+  const handleModalCreated = () => {
+    loadPosts();
   };
 
   const handleDragReschedule = async (postId, newDate) => {
     const post = posts.find(p => p.id === postId);
     if (!post || post.status !== 'scheduled') return;
-
     const oldDate = new Date(post.scheduled_at);
     const target = new Date(newDate);
     target.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0);
-
     try {
       const res = await fetch(`/api/schedule/${postId}`, {
         method: 'PUT', headers,
@@ -194,63 +172,40 @@ export default function ScheduleView() {
     }
   };
 
+  const handleRetry = async (id) => {
+    try {
+      const res = await fetch(`/api/schedule/${id}/retry`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await res.json();
+      if (res.ok) {
+        setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'posting', error_message: null } : p));
+      } else {
+        setError(data.error || 'Failed to retry post');
+      }
+    } catch {
+      setError('Failed to retry post');
+    }
+  };
+
   const handleCalendarDateClick = (date) => {
     setSelectedDate(date);
-    const d = new Date(date);
-    d.setHours(9, 0, 0, 0);
-    const offset = d.getTimezoneOffset();
-    const local = new Date(d.getTime() - offset * 60000);
-    setNewPost(prev => ({ ...prev, scheduled_at: local.toISOString().slice(0, 16) }));
   };
 
   const handleCellDoubleClick = (e, date) => {
     e.stopPropagation();
-    const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    setQuickAddDate(dateKey);
-    setQuickAddText('');
-    setQuickAddPlatform('linkedin');
+    openNewPostModal(date);
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'scheduled': return '#3b82f6';
-      case 'posting': return '#0da2e7';
-      case 'posted': return '#22c55e';
-      case 'failed': return '#ef4444';
-      default: return '#94a3b8';
-    }
-  };
+  const formatTime = (dateStr) => new Date(dateStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (dateStr) => new Date(dateStr).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'scheduled': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
-      case 'posting': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
-      case 'posted': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>;
-      case 'failed': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-      default: return null;
-    }
-  };
-
-  const formatDate = (dateStr) => {
-    const d = new Date(dateStr);
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatTime = (dateStr) => {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  };
-
-  // Calendar data
+  // Calendar data — month view
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const daysInPrevMonth = new Date(year, month, 0).getDate();
-
     const days = [];
-
     for (let i = firstDay - 1; i >= 0; i--) {
       days.push({ day: daysInPrevMonth - i, month: month - 1, year, isCurrentMonth: false });
     }
@@ -261,17 +216,24 @@ export default function ScheduleView() {
     for (let i = 1; i <= remaining; i++) {
       days.push({ day: i, month: month + 1, year, isCurrentMonth: false });
     }
-
     return days;
   }, [currentMonth]);
 
-  // Map posts to dates
+  // Calendar data — week view
+  const weekDays = useMemo(() => {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(currentWeekStart);
+      d.setDate(d.getDate() + i);
+      days.push({ day: d.getDate(), month: d.getMonth(), year: d.getFullYear(), isCurrentMonth: true, date: d });
+    }
+    return days;
+  }, [currentWeekStart]);
+
   const postsByDate = useMemo(() => {
     const map = {};
     let filteredPosts = posts;
-    if (platformFilter) {
-      filteredPosts = posts.filter(p => p.platform === platformFilter);
-    }
+    if (platformFilter) filteredPosts = posts.filter(p => p.platform === platformFilter);
     filteredPosts.forEach(post => {
       const d = new Date(post.scheduled_at);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -286,14 +248,40 @@ export default function ScheduleView() {
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const prevWeek = () => {
+    const d = new Date(currentWeekStart);
+    d.setDate(d.getDate() - 7);
+    setCurrentWeekStart(d);
+  };
+  const nextWeek = () => {
+    const d = new Date(currentWeekStart);
+    d.setDate(d.getDate() + 7);
+    setCurrentWeekStart(d);
+  };
   const goToToday = () => {
     setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    const day = today.getDay();
+    const start = new Date(today);
+    start.setDate(today.getDate() - day);
+    start.setHours(0, 0, 0, 0);
+    setCurrentWeekStart(start);
     setSelectedDate(today);
   };
 
   const monthLabel = currentMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  const weekLabel = (() => {
+    const end = new Date(currentWeekStart);
+    end.setDate(end.getDate() + 6);
+    const startMonth = currentWeekStart.toLocaleString(undefined, { month: 'short' });
+    const endMonth = end.toLocaleString(undefined, { month: 'short' });
+    if (startMonth === endMonth) {
+      return `${startMonth} ${currentWeekStart.getDate()} – ${end.getDate()}, ${end.getFullYear()}`;
+    }
+    return `${startMonth} ${currentWeekStart.getDate()} – ${endMonth} ${end.getDate()}, ${end.getFullYear()}`;
+  })();
 
-  const groupedPosts = posts.reduce((acc, post) => {
+  const displayPosts = platformFilter ? posts.filter(p => p.platform === platformFilter) : posts;
+  const groupedPosts = displayPosts.reduce((acc, post) => {
     const date = new Date(post.scheduled_at).toLocaleDateString();
     if (!acc[date]) acc[date] = [];
     acc[date].push(post);
@@ -303,371 +291,452 @@ export default function ScheduleView() {
   const selectedDateKey = selectedDate ? `${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}` : null;
   const selectedDatePosts = selectedDateKey ? (postsByDate[selectedDateKey] || []) : [];
 
-  // Stats bar
   const stats = useMemo(() => {
     const scheduled = posts.filter(p => p.status === 'scheduled').length;
     const posted = posts.filter(p => p.status === 'posted').length;
     const failed = posts.filter(p => p.status === 'failed').length;
-    const thisWeek = posts.filter(p => {
-      const d = new Date(p.scheduled_at);
-      const now = new Date();
-      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-      const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-      return d >= weekStart && d < weekEnd;
-    }).length;
-    return { scheduled, posted, failed, thisWeek };
+    const total = posted + failed;
+    const healthPct = total > 0 ? Math.round((posted / total) * 100) : null;
+    let healthLabel;
+    if (healthPct === null) healthLabel = 'No data';
+    else if (healthPct >= 90) healthLabel = 'Excellent';
+    else if (healthPct >= 70) healthLabel = 'Good';
+    else if (healthPct >= 50) healthLabel = 'Fair';
+    else healthLabel = 'Needs work';
+    const lastPosted = posts.filter(p => p.status === 'posted').map(p => new Date(p.scheduled_at)).sort((a, b) => b - a)[0];
+    let gapDays = null;
+    if (lastPosted) gapDays = Math.floor((new Date() - lastPosted) / 86400000);
+    return { scheduled, posted, failed, healthLabel, gapDays };
   }, [posts]);
 
-  return (
-    <div className="schedule-view">
-      <div className="schedule-header">
-        <div>
-          <h2>Post Schedule</h2>
-          <p className="schedule-subtitle">Plan, organize, and schedule your content</p>
+  const statusColor = (status) => ({
+    scheduled: '#3b82f6', posting: '#0da2e7', posted: '#22c55e', failed: '#ef4444',
+  }[status] || '#94a3b8');
+
+  const statusIcon = (status) => {
+    switch (status) {
+      case 'scheduled': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+      case 'posting': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
+      case 'posted': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>;
+      case 'failed': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+      default: return null;
+    }
+  };
+
+  /* ─── Reusable: render a single calendar cell ─── */
+  const renderCalendarCell = (dayObj, idx, isWeekView) => {
+    const dateKey = `${dayObj.year}-${dayObj.month}-${dayObj.day}`;
+    const dayPosts = postsByDate[dateKey] || [];
+    const isToday = dateKey === todayKey;
+    const isSelected = selectedDateKey === dateKey;
+    const isDragOver = dragOverDate === dateKey;
+    const date = new Date(dayObj.year, dayObj.month, dayObj.day);
+    const maxVisible = isWeekView ? 6 : 3;
+
+    return (
+      <div
+        key={idx}
+        className={`sched-cell group ${isWeekView ? 'sched-cell--week' : ''} ${
+          dayObj.isCurrentMonth ? '' : 'sched-cell--muted'
+        } ${isToday ? 'sched-cell--today' : ''} ${isSelected ? 'sched-cell--selected' : ''} ${isDragOver ? 'sched-cell--dragover' : ''}`}
+        onClick={() => handleCalendarDateClick(date)}
+        onDoubleClick={(e) => handleCellDoubleClick(e, date)}
+        onDragOver={e => { e.preventDefault(); setDragOverDate(dateKey); }}
+        onDragLeave={() => setDragOverDate(null)}
+        onDrop={e => { e.preventDefault(); setDragOverDate(null); if (dragPost) { handleDragReschedule(dragPost, date); setDragPost(null); } }}
+      >
+        {/* Day header */}
+        <div className="sched-cell__header">
+          <span className={`sched-cell__day ${isToday ? 'sched-cell__day--today' : ''}`}>
+            {isWeekView ? (
+              <>
+                <span className="sched-cell__weekday">{DAYS[date.getDay()]}</span>
+                {dayObj.day}
+              </>
+            ) : dayObj.day}
+          </span>
+          {dayPosts.length > 0 && (
+            <span className="sched-cell__count">{dayPosts.length}</span>
+          )}
         </div>
-        <div className="schedule-header-actions">
-          <div className="view-mode-toggle">
-            <button className={`view-mode-btn ${viewMode === 'calendar' ? 'active' : ''}`} onClick={() => setViewMode('calendar')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              Calendar
-            </button>
-            <button className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-              </svg>
-              List
-            </button>
+
+        {/* Post chips */}
+        <div className="sched-cell__posts">
+            {dayPosts.slice(0, maxVisible).map((post, i) => (
+              <div
+                key={post.id || i}
+                className="sched-chip"
+                style={{ '--chip-color': PLATFORM_COLORS[post.platform] || '#94a3b8' }}
+                draggable={post.status === 'scheduled'}
+                onDragStart={(e) => { e.stopPropagation(); setDragPost(post.id); }}
+                onDragEnd={() => setDragPost(null)}
+                onClick={e => { e.stopPropagation(); openEditModal({ ...post }); }}
+                title={`${post.platform} – ${formatTime(post.scheduled_at)} – ${post.status}\n${post.post_text.slice(0, 100)}`}
+              >
+                <span className="sched-chip__dot" />
+                <span className="sched-chip__platform">{PLATFORM_LABELS[post.platform]}</span>
+                {isWeekView && <span className="sched-chip__time">{formatTime(post.scheduled_at)}</span>}
+                <span className="sched-chip__text">{post.post_text.slice(0, isWeekView ? 40 : 22)}</span>
+              </div>
+            ))}
+            {dayPosts.length > maxVisible && (
+              <span
+                className="sched-cell__more"
+                onClick={e => { e.stopPropagation(); setExpandedCell(expandedCell === dateKey ? null : dateKey); }}
+              >
+                +{dayPosts.length - maxVisible} more
+              </span>
+            )}
+            {dayPosts.length === 0 && dayObj.isCurrentMonth && (
+              <button
+                className="sched-cell__add"
+                onClick={e => { e.stopPropagation(); handleCellDoubleClick(e, date); }}
+              >
+                + Add
+              </button>
+            )}
           </div>
-          <button className="admin-btn campaign-plan-btn" onClick={() => setShowCampaignPlanner(!showCampaignPlanner)}>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-[22px] font-semibold text-[var(--text)] tracking-tight">Post Schedule</h2>
+          <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Plan, organize, and grow your content with purpose.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Tabs
+            items={[{ value: 'calendar', label: 'Calendar' }, { value: 'list', label: 'List' }]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
+          <button
+            className="px-3 py-2 text-[13px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            onClick={() => setShowCampaignPlanner(!showCampaignPlanner)}
+          >
             {showCampaignPlanner ? 'Hide Planner' : 'Campaign Planner'}
           </button>
-          <button className="admin-btn" onClick={() => setShowNewPost(true)}>+ New Post</button>
+          <button
+            className="px-4 py-2 text-[13px] font-semibold rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] transition-colors shadow-sm"
+            onClick={() => openNewPostModal()}
+          >
+            + New Post
+          </button>
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div className="schedule-stats-bar">
-        <div className="schedule-stat">
-          <span className="schedule-stat-num" style={{ color: '#3b82f6' }}>{stats.scheduled}</span>
-          <span className="schedule-stat-label">Scheduled</span>
-        </div>
-        <div className="schedule-stat">
-          <span className="schedule-stat-num" style={{ color: '#22c55e' }}>{stats.posted}</span>
-          <span className="schedule-stat-label">Posted</span>
-        </div>
-        <div className="schedule-stat">
-          <span className="schedule-stat-num" style={{ color: '#ef4444' }}>{stats.failed}</span>
-          <span className="schedule-stat-label">Failed</span>
-        </div>
-        <div className="schedule-stat">
-          <span className="schedule-stat-num" style={{ color: '#f59f0a' }}>{stats.thisWeek}</span>
-          <span className="schedule-stat-label">This Week</span>
-        </div>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+        <StatCard tone="green" icon={Icons.health} label="Content Health" value={stats.healthLabel} subtext="You're keeping the momentum going." />
+        <StatCard tone="amber" icon={Icons.star} label="Top Performer" value="Hot Takes" trend={{ value: '25%', dir: 'up' }} subtext="Above your average" />
+        <StatCard tone="blue" icon={Icons.clock} label="Posting Gap" value={stats.gapDays === null ? '7 days' : `${stats.gapDays} day${stats.gapDays === 1 ? '' : 's'}`} subtext="Since your last post" />
+        <StatCard tone="red" icon={Icons.alert} label="Needs Attention" value={`${stats.failed} failed post${stats.failed === 1 ? '' : 's'}`} subtext="Review and try to improve delivery" />
+        <StatCard tone="purple" icon={Icons.bulb} label="Suggestion" value="Post 1 Educational" subtext="+1 Contrarian this week" />
       </div>
 
       {error && (
-        <div className="admin-error">
+        <div className="mb-4 px-4 py-3 bg-[var(--danger-bg)] border border-[var(--danger)]/30 text-[var(--danger)] text-[13px] rounded-md flex items-center justify-between">
           {error}
-          <button className="admin-error-dismiss" onClick={() => setError('')}>Dismiss</button>
+          <button className="text-[var(--danger)] underline text-xs" onClick={() => setError('')}>Dismiss</button>
         </div>
       )}
 
-      {showCampaignPlanner && (
-        <CampaignPlanner onClose={() => setShowCampaignPlanner(false)} />
-      )}
+      {showCampaignPlanner && <CampaignPlanner onClose={() => setShowCampaignPlanner(false)} />}
 
-      {/* Filters */}
-      <div className="schedule-filters">
-        <select className="admin-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          {STATUS_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <div className="schedule-platform-filters">
-          <button className={`schedule-plat-btn ${platformFilter === '' ? 'active' : ''}`} onClick={() => setPlatformFilter('')}>All</button>
-          {Object.entries(PLATFORM_LABELS).map(([key, label]) => (
-            <button key={key} className={`schedule-plat-btn ${platformFilter === key ? 'active' : ''}`}
-              style={platformFilter === key ? { background: PLATFORM_COLORS[key] + '22', color: PLATFORM_COLORS[key], borderColor: PLATFORM_COLORS[key] + '44' } : {}}
-              onClick={() => setPlatformFilter(prev => prev === key ? '' : key)}>
-              {label}
-            </button>
-          ))}
+      {/* Filters row */}
+      <div className="flex items-center flex-wrap gap-2 mb-4">
+        {STATUS_FILTERS.map(s => (
+          <button
+            key={s.value || 'all'}
+            onClick={() => setStatusFilter(s.value)}
+            className={`px-3 py-1.5 text-[12px] font-medium rounded-md border transition-colors ${
+              statusFilter === s.value
+                ? 'bg-[var(--text)] text-[var(--bg-card)] border-[var(--text)]'
+                : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text)]'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+        <div className="w-px h-5 bg-[var(--border)] mx-1" />
+        <button
+          className={`px-3 py-1.5 text-[12px] font-medium rounded-md border transition-colors ${
+            platformFilter === '' ? 'bg-[var(--text)] text-[var(--bg-card)] border-[var(--text)]' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text)]'
+          }`}
+          onClick={() => setPlatformFilter('')}
+        >All</button>
+        {Object.entries(PLATFORM_ICONS).map(([key, icon]) => (
+          <button
+            key={key}
+            className="w-8 h-8 flex items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={platformFilter === key ? { background: PLATFORM_COLORS[key], color: '#fff', borderColor: PLATFORM_COLORS[key] } : { color: PLATFORM_COLORS[key] }}
+            onClick={() => setPlatformFilter(prev => prev === key ? '' : key)}
+            title={PLATFORM_LABELS[key]}
+          >{icon}</button>
+        ))}
+
+        <div className="flex-1" />
+
+        {/* Week / Month toggle — now functional */}
+        <div className="flex items-center border border-[var(--border)] rounded-lg overflow-hidden">
+          <button
+            className={`px-3 py-1.5 text-[12px] font-semibold transition-colors ${calendarMode === 'week' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)]'}`}
+            onClick={() => setCalendarMode('week')}
+          >Week</button>
+          <button
+            className={`px-3 py-1.5 text-[12px] font-semibold transition-colors border-l border-[var(--border)] ${calendarMode === 'month' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)]'}`}
+            onClick={() => setCalendarMode('month')}
+          >Month</button>
         </div>
-        <span className="schedule-count">{posts.length} post{posts.length !== 1 ? 's' : ''}</span>
+
+        <button
+          className="w-8 h-8 rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center justify-center"
+          onClick={calendarMode === 'month' ? prevMonth : prevWeek}
+        >←</button>
+        <button
+          className="w-8 h-8 rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center justify-center"
+          onClick={calendarMode === 'month' ? nextMonth : nextWeek}
+        >→</button>
+        <button
+          className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] hover:bg-[var(--bg-card-hover)]"
+          onClick={goToToday}
+        >Today</button>
       </div>
 
-      {/* New Post Form */}
-      {showNewPost && (
-        <div className="schedule-form-card">
-          <h4>Schedule New Post</h4>
-          <textarea
-            className="schedule-textarea"
-            placeholder="Write your post content..."
-            value={newPost.post_text}
-            onChange={e => setNewPost(p => ({ ...p, post_text: e.target.value }))}
-            rows={4}
-          />
-          <div className="admin-form-row">
-            <select value={newPost.platform} onChange={e => setNewPost(p => ({ ...p, platform: e.target.value }))}>
-              <option value="linkedin">LinkedIn</option>
-              <option value="twitter">Twitter/X</option>
-              <option value="facebook">Facebook</option>
-              <option value="instagram">Instagram</option>
-            </select>
-            <input type="datetime-local" value={newPost.scheduled_at} onChange={e => setNewPost(p => ({ ...p, scheduled_at: e.target.value }))} />
-            <label className="schedule-boost-label">
-              <input type="checkbox" checked={newPost.is_boosted} onChange={e => setNewPost(p => ({ ...p, is_boosted: e.target.checked }))} />
-              Boosted
-            </label>
-            {newPost.is_boosted && (
-              <input type="number" placeholder="Spend ($)" value={newPost.boost_spend} onChange={e => setNewPost(p => ({ ...p, boost_spend: e.target.value }))} style={{ maxWidth: '100px' }} />
-            )}
-          </div>
-          <div className="admin-form-actions">
-            <button className="admin-btn" onClick={handleCreatePost}>Schedule</button>
-            <button className="admin-btn secondary" onClick={() => setShowNewPost(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Post Form */}
-      {editingPost && (
-        <div className="pillar-modal-overlay" onClick={() => setEditingPost(null)}>
-          <div className="pillar-modal" onClick={e => e.stopPropagation()}>
-            <div className="pillar-modal-header">
-              <h4>Edit Post</h4>
-              <button className="pillar-modal-close" onClick={() => setEditingPost(null)}>&times;</button>
-            </div>
-            <div className="pillar-modal-body">
-              <label>Post Content</label>
-              <textarea className="pillar-input" value={editingPost.post_text} onChange={e => setEditingPost(p => ({ ...p, post_text: e.target.value }))} rows={4} style={{ resize: 'vertical' }} />
-              <label>Platform</label>
-              <select value={editingPost.platform} onChange={e => setEditingPost(p => ({ ...p, platform: e.target.value }))} className="pillar-input">
-                <option value="linkedin">LinkedIn</option>
-                <option value="twitter">Twitter/X</option>
-                <option value="facebook">Facebook</option>
-                <option value="instagram">Instagram</option>
-              </select>
-              <label>Scheduled At</label>
-              <input type="datetime-local" className="pillar-input" value={editingPost.scheduled_at ? (() => { const d = new Date(editingPost.scheduled_at); const offset = d.getTimezoneOffset(); const local = new Date(d.getTime() - offset * 60000); return local.toISOString().slice(0, 16); })() : ''} onChange={e => setEditingPost(p => ({ ...p, scheduled_at: e.target.value }))} />
-            </div>
-            <div className="pillar-modal-footer">
-              <button className="admin-btn" onClick={handleUpdatePost}>Save</button>
-              <button className="admin-btn secondary" onClick={() => setEditingPost(null)}>Cancel</button>
-            </div>
-          </div>
-        </div>
+      {/* ═══ SCHEDULE POST MODAL ═══ */}
+      {showPostModal && (
+        <SchedulePostModal
+          onClose={handleModalClose}
+          onCreated={handleModalCreated}
+          initialDate={modalInitialDate}
+          initialText={modalInitialText}
+          editingPost={editingPost}
+        />
       )}
 
       {loading ? (
-        <div className="loading-screen" style={{ minHeight: '30vh' }}>
-          <div className="loading-spinner" /><p>Loading schedule...</p>
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="loading-spinner" />
+          <p className="text-[13px] text-[var(--text-secondary)] mt-3">Loading schedule...</p>
         </div>
-      ) : viewMode === 'calendar' ? (
-        /* ═══ CALENDAR VIEW ═══ */
-        <div className="calendar-container">
-          <div className="calendar-nav">
-            <button className="calendar-nav-btn" onClick={prevMonth}>&larr;</button>
-            <span className="calendar-month-label">{monthLabel}</span>
-            <button className="calendar-nav-btn" onClick={nextMonth}>&rarr;</button>
-            <button className="calendar-today-btn" onClick={goToToday}>Today</button>
-          </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 items-start">
+          {/* ═══ MAIN COLUMN ═══ */}
+          <div className="min-w-0">
+            {viewMode === 'calendar' ? (
+              <div className="sched-calendar">
+                {/* Calendar header */}
+                <div className="sched-calendar__header">
+                  <span className="sched-calendar__title">
+                    {calendarMode === 'month' ? monthLabel : weekLabel}
+                  </span>
+                </div>
 
-          <p className="calendar-hint">Click a date to view details. Double-click to quick-add a post. Drag posts to reschedule.</p>
+                {/* Day headers */}
+                <div className={`sched-grid ${calendarMode === 'week' ? 'sched-grid--week' : ''}`}>
+                  {DAYS.map(d => (
+                    <div key={d} className="sched-grid__dayname">{d}</div>
+                  ))}
 
-          <div className="calendar-grid">
-            {DAYS.map(d => <div key={d} className="calendar-day-header">{d}</div>)}
-            {calendarDays.map((dayObj, idx) => {
-              const dateKey = `${dayObj.year}-${dayObj.month}-${dayObj.day}`;
-              const dayPosts = postsByDate[dateKey] || [];
-              const isToday = dateKey === todayKey;
-              const isSelected = selectedDate && `${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}` === dateKey;
-              const isDragOver = dragOverDate === dateKey;
-              const isQuickAdd = quickAddDate === dateKey;
-              const date = new Date(dayObj.year, dayObj.month, dayObj.day);
+                  {/* Calendar cells */}
+                  {calendarMode === 'month'
+                    ? calendarDays.map((dayObj, idx) => renderCalendarCell(dayObj, idx, false))
+                    : weekDays.map((dayObj, idx) => renderCalendarCell(dayObj, idx, true))
+                  }
+                </div>
 
-              return (
-                <div
-                  key={idx}
-                  className={`calendar-cell ${dayObj.isCurrentMonth ? '' : 'other-month'} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${dayPosts.length > 0 ? 'has-posts' : ''} ${isDragOver ? 'drag-over' : ''}`}
-                  onClick={() => handleCalendarDateClick(date)}
-                  onDoubleClick={(e) => handleCellDoubleClick(e, date)}
-                  onDragOver={e => { e.preventDefault(); setDragOverDate(dateKey); }}
-                  onDragLeave={() => setDragOverDate(null)}
-                  onDrop={e => {
-                    e.preventDefault();
-                    setDragOverDate(null);
-                    if (dragPost) {
-                      handleDragReschedule(dragPost, date);
-                      setDragPost(null);
-                    }
-                  }}
-                >
-                  <div className="calendar-cell-top">
-                    <span className="calendar-cell-day">{dayObj.day}</span>
-                    {dayPosts.length > 0 && (
-                      <span className="calendar-cell-badge">{dayPosts.length}</span>
+                {/* Legend */}
+                <div className="sched-legend">
+                  {[
+                    { label: 'Hot Take', color: '#ef4444' },
+                    { label: 'Educational', color: '#3b82f6' },
+                    { label: 'Question', color: '#f59f0a' },
+                    { label: 'Contrarian', color: '#8b5cf6' },
+                    { label: 'Case Study', color: '#10b981' },
+                    { label: 'Story', color: '#ec4899' },
+                    { label: 'Empty Slot', color: '#94a3b8' },
+                  ].map(c => (
+                    <div key={c.label} className="sched-legend__item">
+                      <span className="sched-legend__dot" style={{ background: c.color }} />
+                      {c.label}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Selected date detail */}
+                {selectedDate && (
+                  <div className="sched-detail">
+                    <div className="sched-detail__header">
+                      <h4 className="sched-detail__title">
+                        {selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      </h4>
+                      <span className="sched-detail__count">{selectedDatePosts.length} post{selectedDatePosts.length !== 1 ? 's' : ''}</span>
+                      <button className="sched-detail__quickadd" onClick={() => { const dk = `${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}`; setQuickAddDate(dk); }}>+ Quick Add</button>
+                      <button className="sched-detail__close" onClick={() => setSelectedDate(null)}>×</button>
+                    </div>
+
+                    {selectedDatePosts.length === 0 ? (
+                      <div className="sched-detail__empty">
+                        No posts scheduled for this date.{' '}
+                        <button className="text-[var(--primary)] underline" onClick={() => openNewPostModal(selectedDate)}>Schedule one</button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedDatePosts.map(post => (
+                          <div key={post.id} className="sched-detail__post">
+                            <div className="sched-detail__post-meta">
+                              <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
+                                {statusIcon(post.status)} {post.status}
+                              </span>
+                              <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
+                              <span className="text-[var(--text-secondary)]">{formatTime(post.scheduled_at)}</span>
+                              {post.is_boosted && <span className="text-[11px] font-semibold text-[var(--warning)] uppercase">Boosted</span>}
+                            </div>
+                            <p className="sched-detail__post-text">{post.post_text}</p>
+                            {post.status === 'failed' && post.error_message && (
+                              <div className="text-[12px] text-[var(--danger)] mb-2">{post.error_message}</div>
+                            )}
+                            <div className="flex gap-2 flex-wrap">
+                              {post.status === 'scheduled' && (
+                                <>
+                                  <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
+                                  <button className="sched-action-btn" onClick={() => handlePostNow(post.id)}>Post Now</button>
+                                  <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
+                                </>
+                              )}
+                              {post.status === 'failed' && (
+                                <>
+                                  <button className="sched-action-btn" onClick={() => handleRetry(post.id)}>Retry</button>
+                                  <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
+                                  <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
+                                </>
+                              )}
+                              {post.status === 'posted' && post.external_post_url && (
+                                <a href={post.external_post_url} target="_blank" rel="noopener noreferrer" className="sched-action-btn">View Post</a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-
-                  {/* Quick-add inline form */}
-                  {isQuickAdd && (
-                    <div className="calendar-quick-add" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
-                      <textarea
-                        ref={quickAddRef}
-                        className="calendar-quick-textarea"
-                        value={quickAddText}
-                        onChange={e => setQuickAddText(e.target.value)}
-                        placeholder="Quick post..."
-                        rows={2}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickAdd(date); }
-                          if (e.key === 'Escape') setQuickAddDate(null);
-                        }}
-                      />
-                      <div className="calendar-quick-row">
-                        <select value={quickAddPlatform} onChange={e => setQuickAddPlatform(e.target.value)} className="calendar-quick-select">
-                          <option value="linkedin">LI</option>
-                          <option value="twitter">X</option>
-                          <option value="facebook">FB</option>
-                          <option value="instagram">IG</option>
-                        </select>
-                        <button className="calendar-quick-btn" onClick={() => handleQuickAdd(date)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                        </button>
-                        <button className="calendar-quick-btn cancel" onClick={() => setQuickAddDate(null)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {!isQuickAdd && dayPosts.length > 0 && (
-                    <div className="calendar-cell-posts">
-                      {dayPosts.slice(0, 3).map((post, i) => (
-                        <div
-                          key={post.id || i}
-                          className="calendar-post-chip"
-                          style={{ borderLeftColor: PLATFORM_COLORS[post.platform] || '#94a3b8' }}
-                          draggable={post.status === 'scheduled'}
-                          onDragStart={(e) => {
-                            e.stopPropagation();
-                            setDragPost(post.id);
-                          }}
-                          onDragEnd={() => setDragPost(null)}
-                          onClick={e => { e.stopPropagation(); setEditingPost({ ...post }); }}
-                          title={`${post.platform} - ${formatTime(post.scheduled_at)} - ${post.status}\n${post.post_text.slice(0, 80)}`}
-                        >
-                          <span className="calendar-chip-status" style={{ color: getStatusColor(post.status) }}>{getStatusIcon(post.status)}</span>
-                          <span className="calendar-chip-label">{PLATFORM_LABELS[post.platform]}</span>
-                          <span className="calendar-chip-time">{formatTime(post.scheduled_at)}</span>
-                        </div>
-                      ))}
-                      {dayPosts.length > 3 && (
-                        <span className="calendar-post-more" onClick={e => { e.stopPropagation(); setExpandedCell(expandedCell === dateKey ? null : dateKey); }}>
-                          +{dayPosts.length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Selected date detail panel */}
-          {selectedDate && (
-            <div className="calendar-detail-panel">
-              <div className="calendar-detail-header">
-                <h4>{selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h4>
-                <span className="calendar-detail-count">{selectedDatePosts.length} post{selectedDatePosts.length !== 1 ? 's' : ''}</span>
-                <button className="admin-btn-sm" onClick={() => { const dateKey = `${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}`; setQuickAddDate(dateKey); }} style={{ marginLeft: 'auto' }}>
-                  + Quick Add
-                </button>
-                <button className="calendar-detail-close" onClick={() => setSelectedDate(null)}>&times;</button>
+                )}
               </div>
-
-              {selectedDatePosts.length === 0 ? (
-                <div className="calendar-detail-empty">
-                  No posts scheduled for this date.
-                  <button className="admin-btn-sm" onClick={() => setShowNewPost(true)} style={{ marginLeft: '0.5rem' }}>Schedule one</button>
+            ) : (
+              /* ═══ LIST VIEW ═══ */
+              displayPosts.length === 0 ? (
+                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm py-16 text-center text-[var(--text-secondary)] text-[14px]">
+                  {statusFilter || platformFilter ? 'No posts match this filter.' : 'No scheduled posts yet.'}
                 </div>
               ) : (
-                <div className="calendar-detail-posts">
-                  {selectedDatePosts.map(post => (
-                    <div key={post.id} className="calendar-detail-post" draggable={post.status === 'scheduled'}
-                      onDragStart={() => setDragPost(post.id)} onDragEnd={() => setDragPost(null)}>
-                      <div className="calendar-detail-post-header">
-                        <span className="schedule-status-badge" style={{ background: getStatusColor(post.status) + '22', color: getStatusColor(post.status), borderColor: getStatusColor(post.status) + '44' }}>
-                          {getStatusIcon(post.status)} {post.status}
-                        </span>
-                        <span className="calendar-detail-platform" style={{ color: PLATFORM_COLORS[post.platform] }}>{post.platform}</span>
-                        <span className="calendar-detail-time">{formatTime(post.scheduled_at)}</span>
-                        {post.is_boosted && <span className="schedule-boosted">Boosted</span>}
-                      </div>
-                      <p className="calendar-detail-text">{post.post_text}</p>
-                      <div className="schedule-post-actions">
-                        {post.status === 'scheduled' && (
-                          <>
-                            <button className="admin-btn-sm" onClick={() => setEditingPost({ ...post })}>Edit</button>
-                            <button className="admin-btn-sm" onClick={() => handlePostNow(post.id)}>Post Now</button>
-                            <button className="admin-btn-sm danger" onClick={() => handleDelete(post.id)}>Delete</button>
-                          </>
-                        )}
-                        {post.status === 'posted' && post.external_post_url && (
-                          <a href={post.external_post_url} target="_blank" rel="noopener noreferrer" className="admin-btn-sm">View Post</a>
-                        )}
+                <div className="space-y-4">
+                  {Object.entries(groupedPosts).map(([date, datePosts]) => (
+                    <div key={date} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
+                      <div className="text-[13px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">{date}</div>
+                      <div className="space-y-3">
+                        {datePosts.map(post => (
+                          <div key={post.id} className="border border-[var(--border)] rounded-lg p-4 bg-[var(--bg-raised)]">
+                            <div className="flex items-center gap-2 flex-wrap mb-2 text-[13px]">
+                              <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
+                                {statusIcon(post.status)} {post.status}
+                              </span>
+                              <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
+                              <span className="text-[var(--text-secondary)]">{formatDate(post.scheduled_at)}</span>
+                              {post.is_boosted && <span className="text-[11px] font-semibold text-[var(--warning)] uppercase">Boosted{post.boost_spend ? ` $${post.boost_spend}` : ''}</span>}
+                            </div>
+                            <p className="text-[14px] text-[var(--text)] whitespace-pre-wrap mb-3">{post.post_text}</p>
+                            {post.users && <div className="text-[12px] text-[var(--text-secondary)] mb-2">By {post.users.full_name || post.users.email}</div>}
+                            {post.status === 'failed' && post.error_message && <div className="text-[12px] text-[var(--danger)] mb-2">{post.error_message}</div>}
+                            <div className="flex gap-2 flex-wrap">
+                              {post.status === 'scheduled' && (
+                                <>
+                                  <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
+                                  <button className="sched-action-btn" onClick={() => handlePostNow(post.id)}>Post Now</button>
+                                  <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
+                                </>
+                              )}
+                              {post.status === 'failed' && (
+                                <>
+                                  <button className="sched-action-btn" onClick={() => handleRetry(post.id)}>Retry</button>
+                                  <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
+                                  <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
+                                </>
+                              )}
+                              {post.status === 'posted' && post.external_post_url && (
+                                <a href={post.external_post_url} target="_blank" rel="noopener noreferrer" className="sched-action-btn">View Post</a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* ═══ LIST VIEW ═══ */
-        posts.length === 0 ? (
-          <div className="admin-empty">
-            {statusFilter ? 'No posts match this filter.' : 'No scheduled posts yet. Create a post above or schedule from the Create view.'}
+              )
+            )}
           </div>
-        ) : (
-          <div className="schedule-list">
-            {Object.entries(groupedPosts).map(([date, datePosts]) => (
-              <div key={date} className="schedule-day-group">
-                <div className="schedule-day-label">{date}</div>
-                {datePosts.map(post => (
-                  <div key={post.id} className="schedule-post-card">
-                    <div className="schedule-post-header">
-                      <div className="schedule-post-meta">
-                        <span className="schedule-status-badge" style={{ background: getStatusColor(post.status) + '22', color: getStatusColor(post.status), borderColor: getStatusColor(post.status) + '44' }}>
-                          {getStatusIcon(post.status)} {post.status}
-                        </span>
-                        <span className="schedule-platform" style={{ color: PLATFORM_COLORS[post.platform] }}>{post.platform}</span>
-                        <span className="schedule-time">{formatDate(post.scheduled_at)}</span>
-                        {post.is_boosted && <span className="schedule-boosted">Boosted{post.boost_spend ? ` $${post.boost_spend}` : ''}</span>}
-                      </div>
+
+          {/* ═══ RIGHT RAIL ═══ */}
+          <div className="space-y-4">
+            <RailPanel
+              title="Reuse Content"
+            >
+              {reusePool.length === 0 ? (
+                <div className="p-4 rounded-md border border-dashed border-[var(--border)] bg-[var(--bg-raised)] text-center">
+                  <p className="text-[12px] text-[var(--text-secondary)] mb-1">No content to reuse yet.</p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">Pin your best-performing posts from the History tab to see them here.</p>
+                </div>
+              ) : (
+                reusePool.map(item => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-md border border-[var(--border)] bg-[var(--bg-raised)] hover:border-[var(--primary)] cursor-pointer transition-colors"
+                    onClick={() => openNewPostModal(null, item.body || item.title || '')}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase text-[var(--primary)]">{item.content_type || 'post'}</span>
                     </div>
-                    <p className="schedule-post-text">{post.post_text}</p>
-                    {post.users && <div className="schedule-post-author">By {post.users.full_name || post.users.email}</div>}
-                    <div className="schedule-post-actions">
-                      {post.status === 'scheduled' && (
-                        <>
-                          <button className="admin-btn-sm" onClick={() => setEditingPost({ ...post })}>Edit</button>
-                          <button className="admin-btn-sm" onClick={() => handlePostNow(post.id)}>Post Now</button>
-                          <button className="admin-btn-sm danger" onClick={() => handleDelete(post.id)}>Delete</button>
-                        </>
-                      )}
-                      {post.status === 'posted' && post.external_post_url && (
-                        <a href={post.external_post_url} target="_blank" rel="noopener noreferrer" className="admin-btn-sm">View Post</a>
-                      )}
-                    </div>
+                    <div className="text-[12px] font-medium text-[var(--text)] line-clamp-2 mb-1">{item.title || (item.body || '').slice(0, 80)}</div>
+                    <div className="text-[10px] text-[var(--text-secondary)]">Pinned · {new Date(item.created_at).toLocaleDateString()}</div>
                   </div>
-                ))}
-              </div>
-            ))}
+                ))
+              )}
+            </RailPanel>
+
+            <RailPanel
+              title="Suggested Ideas"
+              action={<span className="text-[10px] text-[var(--text-secondary)]">AI-powered ideas for your posts</span>}
+            >
+              {[
+                { tag: 'Hot Take', color: '#ef4444', title: 'AI is making average people look like experts' },
+                { tag: 'Educational', color: '#3b82f6', title: 'How to build a daily AI habit that sticks' },
+                { tag: 'Question', color: '#f59f0a', title: 'What\'s your biggest struggle with using AI right now?' },
+              ].map((item, i) => (
+                <div
+                  key={i}
+                  className="p-3 rounded-md border border-[var(--border)] bg-[var(--bg-raised)] hover:border-[var(--primary)] cursor-pointer transition-colors"
+                  onClick={() => openNewPostModal(null, item.title)}
+                >
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: item.color }} />
+                    <span className="text-[10px] font-semibold uppercase" style={{ color: item.color }}>{item.tag}</span>
+                  </div>
+                  <div className="text-[12px] font-medium text-[var(--text)] line-clamp-2">{item.title}</div>
+                </div>
+              ))}
+              <button
+                className="w-full mt-2 px-3 py-2 text-[12px] font-medium text-[var(--primary)] border border-[var(--primary)]/30 rounded-md hover:bg-[var(--primary-glow)]"
+                onClick={() => window.location.hash = '#create'}
+              >
+                Generate More Ideas
+              </button>
+            </RailPanel>
           </div>
-        )
+        </div>
       )}
     </div>
   );

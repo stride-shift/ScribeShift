@@ -1,11 +1,6 @@
-import crypto from 'crypto';
 import { encrypt, decrypt } from './encryption.js';
 import { supabase } from '../config/supabase.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { createState, consumeState } from './oauth-state.js';
 
 const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
 const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
@@ -19,23 +14,11 @@ const LINKEDIN_VERSION = '202401';
 // Scopes needed: OpenID profile + post on behalf of user
 const SCOPES = 'openid profile email w_member_social';
 
-// ── In-memory OAuth state store (state → user info) ──────────────────
-const pendingStates = new Map();
-
-// Clean up expired states every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, data] of pendingStates) {
-    if (now - data.createdAt > 10 * 60 * 1000) pendingStates.delete(state);
-  }
-}, 10 * 60 * 1000);
-
 // ── Generate OAuth authorization URL ─────────────────────────────────
 export function getAuthorizationUrl(userId, companyId) {
   if (!LINKEDIN_CLIENT_ID) throw new Error('LINKEDIN_CLIENT_ID not configured');
 
-  const state = crypto.randomUUID();
-  pendingStates.set(state, { userId, companyId, createdAt: Date.now() });
+  const state = createState({ userId, companyId });
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -48,13 +31,7 @@ export function getAuthorizationUrl(userId, companyId) {
   return { url: `${LINKEDIN_AUTH_URL}?${params}`, state };
 }
 
-// ── Validate state and return user info ──────────────────────────────
-export function consumeState(state) {
-  const data = pendingStates.get(state);
-  if (!data) return null;
-  pendingStates.delete(state);
-  return data;
-}
+export { consumeState };
 
 // ── Exchange authorization code for tokens ───────────────────────────
 export async function exchangeCodeForTokens(code) {
@@ -327,37 +304,16 @@ async function uploadImageToLinkedIn(accessToken, personId, imageData) {
   return imageUrn;
 }
 
-// ── Load image data from URL or local path ───────────────────────────
+// ── Load image data from URL (Supabase Storage or any public URL) ────
 async function loadImageData(imageSource) {
   if (!imageSource) return null;
-
-  // Local file path (relative to project root)
-  const rootDir = path.resolve(__dirname, '..', '..');
-  const localPath = imageSource.startsWith('/')
-    ? path.join(rootDir, imageSource)
-    : imageSource.startsWith('http')
-      ? null
-      : path.join(rootDir, imageSource);
-
-  if (localPath && fs.existsSync(localPath)) {
-    return fs.readFileSync(localPath);
+  if (!imageSource.startsWith('http')) {
+    console.warn(`[LINKEDIN-API] Non-URL image source ignored: ${imageSource}`);
+    return null;
   }
-
-  // URL: download the image
-  if (imageSource.startsWith('http')) {
-    const res = await fetch(imageSource);
-    if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
-  }
-
-  // Try as generated image path
-  const generatedPath = path.join(rootDir, 'generated', path.basename(imageSource));
-  if (fs.existsSync(generatedPath)) {
-    return fs.readFileSync(generatedPath);
-  }
-
-  console.warn(`[LINKEDIN-API] Could not load image: ${imageSource}`);
-  return null;
+  const res = await fetch(imageSource);
+  if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 // ── Create a LinkedIn post via API ───────────────────────────────────

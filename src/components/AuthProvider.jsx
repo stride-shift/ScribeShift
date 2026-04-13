@@ -9,10 +9,46 @@ export function useAuth() {
   return ctx;
 }
 
+// ── Global fetch interceptor for 401 handling ──────────────────────
+// Wraps window.fetch so any API call returning 401 triggers a logout.
+// Installed once per page load.
+let fetchInstalled = false;
+function installFetchInterceptor(onUnauthorized) {
+  if (fetchInstalled) return;
+  fetchInstalled = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const res = await originalFetch(...args);
+    if (res.status === 401) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      // Only trigger logout for our own API calls, not external ones
+      if (url.startsWith('/api/') || url.includes(window.location.host)) {
+        // Don't logout on the login/signup endpoints themselves
+        if (!url.includes('/api/auth/login') && !url.includes('/api/auth/signup')) {
+          onUnauthorized();
+        }
+      }
+    }
+    return res;
+  };
+}
+
 export default function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  // Install the 401 interceptor once. On 401, clear session and show message.
+  useEffect(() => {
+    installFetchInterceptor(() => {
+      console.warn('[AUTH] Session expired (401). Clearing session.');
+      setSessionExpired(true);
+      supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
+    });
+  }, []);
 
   // Fetch user profile from our users table
   const fetchProfile = async (authUser, accessToken) => {
@@ -87,6 +123,7 @@ export default function AuthProvider({ children }) {
 
     setUser(data.user);
     setSession(data.session);
+    setSessionExpired(false);
     return data;
   };
 
@@ -120,19 +157,58 @@ export default function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const resetPassword = async (email) => {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to send reset email');
+    return data;
+  };
+
+  const confirmPasswordReset = async (token, password) => {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+    return data;
+  };
+
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}`,
+      },
+    });
+    if (error) throw new Error(error.message);
+  };
+
   // Helper to get auth headers for API calls
   const getAuthHeaders = () => {
     if (!session?.access_token) return {};
     return { Authorization: `Bearer ${session.access_token}` };
   };
 
+  const clearSessionExpired = () => setSessionExpired(false);
+
   const value = {
     session,
     user,
     loading,
+    sessionExpired,
+    clearSessionExpired,
     login,
     signup,
     logout,
+    resetPassword,
+    confirmPasswordReset,
+    signInWithGoogle,
     getAuthHeaders,
     isAuthenticated: !!session,
     isAdmin: user?.role === 'admin' || user?.role === 'super_admin',

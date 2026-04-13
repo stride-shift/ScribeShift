@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   scheduled_at TIMESTAMPTZ NOT NULL,
   status TEXT DEFAULT 'draft',
   error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
   posted_at TIMESTAMPTZ,
   external_post_id TEXT,
   external_post_url TEXT,

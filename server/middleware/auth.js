@@ -1,5 +1,38 @@
 import { supabase } from '../config/supabase.js';
 
+// ── In-memory user cache (TTL-based) ────────────────────────────────
+const userCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedUser(token) {
+  const entry = userCache.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    userCache.delete(token);
+    return null;
+  }
+  return entry.user;
+}
+
+function setCachedUser(token, user) {
+  userCache.set(token, { user, expiresAt: Date.now() + CACHE_TTL });
+
+  // Evict entries if cache grows too large (max 500 entries)
+  if (userCache.size > 500) {
+    const now = Date.now();
+    // First pass: remove expired
+    for (const [key, val] of userCache) {
+      if (now > val.expiresAt) userCache.delete(key);
+    }
+    // Second pass: if still over limit, remove oldest entries
+    if (userCache.size > 500) {
+      const entries = [...userCache.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toRemove = entries.slice(0, userCache.size - 400); // trim to 400
+      for (const [key] of toRemove) userCache.delete(key);
+    }
+  }
+}
+
 // ── Verify Supabase JWT and attach user to request ──────────────────
 export async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -9,6 +42,14 @@ export async function verifyToken(req, res, next) {
 
   const token = authHeader.split(' ')[1];
 
+  // Check cache first
+  const cached = getCachedUser(token);
+  if (cached) {
+    req.user = cached;
+    req.token = token;
+    return next();
+  }
+
   try {
     // Verify the JWT with Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token);
@@ -17,22 +58,44 @@ export async function verifyToken(req, res, next) {
     }
 
     // Fetch user profile with role and company
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from('users')
       .select('*, companies(*)')
       .eq('id', user.id)
       .single();
 
+    // If no profile exists (e.g. first-time Google OAuth sign-in), create one
     if (profileError || !profile) {
-      return res.status(401).json({ error: 'User profile not found' });
+      const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+      const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
+
+      const { data: newProfile, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          full_name: fullName,
+          avatar_url: avatarUrl,
+          role: 'user',
+        })
+        .select('*, companies(*)')
+        .single();
+
+      if (insertError || !newProfile) {
+        console.error('[AUTH] Failed to auto-create user profile:', insertError?.message);
+        return res.status(401).json({ error: 'User profile not found' });
+      }
+
+      profile = newProfile;
+      console.log(`[AUTH] Auto-created profile for user ${user.email}`);
     }
 
     if (!profile.is_active) {
       return res.status(403).json({ error: 'Account is deactivated' });
     }
 
-    // Attach to request
-    req.user = {
+    // Build user object
+    const userData = {
       id: user.id,
       email: user.email,
       role: profile.role,
@@ -41,6 +104,10 @@ export async function verifyToken(req, res, next) {
       full_name: profile.full_name,
       avatar_url: profile.avatar_url,
     };
+
+    // Cache and attach
+    setCachedUser(token, userData);
+    req.user = userData;
     req.token = token;
 
     next();
