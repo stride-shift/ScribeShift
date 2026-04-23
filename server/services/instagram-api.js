@@ -10,8 +10,10 @@ const FB_AUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v21.0/oauth/access_token';
 const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 
-// Instagram Publishing requires these Facebook permissions
-const SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list';
+// Instagram Publishing requires these Facebook permissions.
+// business_management lets us discover Pages owned by Businesses (needed for
+// Facebook Login for Business tokens — /me/accounts returns empty there).
+const SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,business_management';
 const PLATFORM = 'instagram';
 
 // ── Generate OAuth authorization URL ────────────────────────────────
@@ -70,21 +72,57 @@ export async function exchangeCodeForTokens(code) {
 }
 
 // ── Find the linked Instagram Business Account ──────────────────────
+// Same dual-path logic as getUserPages in facebook-api.js: try /me/accounts
+// first (works for standard Facebook Login), fall back to discovering Pages
+// via /me/businesses → /{business_id}/owned_pages (needed for Facebook Login
+// for Business). Each Page is then checked for a linked IG Business Account.
 export async function getInstagramAccounts(userAccessToken) {
-  // Get user's Facebook Pages
-  const pagesRes = await fetch(
-    `${FB_API_BASE}/me/accounts?fields=id,name,instagram_business_account{id,username,profile_picture_url}`,
-    { headers: { Authorization: `Bearer ${userAccessToken}` } }
-  );
+  const headers = { Authorization: `Bearer ${userAccessToken}` };
+  const pageFields = 'id,name,instagram_business_account{id,username,profile_picture_url}';
 
-  if (!pagesRes.ok) {
-    const err = await pagesRes.text();
-    throw new Error(`Failed to fetch pages (${pagesRes.status}): ${err}`);
+  let pages = [];
+
+  // Path 1: standard Facebook Login
+  const meAccountsRes = await fetch(
+    `${FB_API_BASE}/me/accounts?fields=${pageFields}`,
+    { headers }
+  );
+  if (meAccountsRes.ok) {
+    const { data = [] } = await meAccountsRes.json();
+    pages = data;
+    if (pages.length === 0) {
+      console.log('[IG] /me/accounts returned 0 Pages — trying Business path (FBLB)');
+    }
+  } else {
+    const err = await meAccountsRes.text();
+    console.warn(`[IG] /me/accounts failed (${meAccountsRes.status}): ${err.slice(0, 200)} — trying Business path`);
   }
 
-  const { data: pages } = await pagesRes.json();
-  const accounts = [];
+  // Path 2: Facebook Login for Business — Businesses → owned Pages
+  if (pages.length === 0) {
+    const businessesRes = await fetch(`${FB_API_BASE}/me/businesses?fields=id,name`, { headers });
+    if (!businessesRes.ok) {
+      const err = await businessesRes.text();
+      throw new Error(`Failed to fetch pages: /me/accounts returned no Pages and /me/businesses failed (${businessesRes.status}): ${err.slice(0, 200)}`);
+    }
+    const { data: businesses = [] } = await businessesRes.json();
+    for (const business of businesses) {
+      const ownedRes = await fetch(
+        `${FB_API_BASE}/${business.id}/owned_pages?fields=${pageFields}`,
+        { headers }
+      );
+      if (!ownedRes.ok) {
+        const err = await ownedRes.text();
+        console.warn(`[IG] owned_pages fetch failed for business ${business.id} (${ownedRes.status}): ${err.slice(0, 200)}`);
+        continue;
+      }
+      const { data: ownedPages = [] } = await ownedRes.json();
+      console.log(`[IG] Business "${business.name}" has ${ownedPages.length} owned Page(s)`);
+      pages.push(...ownedPages);
+    }
+  }
 
+  const accounts = [];
   for (const page of pages) {
     if (page.instagram_business_account) {
       accounts.push({

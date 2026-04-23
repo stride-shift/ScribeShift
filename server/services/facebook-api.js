@@ -10,7 +10,10 @@ const FB_AUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v21.0/oauth/access_token';
 const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 
-const SCOPES = 'pages_show_list,pages_manage_posts,pages_read_engagement';
+// business_management is required so Facebook Login for Business tokens can
+// list the user's Businesses and their owned Pages — /me/accounts returns
+// empty for FBLB tokens so we fall back to the Business → owned_pages path.
+const SCOPES = 'pages_show_list,pages_manage_posts,pages_read_engagement,business_management';
 const PLATFORM = 'facebook';
 
 // ── Generate OAuth authorization URL ────────────────────────────────
@@ -75,23 +78,65 @@ async function getLongLivedToken(shortLivedToken) {
 }
 
 // ── Get user's Pages and their Page Access Tokens ───────────────────
+// Tries two paths because Facebook Login for Business and standard Facebook
+// Login behave differently:
+//   1. /me/accounts — works with standard Facebook Login (returns Pages the
+//      user personally admins).
+//   2. /me/businesses → /{business_id}/owned_pages — works with FBLB tokens,
+//      which return [] from /me/accounts even when permissions are granted.
 export async function getUserPages(userAccessToken) {
-  const res = await fetch(`${FB_API_BASE}/me/accounts?fields=id,name,access_token,picture`, {
-    headers: { Authorization: `Bearer ${userAccessToken}` },
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Facebook pages fetch failed (${res.status}): ${err}`);
-  }
-
-  const { data } = await res.json();
-  return data.map(page => ({
+  const headers = { Authorization: `Bearer ${userAccessToken}` };
+  const mapPage = (page) => ({
     pageId: page.id,
     pageName: page.name,
     pageAccessToken: page.access_token,
     picture: page.picture?.data?.url,
-  }));
+  });
+
+  // Path 1: standard Facebook Login
+  const meAccountsRes = await fetch(
+    `${FB_API_BASE}/me/accounts?fields=id,name,access_token,picture`,
+    { headers }
+  );
+  if (meAccountsRes.ok) {
+    const { data = [] } = await meAccountsRes.json();
+    if (data.length > 0) {
+      console.log(`[FB] Found ${data.length} Page(s) via /me/accounts`);
+      return data.map(mapPage);
+    }
+    console.log('[FB] /me/accounts returned 0 Pages — trying Business path (FBLB)');
+  } else {
+    const err = await meAccountsRes.text();
+    console.warn(`[FB] /me/accounts failed (${meAccountsRes.status}): ${err.slice(0, 200)} — trying Business path`);
+  }
+
+  // Path 2: Facebook Login for Business — list Businesses, then owned Pages
+  const businessesRes = await fetch(`${FB_API_BASE}/me/businesses?fields=id,name`, { headers });
+  if (!businessesRes.ok) {
+    const err = await businessesRes.text();
+    throw new Error(`Facebook pages fetch failed: /me/accounts returned no Pages and /me/businesses failed (${businessesRes.status}): ${err.slice(0, 200)}`);
+  }
+  const { data: businesses = [] } = await businessesRes.json();
+  if (businesses.length === 0) {
+    return []; // truly no Pages and no Businesses
+  }
+
+  const allPages = [];
+  for (const business of businesses) {
+    const ownedRes = await fetch(
+      `${FB_API_BASE}/${business.id}/owned_pages?fields=id,name,access_token,picture`,
+      { headers }
+    );
+    if (!ownedRes.ok) {
+      const err = await ownedRes.text();
+      console.warn(`[FB] owned_pages fetch failed for business ${business.id} (${ownedRes.status}): ${err.slice(0, 200)}`);
+      continue;
+    }
+    const { data: pages = [] } = await ownedRes.json();
+    console.log(`[FB] Business "${business.name}" has ${pages.length} owned Page(s)`);
+    for (const page of pages) allPages.push(mapPage(page));
+  }
+  return allPages;
 }
 
 // ── Get user profile ────────────────────────────────────────────────
