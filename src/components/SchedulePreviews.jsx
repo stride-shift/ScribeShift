@@ -48,9 +48,66 @@ function formatWhen(scheduledAt) {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Renders the right kind of attachment based on the media object passed in.
+// Variants: image, video, document. Pass `square` for Instagram (1:1 crop).
+function MediaBlock({ media, square = false, accentColor = '#3b82f6' }) {
+  if (!media || !media.url) return null;
+  const { url, type, filename } = media;
+  if (type === 'image') {
+    return (
+      <img
+        src={url}
+        alt=""
+        style={{
+          width: '100%',
+          ...(square ? { aspectRatio: '1 / 1', objectFit: 'cover' } : { maxHeight: 400, objectFit: 'cover' }),
+          display: 'block',
+        }}
+      />
+    );
+  }
+  if (type === 'video') {
+    return (
+      <video
+        src={url}
+        controls
+        style={{
+          width: '100%',
+          ...(square ? { aspectRatio: '1 / 1', objectFit: 'cover' } : { maxHeight: 400 }),
+          display: 'block',
+          background: '#000',
+        }}
+      />
+    );
+  }
+  if (type === 'document') {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: 14,
+          textDecoration: 'none', color: 'inherit',
+          background: '#f5f5f5', borderTop: '1px solid #e0e0e0',
+        }}
+      >
+        <div style={{ width: 44, height: 52, borderRadius: 4, background: accentColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+          PDF
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#000', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename || 'Document'}</div>
+          <div style={{ fontSize: 12, color: '#666' }}>Tap to open</div>
+        </div>
+      </a>
+    );
+  }
+  return null;
+}
+
 // ── LinkedIn preview ───────────────────────────────────────────────
 
-export function LinkedInPreview({ text, image, scheduledAt }) {
+export function LinkedInPreview({ text, media, scheduledAt }) {
   const { name } = useDisplayIdentity();
   const [expanded, setExpanded] = useState(false);
   const limit = 210;
@@ -76,7 +133,7 @@ export function LinkedInPreview({ text, image, scheduledAt }) {
           </button>
         )}
       </div>
-      {image && <img src={image} alt="" style={liStyles.image} />}
+      <MediaBlock media={media} accentColor="#0A66C2" />
       <div style={liStyles.reactions}>
         <span style={liStyles.reactionStack}>
           <span style={{ ...liStyles.reactionBubble, background: '#0a66c2' }}>👍</span>
@@ -97,7 +154,7 @@ export function LinkedInPreview({ text, image, scheduledAt }) {
 
 // ── Twitter / X preview ────────────────────────────────────────────
 
-export function TwitterPreview({ text, image, scheduledAt }) {
+export function TwitterPreview({ text, media, scheduledAt }) {
   const { name, handle } = useDisplayIdentity();
   const time = formatWhen(scheduledAt);
 
@@ -114,7 +171,11 @@ export function TwitterPreview({ text, image, scheduledAt }) {
             <span style={{ fontSize: 15, color: '#536471' }}>{time}</span>
           </div>
           <div style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.4, color: '#0f1419', marginTop: 4 }}>{text}</div>
-          {image && <img src={image} alt="" style={{ width: '100%', borderRadius: 16, marginTop: 12, border: '1px solid #eff3f4' }} />}
+          {media && (
+            <div style={{ marginTop: 12, borderRadius: 16, overflow: 'hidden', border: '1px solid #eff3f4' }}>
+              <MediaBlock media={media} accentColor="#1d9bf0" />
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 425, marginTop: 12, color: '#536471' }}>
             {[
               { icon: '💬', count: '42' },
@@ -136,7 +197,7 @@ export function TwitterPreview({ text, image, scheduledAt }) {
 
 // ── Facebook preview ───────────────────────────────────────────────
 
-export function FacebookPreview({ text, image, scheduledAt }) {
+export function FacebookPreview({ text, media, scheduledAt }) {
   const { name } = useDisplayIdentity();
   const [expanded, setExpanded] = useState(false);
   const limit = 125;
@@ -165,7 +226,7 @@ export function FacebookPreview({ text, image, scheduledAt }) {
           </button>
         )}
       </div>
-      {image && <img src={image} alt="" style={{ width: '100%', display: 'block' }} />}
+      <MediaBlock media={media} accentColor="#1877F2" />
       <div style={fbStyles.reactionRow}>
         <span style={fbStyles.reactionEmojis}>
           <span style={fbStyles.reactionBubble}>👍</span>
@@ -186,7 +247,10 @@ export function FacebookPreview({ text, image, scheduledAt }) {
 
 // ── Instagram preview ──────────────────────────────────────────────
 
-export function InstagramPreview({ text, image, scheduledAt }) {
+export function InstagramPreview({ text, media, scheduledAt }) {
+  // Instagram only accepts image/video. Surface the limitation if a doc was attached.
+  const image = media?.type === 'image' ? media.url : null;
+  const isVideo = media?.type === 'video';
   const { name, handle } = useDisplayIdentity();
   const [expanded, setExpanded] = useState(false);
   const limit = 125;
@@ -206,11 +270,17 @@ export function InstagramPreview({ text, image, scheduledAt }) {
       </div>
       {image ? (
         <img src={image} alt="" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', display: 'block' }} />
+      ) : isVideo ? (
+        <video src={media.url} controls style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', display: 'block', background: '#000' }} />
       ) : (
         <div style={igStyles.noImage}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📷</div>
-            <div style={{ fontSize: 13 }}>Instagram posts require an image</div>
+            <div style={{ fontSize: 13 }}>
+              {media?.type === 'document'
+                ? "Instagram doesn't support documents — switch to LinkedIn or remove the file"
+                : 'Instagram posts require an image or video'}
+            </div>
           </div>
         </div>
       )}
@@ -233,7 +303,8 @@ export function InstagramPreview({ text, image, scheduledAt }) {
 
 // ── Blog preview (article layout) ──────────────────────────────────
 
-export function BlogPreview({ text, image, scheduledAt }) {
+export function BlogPreview({ text, media, scheduledAt }) {
+  const image = media?.type === 'image' ? media.url : null;
   const { name } = useDisplayIdentity();
   const html = { __html: marked.parse(text || '', { breaks: true }) };
   return (
@@ -253,7 +324,8 @@ export function BlogPreview({ text, image, scheduledAt }) {
 
 // ── Newsletter preview (email client) ──────────────────────────────
 
-export function NewsletterPreview({ text, image, scheduledAt }) {
+export function NewsletterPreview({ text, media, scheduledAt }) {
+  const image = media?.type === 'image' ? media.url : null;
   const { name, handle } = useDisplayIdentity();
   const lines = (text || '').split('\n');
   const firstLine = lines[0] || 'Your newsletter';
@@ -391,23 +463,24 @@ const longStyles = {
 
 // ── Router: pick the right preview for (contentType, platform) ────
 
-export function PostPreview({ contentType = 'social', platform = 'linkedin', text, image, scheduledAt, viewMode }) {
-  // Long-form content: either render the full long-form view OR preview the
-  // per-platform social adaptation depending on viewMode.
-  const isLongForm = ['blog', 'newsletter', 'video'].includes(contentType);
+export function PostPreview({ contentType = 'social', platform = 'linkedin', text, media, image, scheduledAt, viewMode }) {
+  // Backwards compat: callers passing the legacy `image` prop are treated as
+  // an image-typed media object.
+  const m = media || (image ? { url: image, type: 'image' } : null);
 
+  const isLongForm = ['blog', 'newsletter', 'video'].includes(contentType);
   if (isLongForm && viewMode === 'longform') {
-    if (contentType === 'blog') return <BlogPreview text={text} image={image} scheduledAt={scheduledAt} />;
-    if (contentType === 'newsletter') return <NewsletterPreview text={text} image={image} scheduledAt={scheduledAt} />;
+    if (contentType === 'blog') return <BlogPreview text={text} media={m} scheduledAt={scheduledAt} />;
+    if (contentType === 'newsletter') return <NewsletterPreview text={text} media={m} scheduledAt={scheduledAt} />;
     if (contentType === 'video') return <VideoScriptPreview text={text} scheduledAt={scheduledAt} />;
   }
 
   switch (platform) {
-    case 'twitter': return <TwitterPreview text={text} image={image} scheduledAt={scheduledAt} />;
-    case 'facebook': return <FacebookPreview text={text} image={image} scheduledAt={scheduledAt} />;
-    case 'instagram': return <InstagramPreview text={text} image={image} scheduledAt={scheduledAt} />;
+    case 'twitter': return <TwitterPreview text={text} media={m} scheduledAt={scheduledAt} />;
+    case 'facebook': return <FacebookPreview text={text} media={m} scheduledAt={scheduledAt} />;
+    case 'instagram': return <InstagramPreview text={text} media={m} scheduledAt={scheduledAt} />;
     case 'linkedin':
     default:
-      return <LinkedInPreview text={text} image={image} scheduledAt={scheduledAt} />;
+      return <LinkedInPreview text={text} media={m} scheduledAt={scheduledAt} />;
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { StatCard } from './ui/stat-card';
 import { Tabs } from './ui/tabs';
@@ -24,6 +24,50 @@ const PILLARS = [
   { value: 'social_proof', label: 'Social Proof' },
   { value: 'engagement', label: 'Engagement' },
   { value: 'news', label: 'Industry News' },
+];
+
+const TONE_LABELS = {
+  professional:  'Professional',
+  casual:        'Casual',
+  bold:          'Bold',
+  playful:       'Playful',
+  inspirational: 'Inspirational',
+  friendly:      'Friendly',
+  authoritative: 'Authoritative',
+  witty:         'Witty',
+};
+
+const STATUS_LABELS = {
+  draft:     'Draft',
+  scheduled: 'Scheduled',
+  posted:    'Posted',
+  archived:  'Archived',
+};
+
+const humanize = (s) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+const DATE_RANGES = [
+  { value: '', label: 'Any Date' },
+  { value: 'today', label: 'Today', days: 1 },
+  { value: 'week', label: 'This Week', days: 7 },
+  { value: 'month', label: 'This Month', days: 30 },
+  { value: 'quarter', label: 'Last 90 Days', days: 90 },
+  { value: 'year', label: 'This Year', days: 365 },
+];
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'pinned', label: 'Pinned first' },
+  { value: 'az', label: 'A → Z' },
+  { value: 'za', label: 'Z → A' },
+];
+
+const VIEW_MODES = [
+  { value: 'grid',    title: 'Grid view' },
+  { value: 'compact', title: 'Compact grid' },
+  { value: 'list',    title: 'List view' },
+  { value: 'kanban',  title: 'Kanban' },
 ];
 
 const PILLAR_COLORS = {
@@ -106,9 +150,43 @@ export default function ContentHistory() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [pillarFilter, setPillarFilter] = useState('');
+  const [toneFilter, setToneFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
+  const [viewMode, setViewMode] = useState('grid');
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState(null);
+  const [facets, setFacets] = useState({ pillars: [], tones: [], statuses: [], content_types: [] });
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const resetAllFilters = () => {
+    setSearch('');
+    setTypeFilter('');
+    setPillarFilter('');
+    setToneFilter('');
+    setStatusFilter('');
+    setDateFilter('');
+    setPinnedOnly(false);
+    setOffset(0);
+  };
+
+  const hasActiveFilters = Boolean(
+    search || typeFilter || pillarFilter || toneFilter || statusFilter || dateFilter || pinnedOnly,
+  );
 
   // Close modal on Escape key
   useEffect(() => {
@@ -122,7 +200,23 @@ export default function ContentHistory() {
 
   const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
 
-  useEffect(() => { loadContent(); }, [typeFilter, pillarFilter, pinnedOnly, offset]);
+  useEffect(() => { loadContent(); }, [typeFilter, pillarFilter, toneFilter, statusFilter, pinnedOnly, offset]);
+  useEffect(() => { loadFacets(); }, []);
+
+  const loadFacets = async () => {
+    try {
+      const res = await fetch('/api/content/facets', { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (res.ok) setFacets({
+        pillars:       data.pillars || [],
+        tones:         data.tones || [],
+        statuses:      data.statuses || [],
+        content_types: data.content_types || [],
+      });
+    } catch {
+      // silently ignore — dropdowns will fall back to empty and filter chip just shows the label
+    }
+  };
 
   const loadContent = async () => {
     setLoading(true);
@@ -131,6 +225,8 @@ export default function ContentHistory() {
       const params = new URLSearchParams({ limit, offset });
       if (typeFilter) params.set('type', typeFilter);
       if (pillarFilter) params.set('pillar', pillarFilter);
+      if (toneFilter) params.set('tone', toneFilter);
+      if (statusFilter) params.set('status', statusFilter);
       if (pinnedOnly) params.set('pinned', 'true');
       if (search.trim()) params.set('search', search.trim());
 
@@ -189,6 +285,7 @@ export default function ContentHistory() {
       });
       if (res.ok) {
         setItems(prev => prev.map(i => i.id === id ? { ...i, pillar } : i));
+        loadFacets();
       }
     } catch {
       setError('Failed to update pillar');
@@ -228,12 +325,40 @@ export default function ContentHistory() {
     };
   }, [items, total]);
 
-  // Filter items for current tab
+  // Filter items for current tab + apply client-side date filter + sort
+  // (tone/status/pillar/type are filtered server-side)
   const tabItems = useMemo(() => {
-    if (tab === 'pinned') return items.filter(i => i.pinned);
-    if (tab === 'performance') return items; // placeholder — no metrics yet
-    return items;
-  }, [items, tab]);
+    let list = tab === 'pinned' ? items.filter(i => i.pinned) : items;
+
+    if (dateFilter) {
+      const range = DATE_RANGES.find(d => d.value === dateFilter);
+      if (range?.days) {
+        const cutoff = Date.now() - range.days * 86400000;
+        list = list.filter(i => new Date(i.created_at).getTime() >= cutoff);
+      }
+    }
+
+    const sorted = [...list];
+    const getTitle = (i) => (i.title || i.topic || i.summary || '').toString().toLowerCase();
+    switch (sortBy) {
+      case 'oldest':
+        sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        break;
+      case 'pinned':
+        sorted.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+        break;
+      case 'az':
+        sorted.sort((a, b) => getTitle(a).localeCompare(getTitle(b)));
+        break;
+      case 'za':
+        sorted.sort((a, b) => getTitle(b).localeCompare(getTitle(a)));
+        break;
+      case 'newest':
+      default:
+        sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    return sorted;
+  }, [items, tab, dateFilter, sortBy]);
 
   // Timeline grouping (by week)
   const timelineGroups = useMemo(() => {
@@ -257,6 +382,38 @@ export default function ContentHistory() {
   }, [tabItems]);
 
   const pinnedItems = items.filter(i => i.pinned).slice(0, 3);
+
+  // Build dropdown options from the server facets so only values the user has
+  // actually created show up. Always prepend an "All" row for clearing.
+  const pillarOptions = useMemo(() => {
+    const known = Object.fromEntries(PILLARS.filter(p => p.value).map(p => [p.value, p.label]));
+    return [
+      { value: '', label: 'All Pillars' },
+      ...facets.pillars.map(v => ({ value: v, label: known[v] || humanize(v) })),
+    ];
+  }, [facets.pillars]);
+
+  const toneOptions = useMemo(() => [
+    { value: '', label: 'All Tones' },
+    ...facets.tones.map(v => ({ value: v, label: TONE_LABELS[v] || humanize(v) })),
+  ], [facets.tones]);
+
+  const statusOptions = useMemo(() => [
+    { value: '', label: 'All Statuses' },
+    ...facets.statuses.map(v => ({ value: v, label: STATUS_LABELS[v] || humanize(v) })),
+  ], [facets.statuses]);
+
+  const pillarLabelFor = (v) => pillarOptions.find(p => p.value === v)?.label || humanize(v);
+  const toneLabelFor   = (v) => toneOptions.find(t => t.value === v)?.label || humanize(v);
+  const statusLabelFor = (v) => statusOptions.find(s => s.value === v)?.label || humanize(v);
+
+  const gridClass = viewMode === 'list'
+    ? 'grid grid-cols-1 gap-2'
+    : viewMode === 'compact'
+    ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2'
+    : viewMode === 'kanban'
+    ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3'
+    : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3';
 
   const renderCard = (item) => {
     const ptColor = PLATFORM_COLORS[item.content_type] || '#64748b';
@@ -370,20 +527,40 @@ export default function ContentHistory() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 p-1 border border-[var(--border)] rounded-md bg-[var(--bg-card)]">
-            <button className="px-2 py-1.5 rounded text-[var(--text)] bg-[var(--bg-input)]" title="Grid view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            </button>
-            <button className="px-2 py-1.5 rounded text-[var(--text-secondary)] hover:text-[var(--text)]" title="Compact grid">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="4"/><rect x="14" y="3" width="7" height="4"/><rect x="3" y="10" width="7" height="4"/><rect x="14" y="10" width="7" height="4"/><rect x="3" y="17" width="7" height="4"/><rect x="14" y="17" width="7" height="4"/></svg>
-            </button>
-            <button className="px-2 py-1.5 rounded text-[var(--text-secondary)] hover:text-[var(--text)]" title="List view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            </button>
-            <button className="px-2 py-1.5 rounded text-[var(--text-secondary)] hover:text-[var(--text)]" title="Kanban">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="6" height="18"/><rect x="11" y="3" width="6" height="12"/><rect x="19" y="3" width="2" height="8"/></svg>
-            </button>
+            {VIEW_MODES.map(vm => {
+              const active = viewMode === vm.value;
+              return (
+                <button
+                  key={vm.value}
+                  type="button"
+                  onClick={() => setViewMode(vm.value)}
+                  title={vm.title}
+                  aria-pressed={active}
+                  className={`px-2 py-1.5 rounded transition-colors ${
+                    active ? 'text-[var(--text)] bg-[var(--bg-input)]' : 'text-[var(--text-secondary)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  {vm.value === 'grid' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  )}
+                  {vm.value === 'compact' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="4"/><rect x="14" y="3" width="7" height="4"/><rect x="3" y="10" width="7" height="4"/><rect x="14" y="10" width="7" height="4"/><rect x="3" y="17" width="7" height="4"/><rect x="14" y="17" width="7" height="4"/></svg>
+                  )}
+                  {vm.value === 'list' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  )}
+                  {vm.value === 'kanban' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="6" height="18"/><rect x="11" y="3" width="6" height="12"/><rect x="19" y="3" width="2" height="8"/></svg>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <button className="px-4 py-2 text-[13px] font-semibold rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-sm">
+          <button
+            type="button"
+            onClick={() => { window.location.hash = '#create'; }}
+            className="px-4 py-2 text-[13px] font-semibold rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-sm transition-colors"
+          >
             + New Content
           </button>
         </div>
@@ -396,6 +573,7 @@ export default function ContentHistory() {
       >
         <span className="text-[var(--text-secondary)]">{Icons.search}</span>
         <input
+          ref={searchInputRef}
           type="text"
           placeholder="Search anything: posts, topics, ideas..."
           value={search}
@@ -415,22 +593,28 @@ export default function ContentHistory() {
         />
         <FilterChip
           label="Pillar"
-          value={pillarFilter ? PILLARS.find(p => p.value === pillarFilter)?.label : ''}
+          value={pillarFilter ? pillarLabelFor(pillarFilter) : ''}
           onChange={(v) => { setPillarFilter(v); setOffset(0); }}
-          options={PILLARS}
+          options={pillarOptions}
         />
-        <button className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center gap-1">
-          Tone
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <button className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center gap-1">
-          Status
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <button className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center gap-1">
-          Date
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
+        <FilterChip
+          label="Tone"
+          value={toneFilter ? toneLabelFor(toneFilter) : ''}
+          onChange={(v) => { setToneFilter(v); setOffset(0); }}
+          options={toneOptions}
+        />
+        <FilterChip
+          label="Status"
+          value={statusFilter ? statusLabelFor(statusFilter) : ''}
+          onChange={(v) => { setStatusFilter(v); setOffset(0); }}
+          options={statusOptions}
+        />
+        <FilterChip
+          label="Date"
+          value={dateFilter ? DATE_RANGES.find(d => d.value === dateFilter)?.label : ''}
+          onChange={(v) => setDateFilter(v)}
+          options={DATE_RANGES}
+        />
         <button
           className={`px-3 py-1.5 text-[12px] font-medium rounded-md border transition-colors flex items-center gap-1.5 ${
             pinnedOnly
@@ -442,10 +626,17 @@ export default function ContentHistory() {
           <svg width="11" height="11" viewBox="0 0 24 24" fill={pinnedOnly ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
           Pinned
         </button>
-        <button className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)] flex items-center gap-1">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          More filters
-        </button>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetAllFilters}
+            className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--danger)] hover:border-[var(--danger)]/40 flex items-center gap-1 transition-colors"
+            title="Clear all active filters"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Stat card row */}
@@ -456,6 +647,7 @@ export default function ContentHistory() {
           label="Total Posts"
           value={stats.total}
           subtext="All content generated"
+          onClick={() => { resetAllFilters(); setTab('timeline'); }}
         />
         <StatCard
           tone="amber"
@@ -463,6 +655,7 @@ export default function ContentHistory() {
           label="Pinned"
           value={stats.pinnedCount}
           subtext="Quick access"
+          onClick={() => setTab('pinned')}
         />
         <StatCard
           tone="green"
@@ -470,6 +663,7 @@ export default function ContentHistory() {
           label="Top Performers"
           value={stats.pinnedCount > 0 ? stats.pinnedCount : '—'}
           subtext="High engagement"
+          onClick={() => setTab('performance')}
         />
         <StatCard
           tone="red"
@@ -477,6 +671,7 @@ export default function ContentHistory() {
           label="Content Gaps"
           value={stats.gapsCount}
           subtext="Opportunities"
+          onClick={() => setTab('clusters')}
         />
       </div>
 
@@ -494,10 +689,23 @@ export default function ContentHistory() {
         />
         <div className="flex-1" />
         <span className="text-[12px] text-[var(--text-secondary)]">Sort by:</span>
-        <button className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] flex items-center gap-1">
-          Newest first
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
+        <div className="relative inline-flex">
+          <button
+            type="button"
+            className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] flex items-center gap-1 pointer-events-none"
+          >
+            {SORT_OPTIONS.find(s => s.value === sortBy)?.label || 'Newest first'}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <select
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            aria-label="Sort order"
+          >
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
       </div>
 
       {error && (
@@ -533,7 +741,7 @@ export default function ContentHistory() {
                         <div className="text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
                           {bucket}
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                        <div className={gridClass}>
                           {bucketItems.map(renderCard)}
                         </div>
                       </div>
@@ -558,7 +766,7 @@ export default function ContentHistory() {
                           · {clusterItems.length}
                         </span>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      <div className={gridClass}>
                         {clusterItems.map(renderCard)}
                       </div>
                     </div>
@@ -574,7 +782,7 @@ export default function ContentHistory() {
                       Once posts are published and metrics sync, we&apos;ll rank your content by engagement here.
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  <div className={gridClass}>
                     {tabItems.map(renderCard)}
                   </div>
                 </div>
@@ -587,7 +795,7 @@ export default function ContentHistory() {
                     <div className="text-[11px] text-[var(--text-secondary)]">Pin your best posts to keep them at your fingertips.</div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  <div className={gridClass}>
                     {tabItems.map(renderCard)}
                   </div>
                 )

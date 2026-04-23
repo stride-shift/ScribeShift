@@ -10,7 +10,7 @@ const FB_AUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v21.0/oauth/access_token';
 const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 
-const SCOPES = 'pages_manage_posts,pages_read_engagement';
+const SCOPES = 'pages_show_list,pages_manage_posts,pages_read_engagement';
 const PLATFORM = 'facebook';
 
 // ── Generate OAuth authorization URL ────────────────────────────────

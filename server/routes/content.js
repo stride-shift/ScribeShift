@@ -8,7 +8,7 @@ router.use(verifyToken);
 // ── GET /api/content ────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const { type, search, pinned, pillar, limit = 50, offset = 0 } = req.query;
+    const { type, search, pinned, pillar, tone, status, limit = 50, offset = 0 } = req.query;
 
     let query = supabase
       .from('generated_content')
@@ -22,6 +22,8 @@ router.get('/', async (req, res) => {
     if (search) query = query.ilike('title', `%${search}%`);
     if (pinned === 'true') query = query.eq('pinned', true);
     if (pillar) query = query.eq('pillar', pillar);
+    if (tone) query = query.eq('tone', tone);
+    if (status) query = query.eq('status', status);
 
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -29,6 +31,34 @@ router.get('/', async (req, res) => {
     res.json({ content: data, total: count });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch content' });
+  }
+});
+
+// ── GET /api/content/facets ─────────────────────────────────────────
+// Returns distinct pillar/tone/status values the current user has actually
+// produced, so dropdowns can show only the options that are meaningful.
+router.get('/facets', async (req, res) => {
+  try {
+    let query = supabase
+      .from('generated_content')
+      .select('pillar, tone, status, content_type');
+
+    query = scopeByRole(req)(query);
+
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+
+    const uniq = (key) =>
+      [...new Set((data || []).map(r => r[key]).filter(Boolean))].sort();
+
+    res.json({
+      pillars:       uniq('pillar'),
+      tones:         uniq('tone'),
+      statuses:      uniq('status'),
+      content_types: uniq('content_type'),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch facets' });
   }
 });
 
@@ -86,6 +116,44 @@ router.patch('/:id/pillar', async (req, res) => {
     res.json({ success: true, pillar });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update pillar' });
+  }
+});
+
+// ── PATCH /api/content/:id/tone ─────────────────────────────────────
+router.patch('/:id/tone', async (req, res) => {
+  try {
+    const { tone } = req.body;
+    let query = supabase
+      .from('generated_content')
+      .update({ tone: tone || null })
+      .eq('id', req.params.id);
+
+    query = scopeByRole(req)(query);
+
+    const { error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true, tone });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update tone' });
+  }
+});
+
+// ── PATCH /api/content/:id/status ───────────────────────────────────
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    let query = supabase
+      .from('generated_content')
+      .update({ status: status || null })
+      .eq('id', req.params.id);
+
+    query = scopeByRole(req)(query);
+
+    const { error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true, status });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 

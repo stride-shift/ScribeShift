@@ -137,6 +137,19 @@ function AppShell() {
 
   const visibleViews = NAV_VIEWS.filter(v => v.roles.includes(user?.role || 'user'));
 
+  useEffect(() => {
+    const handleHash = () => {
+      const target = window.location.hash.replace(/^#/, '');
+      if (target && NAV_VIEWS.some(v => v.id === target)) {
+        setActiveView(target);
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
   const renderView = () => {
     switch (activeView) {
       case 'planner': return <ErrorBoundary label="Planner"><ContentPillarGraph /></ErrorBoundary>;

@@ -11,14 +11,25 @@ const TONES = {
 };
 
 // trend prop can be: { value: '+25%', dir: 'up' | 'down' | 'flat' }
-export function StatCard({ icon, label, value, subtext, tone = 'blue', trend }) {
+export function StatCard({ icon, label, value, subtext, tone = 'blue', trend, onClick, ariaLabel }) {
   const { bg, fg } = TONES[tone] || TONES.blue;
   const trendColor =
     trend?.dir === 'down' ? 'var(--danger)' :
     trend?.dir === 'flat' ? 'var(--text-secondary)' : 'var(--success)';
 
+  const isInteractive = typeof onClick === 'function';
+  const Tag = isInteractive ? 'button' : 'div';
+  const interactiveClasses = isInteractive
+    ? 'cursor-pointer text-left w-full hover:border-[var(--primary)]/40 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-body)] transition-all'
+    : '';
+
   return (
-    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-4 min-w-0">
+    <Tag
+      type={isInteractive ? 'button' : undefined}
+      onClick={onClick}
+      aria-label={ariaLabel || (isInteractive ? `${label}: ${value}` : undefined)}
+      className={`bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-4 min-w-0 ${interactiveClasses}`}
+    >
       <div className="flex items-start justify-between gap-3 mb-2">
         <div
           className="flex-shrink-0 w-9 h-9 rounded-md flex items-center justify-center"
@@ -45,6 +56,6 @@ export function StatCard({ icon, label, value, subtext, tone = 'blue', trend }) 
       {subtext && (
         <div className="text-[11px] text-[var(--text-secondary)] mt-1">{subtext}</div>
       )}
-    </div>
+    </Tag>
   );
 }

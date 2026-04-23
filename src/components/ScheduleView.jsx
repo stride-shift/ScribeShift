@@ -43,7 +43,15 @@ const Icons = {
   clock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   alert: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   bulb: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"/></svg>,
+  check: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
 };
+
+const POSTED_RANGES = [
+  { value: 'week',    label: 'This Week',   days: 7 },
+  { value: 'month',   label: 'This Month',  days: 30 },
+  { value: '6month',  label: '6 Months',    days: 180 },
+  { value: 'year',    label: 'This Year',   days: 365 },
+];
 
 export default function ScheduleView() {
   const { getAuthHeaders } = useAuth();
@@ -76,6 +84,25 @@ export default function ScheduleView() {
   const [dragPost, setDragPost] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
+  const [postedRange, setPostedRange] = useState('week');
+  const [showPostedPicker, setShowPostedPicker] = useState(false);
+  const postedPickerRef = useRef(null);
+
+  useEffect(() => {
+    if (!showPostedPicker) return;
+    const handleClickOutside = (e) => {
+      if (postedPickerRef.current && !postedPickerRef.current.contains(e.target)) {
+        setShowPostedPicker(false);
+      }
+    };
+    const handleEsc = (e) => { if (e.key === 'Escape') setShowPostedPicker(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [showPostedPicker]);
 
   const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
 
@@ -306,7 +333,15 @@ export default function ScheduleView() {
     const lastPosted = posts.filter(p => p.status === 'posted').map(p => new Date(p.scheduled_at)).sort((a, b) => b - a)[0];
     let gapDays = null;
     if (lastPosted) gapDays = Math.floor((new Date() - lastPosted) / 86400000);
-    return { scheduled, posted, failed, healthLabel, gapDays };
+
+    const now = Date.now();
+    const postedByRange = POSTED_RANGES.reduce((acc, r) => {
+      const cutoff = now - r.days * 86400000;
+      acc[r.value] = posts.filter(p => p.status === 'posted' && new Date(p.scheduled_at).getTime() >= cutoff).length;
+      return acc;
+    }, {});
+
+    return { scheduled, posted, failed, healthLabel, gapDays, postedByRange };
   }, [posts]);
 
   const statusColor = (status) => ({
@@ -430,12 +465,88 @@ export default function ScheduleView() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        <StatCard tone="green" icon={Icons.health} label="Content Health" value={stats.healthLabel} subtext="You're keeping the momentum going." />
-        <StatCard tone="amber" icon={Icons.star} label="Top Performer" value="Hot Takes" trend={{ value: '25%', dir: 'up' }} subtext="Above your average" />
-        <StatCard tone="blue" icon={Icons.clock} label="Posting Gap" value={stats.gapDays === null ? '7 days' : `${stats.gapDays} day${stats.gapDays === 1 ? '' : 's'}`} subtext="Since your last post" />
-        <StatCard tone="red" icon={Icons.alert} label="Needs Attention" value={`${stats.failed} failed post${stats.failed === 1 ? '' : 's'}`} subtext="Review and try to improve delivery" />
-        <StatCard tone="purple" icon={Icons.bulb} label="Suggestion" value="Post 1 Educational" subtext="+1 Contrarian this week" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+        <StatCard
+          tone="green"
+          icon={Icons.health}
+          label="Content Health"
+          value={stats.healthLabel}
+          subtext="You're keeping the momentum going."
+          onClick={() => { window.location.hash = '#analytics'; }}
+        />
+        <StatCard
+          tone="amber"
+          icon={Icons.star}
+          label="Top Performer"
+          value="Hot Takes"
+          trend={{ value: '25%', dir: 'up' }}
+          subtext="Above your average"
+          onClick={() => { window.location.hash = '#analytics'; }}
+        />
+        <StatCard
+          tone="blue"
+          icon={Icons.clock}
+          label="Posting Gap"
+          value={stats.gapDays === null ? '7 days' : `${stats.gapDays} day${stats.gapDays === 1 ? '' : 's'}`}
+          subtext="Since your last post"
+          onClick={() => openNewPostModal()}
+        />
+        <StatCard
+          tone="red"
+          icon={Icons.alert}
+          label="Needs Attention"
+          value={`${stats.failed} failed post${stats.failed === 1 ? '' : 's'}`}
+          subtext="Review and try to improve delivery"
+          onClick={() => { setStatusFilter('failed'); setViewMode('list'); }}
+        />
+        <StatCard
+          tone="purple"
+          icon={Icons.bulb}
+          label="Suggestion"
+          value="Post 1 Educational"
+          subtext="+1 Contrarian this week"
+          onClick={() => { window.location.hash = '#create'; }}
+        />
+
+        {/* Posted — click to pick range */}
+        <div className="relative" ref={postedPickerRef}>
+          <StatCard
+            tone="cyan"
+            icon={Icons.check}
+            label="Posted"
+            value={`${stats.postedByRange?.[postedRange] ?? 0} post${(stats.postedByRange?.[postedRange] ?? 0) === 1 ? '' : 's'}`}
+            subtext={POSTED_RANGES.find(r => r.value === postedRange)?.label + ' — tap to change'}
+            onClick={() => setShowPostedPicker(v => !v)}
+            ariaLabel={`Posted count for ${POSTED_RANGES.find(r => r.value === postedRange)?.label}. Click to change range.`}
+          />
+          {showPostedPicker && (
+            <div
+              role="menu"
+              className="absolute left-0 right-0 top-full mt-1.5 z-20 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-lg overflow-hidden"
+            >
+              {POSTED_RANGES.map(r => {
+                const isActive = r.value === postedRange;
+                const count = stats.postedByRange?.[r.value] ?? 0;
+                return (
+                  <button
+                    key={r.value}
+                    role="menuitemradio"
+                    aria-checked={isActive}
+                    onClick={() => { setPostedRange(r.value); setShowPostedPicker(false); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-left text-[12px] transition-colors ${
+                      isActive
+                        ? 'bg-[var(--primary-glow)] text-[var(--primary)] font-semibold'
+                        : 'text-[var(--text)] hover:bg-[var(--bg-card-hover)]'
+                    }`}
+                  >
+                    <span>{r.label}</span>
+                    <span className="text-[var(--text-secondary)] tabular-nums">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (

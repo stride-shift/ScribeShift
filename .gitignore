@@ -1,10 +1,14 @@
 node_modules/
 dist/
 .env
+.env.*
 .claude/
 generated/
 uploads/
 playwright-data/
+
+# One-off admin / migration scripts (may contain hardcoded admin tokens)
+scripts/
 
 # Debug files
 debug-*.png

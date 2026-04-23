@@ -32,14 +32,33 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     }
     return '';
   });
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(editingPost?.post_image_url || null);
+  // Media: a generic attachment (image / video / document / audio→video).
+  // mediaUrl is the persistent URL (uploaded to Supabase Storage); mediaPreview
+  // is a local object URL used only while uploading.
+  const [mediaUrl, setMediaUrl] = useState(editingPost?.post_media_url || editingPost?.post_image_url || null);
+  const [mediaType, setMediaType] = useState(editingPost?.post_media_type || (editingPost?.post_image_url ? 'image' : null));
+  const [mediaFilename, setMediaFilename] = useState(editingPost?.post_media_filename || null);
+  const [mediaPreview, setMediaPreview] = useState(editingPost?.post_media_url || editingPost?.post_image_url || null);
+  const [uploading, setUploading] = useState(false);
   const [connectedAccounts, setConnectedAccounts] = useState({});
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [previewPlatform, setPreviewPlatform] = useState(null);
-  const imageInputRef = useRef(null);
+  const mediaInputRef = useRef(null);
+
+  // Per-platform media support. Image is universally OK.
+  const PLATFORM_MEDIA_SUPPORT = {
+    linkedin: ['image', 'video', 'document'],
+    twitter: ['image', 'video'],
+    facebook: ['image', 'video'],
+    instagram: ['image', 'video'],
+  };
+
+  // Platforms that can't accept the currently attached media type.
+  const incompatiblePlatforms = mediaType
+    ? [...selectedPlatforms].filter(p => !PLATFORM_MEDIA_SUPPORT[p]?.includes(mediaType))
+    : [];
 
   // Fetch connected accounts
   useEffect(() => {
@@ -88,22 +107,60 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     if (!next.has(previewPlatform)) setPreviewPlatform([...next][0]);
   };
 
-  const handleImageSelect = (e) => {
+  const handleMediaSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result);
-    reader.readAsDataURL(file);
+    setError('');
+
+    // Show a local preview immediately for image/video (object URL)
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      setMediaPreview(URL.createObjectURL(file));
+    } else {
+      setMediaPreview(null);
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+      setMediaUrl(data.url);
+      setMediaType(data.type);
+      setMediaFilename(data.original_filename || file.name);
+      setMediaPreview(data.url);
+    } catch (err) {
+      setError(`Upload failed: ${err.message}`);
+      setMediaPreview(null);
+      setMediaUrl(null);
+      setMediaType(null);
+      setMediaFilename(null);
+      if (mediaInputRef.current) mediaInputRef.current.value = '';
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-    if (imageInputRef.current) imageInputRef.current.value = '';
+  const removeMedia = () => {
+    setMediaUrl(null);
+    setMediaType(null);
+    setMediaFilename(null);
+    setMediaPreview(null);
+    if (mediaInputRef.current) mediaInputRef.current.value = '';
   };
 
-  const canProceed = postText.trim().length > 0 && selectedPlatforms.size > 0 && scheduledAt;
+  const canProceed =
+    postText.trim().length > 0 &&
+    selectedPlatforms.size > 0 &&
+    scheduledAt &&
+    !uploading &&
+    incompatiblePlatforms.length === 0;
 
   const handleSubmit = async () => {
     if (!canProceed || submitting) return;
@@ -113,36 +170,25 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
     const platforms = [...selectedPlatforms];
 
-    // Upload image first if we have one
-    let imageUrl = editingPost?.post_image_url || null;
-    if (imageFile) {
-      try {
-        const formData = new FormData();
-        formData.append('file', imageFile);
-        const uploadRes = await fetch('/api/images/upload', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: formData,
-        });
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          imageUrl = uploadData.url || uploadData.publicUrl || null;
+    const mediaPayload = mediaUrl
+      ? {
+          post_media_url: mediaUrl,
+          post_media_type: mediaType,
+          post_media_filename: mediaFilename,
+          // Keep image URL field populated for image media so older code paths still work
+          post_image_url: mediaType === 'image' ? mediaUrl : null,
         }
-      } catch {
-        // Continue without image if upload fails
-      }
-    }
+      : { post_image_url: null, post_media_url: null, post_media_type: null, post_media_filename: null };
 
     try {
       if (editingPost) {
-        // Update existing post
         const res = await fetch(`/api/schedule/${editingPost.id}`, {
           method: 'PUT', headers,
           body: JSON.stringify({
             post_text: postText,
             scheduled_at: new Date(scheduledAt).toISOString(),
             platform: platforms[0],
-            post_image_url: imageUrl,
+            ...mediaPayload,
             is_boosted: editingPost.is_boosted,
             boost_spend: editingPost.boost_spend,
           }),
@@ -150,13 +196,12 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
         if (!res.ok) { const data = await res.json(); setError(data.error || 'Failed to update'); setSubmitting(false); return; }
         onCreated?.();
       } else {
-        // Create posts for each selected platform
         for (const platform of platforms) {
           const payload = {
             post_text: postText,
             platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
-            post_image_url: imageUrl,
+            ...mediaPayload,
             is_boosted: false,
           };
           const res = await fetch('/api/schedule', {
@@ -268,27 +313,82 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
               </div>
             </div>
 
-            {/* Image upload */}
+            {/* Media upload — image / video / pdf / docx / audio (audio is auto-converted to video) */}
             <div className="spm-section">
-              <label className="spm-label">Image (optional)</label>
-              {imagePreview ? (
+              <label className="spm-label">
+                Media (optional)
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>
+                  Image, video, PDF, DOCX, or audio (audio → video with waveform)
+                </span>
+              </label>
+
+              {uploading && (
+                <div className="spm-image-preview" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, gap: 12, color: 'var(--text-muted)' }}>
+                  <div className="loading-spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+                  <span>{mediaType === null ? 'Uploading…' : `Processing ${mediaFilename || 'file'}…`}</span>
+                </div>
+              )}
+
+              {!uploading && mediaUrl && mediaType === 'image' && (
                 <div className="spm-image-preview">
-                  <img src={imagePreview} alt="Post image" />
-                  <button className="spm-image-remove" onClick={removeImage}>
+                  <img src={mediaPreview} alt="Post media" />
+                  <button className="spm-image-remove" onClick={removeMedia}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
-              ) : (
-                <button className="spm-image-upload" onClick={() => imageInputRef.current?.click()}>
+              )}
+
+              {!uploading && mediaUrl && mediaType === 'video' && (
+                <div className="spm-image-preview" style={{ position: 'relative', background: '#000' }}>
+                  <video src={mediaPreview} controls style={{ width: '100%', maxHeight: 320, display: 'block', borderRadius: 8 }} />
+                  <button className="spm-image-remove" onClick={removeMedia}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              )}
+
+              {!uploading && mediaUrl && mediaType === 'document' && (
+                <div className="spm-image-preview" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, position: 'relative' }}>
+                  <div style={{ width: 48, height: 56, borderRadius: 6, background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                    PDF
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mediaFilename || 'Document'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Document attachment</div>
+                  </div>
+                  <button className="spm-image-remove" onClick={removeMedia} style={{ position: 'static' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              )}
+
+              {!uploading && !mediaUrl && (
+                <button className="spm-image-upload" onClick={() => mediaInputRef.current?.click()}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                     <circle cx="8.5" cy="8.5" r="1.5" />
                     <polyline points="21 15 16 10 5 21" />
                   </svg>
-                  <span>Add an image</span>
+                  <span>Add media</span>
                 </button>
               )}
-              <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+
+              <input
+                ref={mediaInputRef}
+                type="file"
+                accept="image/*,video/*,audio/*,application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={handleMediaSelect}
+                style={{ display: 'none' }}
+              />
+
+              {/* Per-platform media compatibility warning */}
+              {incompatiblePlatforms.length > 0 && (
+                <div className="spm-error" style={{ marginTop: 8 }}>
+                  {mediaType === 'document'
+                    ? `Documents are only supported on LinkedIn. Remove the file or unselect ${incompatiblePlatforms.join(', ')}.`
+                    : `${incompatiblePlatforms.join(', ')} ${incompatiblePlatforms.length > 1 ? "don't" : "doesn't"} support ${mediaType} attachments.`}
+                </div>
+              )}
             </div>
 
             {/* Schedule date/time */}
@@ -358,7 +458,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
               contentType={contentType}
               platform={previewPlatform || [...selectedPlatforms][0] || 'linkedin'}
               text={postText}
-              image={imagePreview}
+              media={mediaUrl ? { url: mediaUrl, type: mediaType, filename: mediaFilename } : null}
               scheduledAt={scheduledAt}
               viewMode={viewMode}
             />
@@ -378,8 +478,12 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </span>
               </div>
               <div className="spm-summary__row">
-                <span className="spm-summary__label">Image</span>
-                <span className="spm-summary__value">{imagePreview ? 'Attached' : 'None'}</span>
+                <span className="spm-summary__label">Media</span>
+                <span className="spm-summary__value">
+                  {mediaUrl
+                    ? `${mediaType === 'document' ? 'Document' : mediaType === 'video' ? 'Video' : mediaType === 'image' ? 'Image' : 'Media'}${mediaFilename ? ` — ${mediaFilename}` : ''}`
+                    : 'None'}
+                </span>
               </div>
               <div className="spm-summary__row">
                 <span className="spm-summary__label">Characters</span>

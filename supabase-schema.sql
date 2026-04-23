@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS generated_content (
   source_summary TEXT,
   options JSONB DEFAULT '{}',
   metadata JSONB DEFAULT '{}',
+  pinned BOOLEAN DEFAULT FALSE,
+  pillar TEXT,
+  tone   TEXT,
+  status TEXT DEFAULT 'draft',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -85,6 +89,10 @@ CREATE INDEX IF NOT EXISTS idx_content_user ON generated_content(user_id);
 CREATE INDEX IF NOT EXISTS idx_content_company ON generated_content(company_id);
 CREATE INDEX IF NOT EXISTS idx_content_type ON generated_content(content_type);
 CREATE INDEX IF NOT EXISTS idx_content_created ON generated_content(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_pinned ON generated_content(pinned) WHERE pinned;
+CREATE INDEX IF NOT EXISTS idx_content_pillar ON generated_content(pillar);
+CREATE INDEX IF NOT EXISTS idx_content_tone   ON generated_content(tone);
+CREATE INDEX IF NOT EXISTS idx_content_status ON generated_content(status);
 
 -- ── Scheduled Posts ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS scheduled_posts (

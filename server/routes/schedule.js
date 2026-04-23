@@ -13,16 +13,38 @@ import {
   getConnectionStatus as gcalStatus,
 } from '../services/google-calendar.js';
 
+const MEDIA_TYPES = ['image', 'video', 'document', 'audio'];
+
 const scheduleSchema = z.object({
   content_id: z.string().uuid().optional().nullable(),
   brand_id: z.string().uuid().optional().nullable(),
   platform: z.enum(['linkedin', 'twitter', 'facebook', 'instagram']).default('linkedin'),
   post_text: z.string().min(1, 'post_text is required').max(5000),
   post_image_url: z.string().url().optional().nullable(),
+  post_media_url: z.string().url().optional().nullable(),
+  post_media_type: z.enum(MEDIA_TYPES).optional().nullable(),
+  post_media_filename: z.string().max(200).optional().nullable(),
   scheduled_at: z.string().datetime({ message: 'scheduled_at must be a valid ISO datetime' }),
   is_boosted: z.boolean().optional().default(false),
   boost_spend: z.number().positive().optional().nullable(),
 });
+
+// Per-platform support for non-image media. Images are universally OK.
+const PLATFORM_MEDIA_SUPPORT = {
+  linkedin: ['image', 'video', 'document'],
+  twitter: ['image', 'video'],
+  facebook: ['image', 'video'],
+  instagram: ['image', 'video'],
+};
+
+function validateMediaForPlatform(platform, mediaType) {
+  if (!mediaType) return null;
+  const allowed = PLATFORM_MEDIA_SUPPORT[platform] || [];
+  if (!allowed.includes(mediaType)) {
+    return `${platform} doesn't support ${mediaType} attachments. Supported: ${allowed.join(', ')}.`;
+  }
+  return null;
+}
 
 const router = Router();
 router.use(verifyToken);
@@ -36,8 +58,13 @@ router.post('/', async (req, res) => {
     }
     const {
       content_id, brand_id, platform, post_text,
-      post_image_url, scheduled_at, is_boosted, boost_spend,
+      post_image_url, post_media_url, post_media_type, post_media_filename,
+      scheduled_at, is_boosted, boost_spend,
     } = parsed.data;
+
+    // Per-platform media validation
+    const mediaError = validateMediaForPlatform(platform, post_media_type);
+    if (mediaError) return res.status(400).json({ error: mediaError });
 
     // Auto-generate UTM params
     const postIdShort = Math.random().toString(36).substring(2, 8);
@@ -58,7 +85,11 @@ router.post('/', async (req, res) => {
         brand_id: brand_id || null,
         platform: platform || 'linkedin',
         post_text,
-        post_image_url: post_image_url || null,
+        // Keep post_image_url for backwards compat — set it if media is an image.
+        post_image_url: post_media_type === 'image' ? (post_media_url || post_image_url) : (post_image_url || null),
+        post_media_url: post_media_url || post_image_url || null,
+        post_media_type: post_media_type || (post_image_url ? 'image' : null),
+        post_media_filename: post_media_filename || null,
         scheduled_at,
         status: 'scheduled',
         utm_params,
@@ -168,11 +199,17 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const updates = {};
-    const allowed = ['post_text', 'post_image_url', 'scheduled_at', 'platform', 'is_boosted', 'boost_spend'];
+    const allowed = ['post_text', 'post_image_url', 'post_media_url', 'post_media_type', 'post_media_filename', 'scheduled_at', 'platform', 'is_boosted', 'boost_spend'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     updates.updated_at = new Date().toISOString();
+
+    // Validate media if platform or media changed
+    if (updates.platform || updates.post_media_type) {
+      const mediaError = validateMediaForPlatform(updates.platform, updates.post_media_type);
+      if (mediaError) return res.status(400).json({ error: mediaError });
+    }
 
     let query = supabase.from('scheduled_posts').update(updates).eq('id', req.params.id).select().single();
     query = scopeByRole(req)(query);
