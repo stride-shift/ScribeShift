@@ -336,12 +336,23 @@ export default function ContentPillarGraph() {
   };
 
   const handleExportExcel = async () => {
-    const XLSX = await import('xlsx');
+    // write-excel-file replaces the unmaintained xlsx package.
+    // It expects 2-D arrays of cell objects rather than arrays of objects.
+    const { default: writeXlsxFile } = await import('write-excel-file/browser');
+    const objectsToSheet = (objs) => {
+      if (!objs.length) return [[]];
+      const headers = Object.keys(objs[0]);
+      return [
+        headers.map(h => ({ value: h, fontWeight: 'bold' })),
+        ...objs.map(r => headers.map(h => {
+          const v = r[h];
+          if (typeof v === 'number') return { type: Number, value: v };
+          return { type: String, value: v == null ? '' : String(v) };
+        })),
+      ];
+    };
+
     const rows = buildRows();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Content Plan');
-    // Also add a Pillars sheet
     const pillarRows = pillars.map(p => ({
       Name: p.label,
       Color: p.color,
@@ -349,9 +360,11 @@ export default function ContentPillarGraph() {
       Topics: (p.topics || []).join(', '),
       'Content Count': contentPieces.filter(c => c.pillarId === p.id).length,
     }));
-    const ws2 = XLSX.utils.json_to_sheet(pillarRows);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Pillars');
-    XLSX.writeFile(wb, 'content-planner-export.xlsx');
+
+    await writeXlsxFile(
+      [objectsToSheet(rows), objectsToSheet(pillarRows)],
+      { fileName: 'content-planner-export.xlsx', sheets: ['Content Plan', 'Pillars'] }
+    );
     setShowExportMenu(false);
   };
 
