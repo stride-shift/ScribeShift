@@ -274,7 +274,7 @@ export async function createFacebookPost(userId, text, imageUrl = null) {
       const postId = data.id || data.post_id;
       const postUrl = postId ? `https://www.facebook.com/${postId}` : null;
       console.log(`[FACEBOOK-API] Post created: ${postId}`);
-      return { success: true, postUrl, message: 'Facebook post published' };
+      return { success: true, postId, postUrl, message: 'Facebook post published' };
     }
 
     const errBody = await res.text();

@@ -358,7 +358,7 @@ export async function createTwitterPost(userId, text, imageUrl = null) {
       const tweetId = data.data?.id;
       const postUrl = tweetId ? `https://x.com/i/status/${tweetId}` : null;
       console.log(`[TWITTER-API] Tweet created: ${tweetId}`);
-      return { success: true, postUrl, message: 'Tweet published successfully' };
+      return { success: true, postId: tweetId, postUrl, message: 'Tweet published successfully' };
     }
 
     const errBody = await res.text();

@@ -271,7 +271,7 @@ export async function createInstagramPost(userId, caption, imageUrl) {
     const postUrl = `https://www.instagram.com/p/${mediaId}/`;
     console.log(`[INSTAGRAM-API] Post published: ${mediaId}`);
 
-    return { success: true, postUrl, message: 'Instagram post published' };
+    return { success: true, postId: mediaId, postUrl, message: 'Instagram post published' };
   } catch (err) {
     console.error(`[INSTAGRAM-API] Post error:`, err.message);
     return { success: false, message: `Failed to post: ${err.message}` };

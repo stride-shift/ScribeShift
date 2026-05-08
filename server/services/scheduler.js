@@ -113,6 +113,7 @@ export async function processPost(post) {
           .from('scheduled_posts')
           .update({
             status: 'posted',
+            external_post_id: result.postId || null,
             external_post_url: result.postUrl || null,
             posted_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

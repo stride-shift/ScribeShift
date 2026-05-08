@@ -243,6 +243,9 @@ async function syncLinkedInAccount(userId, companyId) {
         const d = await r.json();
         likes = d?.likesSummary?.totalLikes ?? null;
         comments = d?.commentsSummary?.aggregatedTotalComments ?? null;
+      } else {
+        const err = await r.text();
+        console.warn(`[METRICS] LinkedIn socialActions ${r.status} for ${post.external_post_id}: ${err.slice(0, 200)}`);
       }
       recent.push({
         id: post.external_post_id,
@@ -274,7 +277,7 @@ async function syncLinkedInAccount(userId, companyId) {
       email: profile?.email ?? null,
       connections_count: connectionsCount,
       followers_disclaimer: connectionsCount == null
-        ? "LinkedIn doesn't expose member follower count via API without partner-level approvals (r_organization_social). Connection count and per-post engagement are what we can read."
+        ? "LinkedIn restricts member analytics. Our app currently has the write-only scope (w_member_social) — to read follower counts, post impressions, or per-post engagement, LinkedIn requires r_member_social or r_organization_social, which they only grant to LinkedIn Marketing partners (multi-month application)."
         : null,
     },
   };
@@ -477,44 +480,57 @@ async function syncInstagramAccount(userId, companyId) {
   }
   const profile = await profileRes.json();
 
-  // Account-level insights (requires instagram_manage_insights scope). We
-  // ask for each metric individually so one bad/unsupported metric doesn't
-  // cause the whole insights query to 400.
+  // Account-level insights — IG Graph API v21 changed metric names and
+  // parameter requirements. Each metric is asked for individually with
+  // its specific period + metric_type so one bad call doesn't break others.
   const extras = {};
   let reach30 = null;
   let impressions30 = null;
   let profileViews30 = null;
+  // IG Graph v21+ requires period=day for total_value-style metrics; only
+  // `reach` accepts days_28 directly.
   const igMetrics = [
-    { key: 'reach', dst: 'reach' },
-    { key: 'impressions', dst: 'impressions' },
-    { key: 'profile_views', dst: 'profile_views' },
-    { key: 'website_clicks', dst: 'website_clicks_30d' },
-    { key: 'follower_count', dst: 'follower_growth_30d' },
+    { key: 'reach',            period: 'days_28', mt: null },
+    { key: 'views',            period: 'day',     mt: 'total_value' },
+    { key: 'profile_views',    period: 'day',     mt: 'total_value' },
+    { key: 'website_clicks',   period: 'day',     mt: 'total_value' },
+    { key: 'follower_count',   period: 'day',     mt: null },
+    { key: 'accounts_engaged', period: 'day',     mt: 'total_value' },
   ];
   const igErrors = [];
   for (const m of igMetrics) {
     try {
-      const r = await fetch(
-        `${FB_API_BASE}/${tokens.igUserId}/insights?metric=${m.key}&period=days_28&access_token=${at}`
-      );
+      const params = new URLSearchParams({
+        metric: m.key,
+        period: m.period,
+        access_token: at,
+      });
+      if (m.mt) params.set('metric_type', m.mt);
+      const r = await fetch(`${FB_API_BASE}/${tokens.igUserId}/insights?${params.toString()}`);
       if (r.ok) {
         const j = await r.json();
-        const value = j.data?.[0]?.values?.[0]?.value;
+        // total_value-style responses come back as { total_value: { value: N } }
+        // simple period responses come back as { values: [{ value: N }] }
+        const total = j.data?.[0]?.total_value?.value;
+        const series = j.data?.[0]?.values?.[0]?.value;
+        const value = total ?? series;
         if (value == null) continue;
-        if (m.dst === 'reach') reach30 = value;
-        else if (m.dst === 'impressions') impressions30 = value;
-        else if (m.dst === 'profile_views') profileViews30 = value;
-        else extras[m.dst] = value;
+        if (m.key === 'reach') reach30 = value;
+        else if (m.key === 'views') impressions30 = value;
+        else if (m.key === 'profile_views') profileViews30 = value;
+        else if (m.key === 'website_clicks') extras.website_clicks_30d = value;
+        else if (m.key === 'follower_count') extras.follower_growth_30d = value;
+        else if (m.key === 'accounts_engaged') extras.accounts_engaged_30d = value;
       } else {
         const err = await r.text();
         igErrors.push(`${m.key}: ${r.status}`);
-        console.warn(`[METRICS] IG ${m.key} ${r.status}: ${err.slice(0, 120)}`);
+        console.warn(`[METRICS] IG ${m.key} ${r.status}: ${err.slice(0, 200)}`);
       }
     } catch (err) {
       igErrors.push(`${m.key}: ${err.message}`);
     }
   }
-  if (igErrors.length > 0 && reach30 == null && impressions30 == null && profileViews30 == null) {
+  if (igErrors.length > 0 && reach30 == null && impressions30 == null && profileViews30 == null && Object.keys(extras).filter(k => !['profile_image_url','bio','website'].includes(k)).length === 0) {
     extras.insights_error = `Instagram insights unavailable. Reconnect Instagram in Settings to grant the new instagram_manage_insights permission. (${igErrors[0]})`;
   }
 

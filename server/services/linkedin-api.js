@@ -392,7 +392,7 @@ export async function createLinkedInPostViaAPI(userId, text, imageSource = null)
         .eq('user_id', userId)
         .eq('platform', 'linkedin');
 
-      return { success: true, postUrl, message: 'Post published successfully via LinkedIn API' };
+      return { success: true, postId, postUrl, message: 'Post published successfully via LinkedIn API' };
     }
 
     // Handle errors
