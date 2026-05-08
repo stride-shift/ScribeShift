@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useGeneration } from './GenerationContext';
 import ResultsPanel from './ResultsPanel';
@@ -126,22 +126,100 @@ const TONES = [
 ];
 
 const SIDEBAR_STEPS = [
-  { num: 1, label: 'Content Type', sub: 'What to create', id: 'types' },
-  { num: 2, label: 'Topic', sub: 'What it\'s about', id: 'topic' },
-  { num: 3, label: 'Context', sub: 'Extra details', id: 'context' },
-  { num: 4, label: 'Tone & Style', sub: 'How it sounds', id: 'style' },
-  { num: 5, label: 'Visual Style', sub: 'Image options', id: 'visuals' },
-  { num: 6, label: 'Generate', sub: 'Review & create', id: 'generate' },
+  { num: 1, label: 'Source', sub: 'Topic + content type', id: 'source' },
+  { num: 2, label: 'Style', sub: 'Voice + visuals', id: 'style' },
+  { num: 3, label: 'Generate', sub: 'Review & create', id: 'generate' },
 ];
 
 export { SIDEBAR_STEPS };
 
 const ACCEPTED = '.txt,.doc,.docx,.pdf,.md,.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.webm,.mkv,.mp3,.wav,.m4a,.ogg';
 
+/* ─── Branded picker — shows logo/swatch + name + chevron, opens a popover ─── */
+function BrandPicker({ brands, activeBrandId, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const active = brands.find(b => b.id === activeBrandId) || brands[0];
+
+  // Close on outside click / Escape
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const renderBadge = (brand, size = 22) => {
+    if (brand?.logo_url) {
+      return <img src={brand.logo_url} alt="" className="brand-picker-logo" style={{ width: size, height: size }} />;
+    }
+    const letter = (brand?.brand_name || '?').charAt(0).toUpperCase();
+    return (
+      <span
+        className="brand-picker-logo brand-picker-logo--placeholder"
+        style={{ width: size, height: size, background: brand?.primary_color || '#3b82f6' }}
+      >
+        {letter}
+      </span>
+    );
+  };
+
+  return (
+    <div className="brand-picker" ref={wrapRef}>
+      <button
+        type="button"
+        className={`brand-picker-trigger ${open ? 'is-open' : ''}`}
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {active ? renderBadge(active) : null}
+        <span className="brand-picker-name">{active?.brand_name || '(no brand)'}</span>
+        <svg className="brand-picker-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="brand-picker-menu" role="listbox">
+          {brands.map(b => {
+            const isActive = b.id === active?.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                className={`brand-picker-option ${isActive ? 'is-active' : ''}`}
+                onClick={() => { onChange(b.id); setOpen(false); }}
+              >
+                {renderBadge(b, 26)}
+                <span className="brand-picker-option-name">{b.brand_name || '(unnamed)'}</span>
+                {isActive && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateView() {
   const { getAuthHeaders } = useAuth();
   const {
     brand, setBrand,
+    savedBrands, activeBrandId, setActiveBrandId,
     files, setFiles,
     videoUrls, setVideoUrls,
     textPrompt, setTextPrompt,
@@ -169,18 +247,8 @@ export default function CreateView() {
   const [isRecording, setIsRecording] = useState(false);
   const [toneError, setToneError] = useState('');
   const fileInputRef = useRef(null);
-  const logoInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
-
-  const sectionRefs = {
-    types: useRef(null),
-    topic: useRef(null),
-    context: useRef(null),
-    style: useRef(null),
-    visuals: useRef(null),
-    generate: useRef(null),
-  };
 
   /* ─── Content type toggle ─── */
   const toggleType = (val) => {
@@ -217,23 +285,6 @@ export default function CreateView() {
   };
 
   const removeUrl = (index) => setVideoUrls(videoUrls.filter((_, i) => i !== index));
-
-  /* ─── Logo upload ─── */
-  const handleLogoUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1];
-      setBrand({ ...brand, logoBase64: base64, logoPreviewUrl: reader.result });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeLogo = () => {
-    setBrand({ ...brand, logoBase64: null, logoPreviewUrl: null });
-    if (logoInputRef.current) logoInputRef.current.value = '';
-  };
 
   /* ─── Voice recording ─── */
   const startRecording = async () => {
@@ -311,21 +362,89 @@ export default function CreateView() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  /* ─── Summary for step 6 ─── */
+  /* ─── Summary for review step ─── */
   const selectedTypeLabels = CONTENT_TYPES.filter(t => selectedTypes.has(t.value)).map(t => t.title);
+  const activeBrand = savedBrands.find(b => b.id === activeBrandId);
+  const hasNoBrands = savedBrands.length === 0;
+  // Block generation when there's no brand to attribute the content to —
+  // prevents fully-generic output and makes the missing setup obvious.
+  const blockGenerate = hasNoBrands || !canGenerate;
 
   return (
     <>
-      {/* ─── Header ─── */}
-      <div className="section-header">
-        <h1 className="section-title">Create Content</h1>
-        <p className="section-desc">Follow the steps below to generate polished, multi-format content</p>
+      {/* ─── Header with active brand picker ─── */}
+      <div className="section-header create-header">
+        <h1 className="section-title create-title">
+          Create Content
+          <svg className="create-sparkle" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4z" />
+            <path d="M19 14l.7 1.7L21.5 16l-1.8.6L19 18l-.7-1.4L16.5 16l1.8-.3z" opacity="0.7" />
+          </svg>
+        </h1>
+        <p className="section-desc">Three simple steps. Your brand voice is loaded automatically.</p>
+        {hasNoBrands ? (
+          <div className="create-empty-brand-card">
+            <div>
+              <h3 style={{ margin: '0 0 0.25rem 0' }}>No brand set up yet</h3>
+              <p className="card-subtitle" style={{ marginTop: 0 }}>
+                You need a brand before you can generate content. Brands hold the voice, audience, and visual identity that the AI mirrors.
+              </p>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => { window.location.hash = 'brands'; }}
+                style={{ marginTop: '0.75rem' }}
+              >
+                Set up your first brand →
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="create-brand-row">
+              <span className="create-brand-row-label">Generating for:</span>
+              <BrandPicker
+                brands={savedBrands}
+                activeBrandId={activeBrandId}
+                onChange={setActiveBrandId}
+              />
+              <a
+                href="#brands"
+                className="create-brand-manage"
+                onClick={(e) => { e.preventDefault(); window.location.hash = 'brands'; }}
+              >
+                Manage brands
+              </a>
+            </div>
+            {activeBrand && !activeBrand.icp_description && !activeBrand.brand_guidelines && (!activeBrand.writing_samples || activeBrand.writing_samples.filter(s => s && s.trim()).length === 0) && (
+              <button
+                type="button"
+                className="create-voice-warning"
+                onClick={() => { window.location.hash = 'brands'; }}
+              >
+                <svg className="create-voice-warning-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span className="create-voice-warning-text">
+                  This brand has no voice fields set. <span className="create-voice-warning-link">Add ICP, guidelines, and writing samples</span> to dramatically improve match.
+                </span>
+                <svg className="create-voice-warning-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            )}
+          </>
+        )}
       </div>
 
-      {/* ═══ STEP 1: Choose content type ═══ */}
-      <div ref={sectionRefs.types} className="reveal">
+      {/* ═══ STEP 1: Source — content type + topic ═══ */}
+      <div id="step-source" className="reveal">
         <div className="card">
-          <div className="card-title"><span className="step">1</span> Choose your content type</div>
+          <div className="card-title"><span className="step">1</span> What are you creating, and what's it about?</div>
+
+          <p className="card-subtitle" style={{ marginBottom: '0.75rem' }}>Pick one or more formats — we'll generate them all.</p>
           <div className="wizard-type-grid">
             {CONTENT_TYPES.map((t) => {
               const isActive = selectedTypes.has(t.value);
@@ -352,23 +471,22 @@ export default function CreateView() {
               );
             })}
           </div>
-        </div>
-      </div>
+          {selectedTypes.size > 0 && (
+            <p className="card-subtitle" style={{ marginTop: '0.5rem' }}>
+              {selectedTypes.size} format{selectedTypes.size > 1 ? 's' : ''} selected
+            </p>
+          )}
 
-      {/* ═══ STEP 2: What is your content about? ═══ */}
-      <div ref={sectionRefs.topic} className="reveal reveal-delay-1">
-        <div className="card">
-          <div className="card-title"><span className="step">2</span> What is your content about?</div>
-          <p className="card-subtitle">Share your idea in one of three easy ways</p>
+          <div style={{ height: '1.25rem' }} />
 
-          {/* Input method tabs */}
+          <p className="card-subtitle" style={{ marginBottom: '0.75rem' }}>Now share your topic or source — write, upload, paste a URL, or record.</p>
           <div className="wizard-input-tabs">
             <button type="button" className={`wizard-tab ${inputTab === 'write' ? 'active' : ''}`} onClick={() => setInputTab('write')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              Write it
+              Write
             </button>
             <button type="button" className={`wizard-tab ${inputTab === 'upload' ? 'active' : ''}`} onClick={() => setInputTab('upload')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -376,14 +494,14 @@ export default function CreateView() {
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              Upload files
+              Upload
             </button>
             <button type="button" className={`wizard-tab ${inputTab === 'url' ? 'active' : ''}`} onClick={() => setInputTab('url')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
               </svg>
-              Paste a URL
+              URL
             </button>
             <button type="button" className={`wizard-tab ${inputTab === 'voice' ? 'active' : ''}`} onClick={() => setInputTab('voice')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -392,16 +510,15 @@ export default function CreateView() {
                 <line x1="12" y1="19" x2="12" y2="23" />
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
-              Record voice
+              Record
             </button>
           </div>
 
-          {/* Write tab */}
           {inputTab === 'write' && (
             <div className="wizard-input-area">
               <textarea
                 className="wizard-textarea"
-                placeholder="e.g. Write about the future of AI in marketing, focusing on personalization at scale and how small businesses can compete with enterprise brands..."
+                placeholder="e.g. Write about the future of AI in marketing, focusing on personalization at scale..."
                 value={textPrompt || ''}
                 onChange={(e) => setTextPrompt(e.target.value)}
                 rows={4}
@@ -409,7 +526,6 @@ export default function CreateView() {
             </div>
           )}
 
-          {/* Upload tab */}
           {inputTab === 'upload' && (
             <div className="wizard-input-area">
               {uploadError && <div className="error-msg" style={{ marginBottom: '0.75rem' }}>{uploadError}</div>}
@@ -444,7 +560,6 @@ export default function CreateView() {
             </div>
           )}
 
-          {/* URL tab */}
           {inputTab === 'url' && (
             <div className="wizard-input-area">
               <div className="wizard-url-row">
@@ -471,7 +586,6 @@ export default function CreateView() {
             </div>
           )}
 
-          {/* Voice tab */}
           {inputTab === 'voice' && (
             <div className="wizard-input-area">
               <div className="wizard-voice-area">
@@ -492,151 +606,69 @@ export default function CreateView() {
               </div>
             </div>
           )}
-
-          {/* Show active inputs summary */}
-          {(files.length > 0 || videoUrls.length > 0 || textPrompt) && (
-            <div className="wizard-inputs-summary">
-              {textPrompt && <span className="wizard-input-badge">Topic entered</span>}
-              {files.length > 0 && <span className="wizard-input-badge">{files.length} file{files.length > 1 ? 's' : ''}</span>}
-              {videoUrls.length > 0 && <span className="wizard-input-badge">{videoUrls.length} URL{videoUrls.length > 1 ? 's' : ''}</span>}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ═══ STEP 3: Add extra context (optional) ═══ */}
-      <div ref={sectionRefs.context} className="reveal reveal-delay-2">
+      {/* ═══ STEP 2: Style — tone, audience, length, visuals ═══ */}
+      <div id="step-style" className="reveal reveal-delay-1">
         <div className="card">
-          <div className="card-title"><span className="step">3</span> Enhance your content (optional)</div>
-          <p className="card-subtitle">Add extra context to improve results quality</p>
+          <div className="card-title"><span className="step">2</span> Set the voice and any visual style</div>
 
-          <div className="wizard-context-grid">
-            {/* Brand identity inline */}
-            <div className="wizard-context-block">
-              <label className="wizard-context-label">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-                  <line x1="7" y1="7" x2="7.01" y2="7" />
-                </svg>
-                Brand Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Acme Corp"
-                value={brand.brandName || ''}
-                onChange={(e) => setBrand({ ...brand, brandName: e.target.value })}
-                className="wizard-context-input"
-              />
-            </div>
-
-            <div className="wizard-context-block">
-              <label className="wizard-context-label">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="16" x2="12" y2="12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-                Industry
-              </label>
-              <select value={options.industry || 'general'} onChange={(e) => set('industry', e.target.value)} className="wizard-context-select">
-                <option value="general">General</option>
-                <option value="tech">Tech</option>
-                <option value="marketing">Marketing</option>
-                <option value="healthcare">Healthcare</option>
-                <option value="finance">Finance</option>
-                <option value="education">Education</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div className="wizard-context-block">
-              <label className="wizard-context-label">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-                Audience
-              </label>
-              <select value={options.audience} onChange={(e) => set('audience', e.target.value)} className="wizard-context-select">
+          {/* Audience + length + goal in one row */}
+          <div className="wizard-options-row">
+            <div className="wizard-option-group">
+              <label>Audience</label>
+              <select value={options.audience} onChange={(e) => set('audience', e.target.value)}>
                 <option value="general">General</option>
                 <option value="executives">Executives</option>
                 <option value="technical">Technical</option>
                 <option value="educators">Educators</option>
               </select>
             </div>
-
-            <div className="wizard-context-block">
-              <label className="wizard-context-label">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
-                Content Goal
-              </label>
-              <select value={options.goal || 'none'} onChange={(e) => set('goal', e.target.value)} className="wizard-context-select">
+            <div className="wizard-option-group">
+              <label>Length</label>
+              <select value={options.length} onChange={(e) => set('length', e.target.value)}>
+                <option value="short">Short</option>
+                <option value="standard">Standard</option>
+                <option value="long">Long</option>
+              </select>
+            </div>
+            <div className="wizard-option-group">
+              <label>Goal</label>
+              <select value={options.goal || 'none'} onChange={(e) => set('goal', e.target.value)}>
                 <option value="none">No specific goal</option>
                 <option value="engagement">Engagement</option>
-                <option value="lead_generation">Lead Generation</option>
-                <option value="authority">Build Authority</option>
-                <option value="awareness">Brand Awareness</option>
-                <option value="signups">Drive Signups</option>
+                <option value="lead_generation">Lead generation</option>
+                <option value="authority">Build authority</option>
+                <option value="awareness">Brand awareness</option>
+                <option value="signups">Drive signups</option>
+              </select>
+            </div>
+            <div className="wizard-option-group">
+              <label>Edit level</label>
+              <select value={options.polish || 'natural'} onChange={(e) => set('polish', e.target.value)}>
+                <option value="raw">Raw</option>
+                <option value="natural">Natural</option>
+                <option value="balanced">Balanced</option>
+                <option value="polished">Polished</option>
               </select>
             </div>
           </div>
 
-          {/* Brand colors + logo row */}
-          <div className="wizard-brand-row">
-            <div className="wizard-color-picker">
-              <label className="wizard-context-label">Primary Color</label>
-              <div className="wizard-color-input">
-                <input type="color" value={brand.primaryColor || '#3b82f6'} onChange={(e) => setBrand({ ...brand, primaryColor: e.target.value })} />
-                <input type="text" value={brand.primaryColor || '#3b82f6'} onChange={(e) => setBrand({ ...brand, primaryColor: e.target.value })} className="color-hex" maxLength={7} />
-              </div>
-            </div>
-            <div className="wizard-color-picker">
-              <label className="wizard-context-label">Secondary Color</label>
-              <div className="wizard-color-input">
-                <input type="color" value={brand.secondaryColor || '#475569'} onChange={(e) => setBrand({ ...brand, secondaryColor: e.target.value })} />
-                <input type="text" value={brand.secondaryColor || '#475569'} onChange={(e) => setBrand({ ...brand, secondaryColor: e.target.value })} className="color-hex" maxLength={7} />
-              </div>
-            </div>
-            <div className="wizard-logo-section">
-              <label className="wizard-context-label">Logo</label>
-              {brand.logoPreviewUrl ? (
-                <div className="wizard-logo-preview">
-                  <img src={brand.logoPreviewUrl} alt="Brand logo" />
-                  <button className="wizard-logo-remove" onClick={removeLogo} title="Remove logo">&times;</button>
-                </div>
-              ) : (
-                <div className="wizard-logo-upload" onClick={() => logoInputRef.current?.click()}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                  <span>Upload</span>
-                </div>
-              )}
-              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══ STEP 4: How should your content sound? ═══ */}
-      <div ref={sectionRefs.style} className="reveal reveal-delay-3">
-        <div className="card">
-          <div className="card-title"><span className="step">4</span> Set the tone, audience, and length</div>
-
-          {/* Tone pills */}
-          <div className="wizard-tone-section">
-            <label className="wizard-context-label" style={{ marginBottom: '0.5rem' }}>Tone & Voice</label>
+          {/* Tone */}
+          <div className="wizard-tone-section" style={{ marginTop: '1rem' }}>
+            <label className="wizard-context-label" style={{ marginBottom: '0.5rem' }}>Tone</label>
 
             <div className="wizard-tone-mode-row">
               <button type="button" className={`wizard-tone-mode ${options.toneMode === 'preset' ? 'active' : ''}`} onClick={() => set('toneMode', 'preset')}>Preset</button>
-              <button type="button" className={`wizard-tone-mode ${options.toneMode === 'detected' ? 'active' : ''}`} onClick={() => { if (options.detectedTone) set('toneMode', 'detected'); else if (hasContent) handleDetectTone(); }} disabled={!hasContent && !options.detectedTone}>
-                {isDetectingTone ? 'Detecting...' : 'Detect from Content'}
+              <button
+                type="button"
+                className={`wizard-tone-mode ${options.toneMode === 'detected' ? 'active' : ''}`}
+                onClick={() => { if (options.detectedTone) set('toneMode', 'detected'); else if (hasContent) handleDetectTone(); }}
+                disabled={!hasContent && !options.detectedTone}
+                title={!hasContent && !options.detectedTone ? 'Upload a file or paste a URL first' : ''}
+              >
+                {isDetectingTone ? 'Detecting...' : 'Detect from content'}
               </button>
               <button type="button" className={`wizard-tone-mode ${options.toneMode === 'custom' ? 'active' : ''}`} onClick={() => set('toneMode', 'custom')}>Custom</button>
             </div>
@@ -682,108 +714,102 @@ export default function CreateView() {
                 className="wizard-textarea"
                 value={options.customTone || ''}
                 onChange={(e) => set('customTone', e.target.value)}
-                placeholder="Describe the tone you want, e.g. 'Direct and punchy, like a seasoned founder who's seen it all.'"
+                placeholder="Describe the tone, e.g. 'Direct and punchy, like a seasoned founder.'"
                 rows={3}
                 style={{ marginTop: '0.75rem' }}
               />
             )}
           </div>
 
-          {/* Polish & Length row */}
-          <div className="wizard-options-row">
-            <div className="wizard-option-group">
-              <label>Polish Level</label>
-              <select value={options.polish || 'natural'} onChange={(e) => set('polish', e.target.value)}>
-                <option value="raw">Raw</option>
-                <option value="natural">Natural</option>
-                <option value="balanced">Balanced</option>
-                <option value="polished">Polished</option>
-              </select>
-            </div>
-            <div className="wizard-option-group">
-              <label>Length</label>
-              <select value={options.length} onChange={(e) => set('length', e.target.value)}>
-                <option value="short">Short</option>
-                <option value="standard">Standard</option>
-                <option value="long">Long</option>
-              </select>
-            </div>
-          </div>
+          {/* Visual style — only when 'images' is selected */}
+          {imagesSelected && (
+            <>
+              <div style={{ borderTop: '1px solid var(--border)', margin: '1.5rem 0 1rem' }} />
+              <label className="wizard-context-label" style={{ marginBottom: '0.5rem' }}>Visual style</label>
+
+              <div className="image-style-grid">
+                {IMAGE_STYLES.map((style) => {
+                  const isActive = imageConfig.selectedStyles.has(style.key);
+                  return (
+                    <div
+                      key={style.key}
+                      className={`image-style-card ${isActive ? 'selected' : ''}`}
+                      onClick={() => toggleStyle(style.key)}
+                    >
+                      <div className="style-swatch" style={{ background: style.gradient }} />
+                      <div className="style-card-info">
+                        <div className="style-card-name">{style.name}</div>
+                        <div className="style-card-desc">{style.desc}</div>
+                      </div>
+                      {isActive && (
+                        <div className="style-check">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="wizard-image-extras">
+                <div className="wizard-context-block" style={{ flex: 1 }}>
+                  <label className="wizard-context-label">Additional guidelines</label>
+                  <textarea
+                    className="wizard-textarea"
+                    placeholder="e.g. Use abstract geometric shapes, dark backgrounds..."
+                    value={imageConfig.customGuidelines}
+                    onChange={(e) => setImageConfig({ ...imageConfig, customGuidelines: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div className="wizard-context-block" style={{ flex: 1 }}>
+                  <label className="wizard-context-label">Custom style prompt (+3 images)</label>
+                  <textarea
+                    className="wizard-textarea"
+                    placeholder="e.g. Watercolor illustration on aged paper..."
+                    value={imageConfig.customStylePrompt}
+                    onChange={(e) => setImageConfig({ ...imageConfig, customStylePrompt: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
+                <label className="wizard-context-label">Things to avoid</label>
+                <textarea
+                  className="wizard-textarea"
+                  placeholder="e.g. No text rendered in the image, no human figures, no clichéd metaphors..."
+                  value={imageConfig.avoidList || ''}
+                  onChange={(e) => setImageConfig({ ...imageConfig, avoidList: e.target.value })}
+                  rows={2}
+                />
+              </div>
+
+              <div className="image-summary">
+                {styleCount} style{styleCount !== 1 ? 's' : ''} selected
+                {customAdds > 0 ? ' + custom' : ''} — <strong>{totalImages} images</strong> will be generated
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* ═══ STEP 5: Visual style for images ═══ */}
-      {imagesSelected && (
-        <div ref={sectionRefs.visuals} className="reveal reveal-delay-4">
-          <div className="card">
-            <div className="card-title"><span className="step">5</span> Choose a visual style for images</div>
-
-            <div className="image-style-grid">
-              {IMAGE_STYLES.map((style) => {
-                const isActive = imageConfig.selectedStyles.has(style.key);
-                return (
-                  <div
-                    key={style.key}
-                    className={`image-style-card ${isActive ? 'selected' : ''}`}
-                    onClick={() => toggleStyle(style.key)}
-                  >
-                    <div className="style-swatch" style={{ background: style.gradient }} />
-                    <div className="style-card-info">
-                      <div className="style-card-name">{style.name}</div>
-                      <div className="style-card-desc">{style.desc}</div>
-                    </div>
-                    {isActive && (
-                      <div className="style-check">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="wizard-image-extras">
-              <div className="wizard-context-block" style={{ flex: 1 }}>
-                <label className="wizard-context-label">Additional Guidelines</label>
-                <textarea
-                  className="wizard-textarea"
-                  placeholder="e.g. Use dark backgrounds, include abstract shapes..."
-                  value={imageConfig.customGuidelines}
-                  onChange={(e) => setImageConfig({ ...imageConfig, customGuidelines: e.target.value })}
-                  rows={2}
-                />
-              </div>
-              <div className="wizard-context-block" style={{ flex: 1 }}>
-                <label className="wizard-context-label">Custom Style Prompt (+3 images)</label>
-                <textarea
-                  className="wizard-textarea"
-                  placeholder="e.g. Watercolor illustration on aged paper..."
-                  value={imageConfig.customStylePrompt}
-                  onChange={(e) => setImageConfig({ ...imageConfig, customStylePrompt: e.target.value })}
-                  rows={2}
-                />
-              </div>
-            </div>
-
-            <div className="image-summary">
-              {styleCount} style{styleCount !== 1 ? 's' : ''} selected
-              {customAdds > 0 ? ' + custom' : ''} — <strong>{totalImages} images</strong> will be generated
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ STEP 6: Review & Generate ═══ */}
-      <div ref={sectionRefs.generate} className="reveal reveal-delay-4">
+      {/* ═══ STEP 3: Review & Generate ═══ */}
+      <div id="step-generate" className="reveal reveal-delay-2">
         <div className="card wizard-generate-card">
-          <div className="card-title"><span className="step">{imagesSelected ? 6 : 5}</span> Review and generate your content</div>
+          <div className="card-title"><span className="step">3</span> Review and generate</div>
 
-          {/* Summary */}
           <div className="wizard-review-summary">
             <div className="wizard-review-row">
-              <span className="wizard-review-label">Content types</span>
+              <span className="wizard-review-label">Brand</span>
+              <span className="wizard-review-value">
+                {activeBrand ? activeBrand.brand_name : <em className="wizard-review-empty">None selected</em>}
+              </span>
+            </div>
+            <div className="wizard-review-row">
+              <span className="wizard-review-label">Formats</span>
               <span className="wizard-review-value">
                 {selectedTypeLabels.length > 0 ? selectedTypeLabels.join(', ') : <em className="wizard-review-empty">None selected</em>}
               </span>
@@ -791,7 +817,10 @@ export default function CreateView() {
             <div className="wizard-review-row">
               <span className="wizard-review-label">Topic</span>
               <span className="wizard-review-value">
-                {textPrompt ? (textPrompt.length > 60 ? textPrompt.slice(0, 60) + '...' : textPrompt) : files.length > 0 ? `${files.length} file(s) uploaded` : videoUrls.length > 0 ? `${videoUrls.length} URL(s) added` : <em className="wizard-review-empty">Not specified</em>}
+                {textPrompt ? (textPrompt.length > 60 ? textPrompt.slice(0, 60) + '...' : textPrompt)
+                  : files.length > 0 ? `${files.length} file(s) uploaded`
+                  : videoUrls.length > 0 ? `${videoUrls.length} URL(s) added`
+                  : <em className="wizard-review-empty">Not specified</em>}
               </span>
             </div>
             <div className="wizard-review-row">
@@ -800,16 +829,10 @@ export default function CreateView() {
                 {options.toneMode === 'detected' ? 'Auto-detected' : options.toneMode === 'custom' ? 'Custom' : options.tone}
               </span>
             </div>
-            {brand.brandName && (
-              <div className="wizard-review-row">
-                <span className="wizard-review-label">Brand</span>
-                <span className="wizard-review-value">{brand.brandName}</span>
-              </div>
-            )}
             {imagesSelected && (
               <div className="wizard-review-row">
                 <span className="wizard-review-label">Images</span>
-                <span className="wizard-review-value">{totalImages} images ({styleCount} styles)</span>
+                <span className="wizard-review-value">{totalImages} ({styleCount} styles)</span>
               </div>
             )}
           </div>
@@ -819,7 +842,8 @@ export default function CreateView() {
           <button
             className={`btn btn-primary generate-btn wizard-generate-btn ${isGenerating ? 'loading' : ''}`}
             onClick={handleGenerate}
-            disabled={!canGenerate}
+            disabled={blockGenerate}
+            title={hasNoBrands ? 'Set up a brand first' : ''}
           >
             {isGenerating ? (
               <>

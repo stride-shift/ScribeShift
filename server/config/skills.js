@@ -62,6 +62,34 @@ VOICE SAMPLES:
 Now write in THIS voice — not a sanitized version of it.
 `;
 
+// Assemble an ICP / brand guidelines / writing samples block from brand fields.
+// Returns '' when no voice data is supplied so it can be appended unconditionally.
+export function buildVoiceContext(brandData = {}) {
+  const blocks = [];
+
+  if (brandData.icpDescription && brandData.icpDescription.trim()) {
+    blocks.push(
+      `## IDEAL CUSTOMER PROFILE\nWrite for this audience. Every sentence should resonate with them:\n${brandData.icpDescription.trim()}`
+    );
+  }
+
+  if (brandData.brandGuidelines && brandData.brandGuidelines.trim()) {
+    blocks.push(
+      `## BRAND GUIDELINES\nThe brand's stated values, positioning, and rules. Respect them:\n${brandData.brandGuidelines.trim()}`
+    );
+  }
+
+  const samples = Array.isArray(brandData.writingSamples)
+    ? brandData.writingSamples.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean)
+    : [];
+  if (samples.length > 0) {
+    const formatted = samples.map((s, i) => `--- Sample ${i + 1} ---\n${s}`).join('\n\n');
+    blocks.push(VOICE_REFERENCE_PROMPT.replace('{{VOICE_SAMPLES}}', formatted));
+  }
+
+  return blocks.length > 0 ? '\n\n' + blocks.join('\n\n') : '';
+}
+
 // ── TEXT SKILLS ─────────────────────────────────────────────────────
 
 export const SKILL_TRANSCRIPT_TO_BLOG = `# Transcript to Blog Post

@@ -50,6 +50,11 @@ export default function AuthProvider({ children }) {
     });
   }, []);
 
+  const refreshUser = async () => {
+    const { data: { session: s } } = await supabase.auth.getSession();
+    if (s?.user) await fetchProfile(s.user, s.access_token);
+  };
+
   // Fetch user profile from our users table
   const fetchProfile = async (authUser, accessToken) => {
     try {
@@ -206,6 +211,7 @@ export default function AuthProvider({ children }) {
     login,
     signup,
     logout,
+    refreshUser,
     resetPassword,
     confirmPasswordReset,
     signInWithGoogle,

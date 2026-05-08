@@ -37,6 +37,7 @@ import campaignRoutes from './routes/campaign.js';
 import detectToneRoutes from './routes/detect-tone.js';
 import plannerRoutes from './routes/planner.js';
 import cronRoutes from './routes/cron.js';
+import onboardingRoutes from './routes/onboarding.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { TEXT_MODEL, IMAGE_MODEL } from './config/gemini.js';
 import { checkDuePosts } from './services/scheduler.js';
@@ -134,6 +135,7 @@ app.use('/api/credentials', apiLimiter, credentialsRoutes);
 app.use('/api/campaign', apiLimiter, campaignRoutes);
 app.use('/api/detect-tone', generateLimiter, detectToneRoutes);
 app.use('/api/planner', apiLimiter, plannerRoutes);
+app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/cron', cronRoutes);
 
 // ── Health check ────────────────────────────────────────────────────

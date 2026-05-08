@@ -9,6 +9,7 @@ import {
 import {
   SKILL_MAP, SKILL_TRANSCRIPT_TO_BLOG, injectBrand,
   TONE_DIRECTIVES, POLISH_DIRECTIVES, GOAL_DIRECTIVES,
+  buildVoiceContext,
 } from '../config/skills.js';
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
@@ -174,7 +175,9 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
 
     // Build style directives from new controls
     const styleDirectives = buildStyleDirectives(options);
-    console.log(`[GEN] Style: toneMode=${options.toneMode || 'preset'}, tone=${options.tone}, polish=${options.polish || 'natural'}, goal=${options.goal || 'none'}`);
+    const voiceContext = buildVoiceContext(brandData);
+    const brandDirectives = styleDirectives + voiceContext;
+    console.log(`[GEN] Style: toneMode=${options.toneMode || 'preset'}, tone=${options.tone}, polish=${options.polish || 'natural'}, goal=${options.goal || 'none'}, voice=${voiceContext ? 'on' : 'off'}`);
 
     const results = {};
 
@@ -184,7 +187,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     if (needsBlog || contentTypes.includes('blog')) {
       console.log('[GEN] Generating base blog from input...');
       blogContent = await geminiText(
-        `${injectBrand(SKILL_TRANSCRIPT_TO_BLOG, brandData)}${styleDirectives}\n\nCRITICAL REMINDER: The blog post MUST be entirely derived from the source content below. Cover the actual topics, arguments, stories, and insights from the source. Do NOT invent new topics or add information not present in the source material.\n\nIMPORTANT: Output ONLY the blog post. Do NOT wrap in code blocks or fences. Do NOT include preambles.\n\nHere is the transcript/source content (provided directly below — do NOT ask for it separately):\n${allInput}`
+        `${injectBrand(SKILL_TRANSCRIPT_TO_BLOG, brandData)}${brandDirectives}\n\nCRITICAL REMINDER: The blog post MUST be entirely derived from the source content below. Cover the actual topics, arguments, stories, and insights from the source. Do NOT invent new topics or add information not present in the source material.\n\nIMPORTANT: Output ONLY the blog post. Do NOT wrap in code blocks or fences. Do NOT include preambles.\n\nHere is the transcript/source content (provided directly below — do NOT ask for it separately):\n${allInput}`
       );
       if (contentTypes.includes('blog')) {
         results.blog = blogContent;
@@ -211,7 +214,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
 
         console.log(`[GEN] Generating ${type}...`);
         const result = await geminiText(
-          `${prompt}${styleDirectives}${sourceEnforcement}\n\nIMPORTANT: Output ONLY the final content. Do NOT wrap in code blocks. Do NOT include preambles like "Here are X posts". Start directly with the content.\n\n${contentLabel}\n${input}\n\nOptions: ToneMode=${options.toneMode || 'preset'}, Tone=${options.tone}, Polish=${options.polish || 'natural'}, Length=${options.length}, Audience=${options.audience}, Industry=${options.industry || 'general'}, Goal=${options.goal || 'none'}`
+          `${prompt}${brandDirectives}${sourceEnforcement}\n\nIMPORTANT: Output ONLY the final content. Do NOT wrap in code blocks. Do NOT include preambles like "Here are X posts". Start directly with the content.\n\n${contentLabel}\n${input}\n\nOptions: ToneMode=${options.toneMode || 'preset'}, Tone=${options.tone}, Polish=${options.polish || 'natural'}, Length=${options.length}, Audience=${options.audience}, Industry=${options.industry || 'general'}, Goal=${options.goal || 'none'}`
         );
         return { type, result };
       } catch (err) {

@@ -204,7 +204,7 @@ export async function storeTokens(userId, companyId, pageAccessToken, pageId, pa
 }
 
 // ── Load tokens ─────────────────────────────────────────────────────
-async function loadTokens(userId) {
+export async function loadTokens(userId) {
   const { data, error } = await supabase
     .from('social_oauth_tokens')
     .select('*')

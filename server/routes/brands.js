@@ -6,6 +6,35 @@ import { verifyToken, scopeByRole } from '../middleware/auth.js';
 const router = Router();
 router.use(verifyToken);
 
+// Default brand-count limit per plan. A company row can override with `max_brands`.
+const PLAN_BRAND_LIMITS = {
+  free: 1,
+  starter: 3,
+  agency: 10,
+  enterprise: 50,
+};
+
+async function getBrandLimit(companyId) {
+  if (!companyId) return { limit: 1, plan: 'free' };
+  const { data } = await supabase
+    .from('companies')
+    .select('plan, max_brands')
+    .eq('id', companyId)
+    .single();
+  if (!data) return { limit: 1, plan: 'free' };
+  if (typeof data.max_brands === 'number') return { limit: data.max_brands, plan: data.plan };
+  return { limit: PLAN_BRAND_LIMITS[data.plan] ?? PLAN_BRAND_LIMITS.free, plan: data.plan };
+}
+
+// Normalize writing samples to an array of non-empty strings, capped at 5.
+function normalizeSamples(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(s => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 // ── GET /api/brands ─────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -18,7 +47,9 @@ router.get('/', async (req, res) => {
     const { data, error } = await query;
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ brands: data });
+
+    const { limit } = await getBrandLimit(req.user.company_id);
+    res.json({ brands: data, limit, used: data?.length || 0 });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch brands' });
   }
@@ -27,7 +58,24 @@ router.get('/', async (req, res) => {
 // ── POST /api/brands ────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { brand_name, primary_color, secondary_color, logo_url, industry } = req.body;
+    const {
+      brand_name, primary_color, secondary_color, logo_url, industry,
+      icp_description, brand_guidelines, writing_samples,
+    } = req.body;
+
+    // Enforce per-plan brand count before insert
+    const { limit } = await getBrandLimit(req.user.company_id);
+    const { count } = await supabase
+      .from('brands')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', req.user.company_id);
+    if ((count ?? 0) >= limit) {
+      return res.status(403).json({
+        error: `Brand limit reached (${count}/${limit}). Contact your admin to upgrade your plan.`,
+        limit,
+        used: count,
+      });
+    }
 
     const { data, error } = await supabase
       .from('brands')
@@ -39,6 +87,9 @@ router.post('/', async (req, res) => {
         secondary_color: secondary_color || '#38bdf8',
         logo_url,
         industry: industry || 'general',
+        icp_description: icp_description || null,
+        brand_guidelines: brand_guidelines || null,
+        writing_samples: normalizeSamples(writing_samples),
       })
       .select()
       .single();
@@ -54,9 +105,15 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const updates = {};
-    const allowed = ['brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry'];
+    const allowed = [
+      'brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry',
+      'icp_description', 'brand_guidelines',
+    ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (req.body.writing_samples !== undefined) {
+      updates.writing_samples = normalizeSamples(req.body.writing_samples);
     }
     updates.updated_at = new Date().toISOString();
 

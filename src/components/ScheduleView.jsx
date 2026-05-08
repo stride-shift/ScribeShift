@@ -635,7 +635,7 @@ export default function ScheduleView() {
           <p className="text-[13px] text-[var(--text-secondary)] mt-3">Loading schedule...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 items-start">
+        <div className="grid grid-cols-1 2xl:grid-cols-[1fr_280px] gap-5 items-start">
           {/* ═══ MAIN COLUMN ═══ */}
           <div className="min-w-0">
             {viewMode === 'calendar' ? (

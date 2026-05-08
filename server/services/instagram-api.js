@@ -13,7 +13,9 @@ const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 // Instagram Publishing requires these Facebook permissions.
 // business_management lets us discover Pages owned by Businesses (needed for
 // Facebook Login for Business tokens — /me/accounts returns empty there).
-const SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,business_management';
+// instagram_manage_insights is required to read account-level and post-level
+// analytics (followers, reach, impressions, post insights).
+const SCOPES = 'instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,business_management';
 const PLATFORM = 'instagram';
 
 // ── Generate OAuth authorization URL ────────────────────────────────
@@ -183,7 +185,7 @@ export async function storeTokens(userId, companyId, accessToken, igUserId, igUs
 }
 
 // ── Load tokens ─────────────────────────────────────────────────────
-async function loadTokens(userId) {
+export async function loadTokens(userId) {
   const { data, error } = await supabase
     .from('social_oauth_tokens')
     .select('*')

@@ -1,31 +1,18 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthProvider';
-import { StatCard } from './ui/stat-card';
 import { Tabs } from './ui/tabs';
-import { RailPanel, EmptyPanel } from './ui/empty-panel';
+import { StatCard } from './ui/stat-card';
 import {
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
-const SORT_OPTIONS = [
-  { value: 'reactions', label: 'Reactions' },
-  { value: 'comments', label: 'Comments' },
-  { value: 'shares', label: 'Shares' },
-  { value: 'impressions', label: 'Impressions' },
-  { value: 'clicks', label: 'Clicks' },
-  { value: 'engagement_rate', label: 'Engagement Rate' },
-];
+const PLATFORM_LABELS = {
+  linkedin: 'LinkedIn',
+  twitter: 'Twitter / X',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+};
 
 const PLATFORM_COLORS = {
   linkedin: '#0A66C2',
@@ -34,251 +21,183 @@ const PLATFORM_COLORS = {
   instagram: '#E4405F',
 };
 
-const Icons = {
-  doc: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
-  eye: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
-  heart: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
-  rate: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
-  comment: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
-  share: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+const PLATFORM_ICONS = {
+  linkedin: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.5 2h-17A1.5 1.5 0 002 3.5v17A1.5 1.5 0 003.5 22h17a1.5 1.5 0 001.5-1.5v-17A1.5 1.5 0 0020.5 2zM8 19H5v-9h3zM6.5 8.25A1.75 1.75 0 118.3 6.5a1.78 1.78 0 01-1.8 1.75zM19 19h-3v-4.74c0-1.42-.6-1.93-1.38-1.93A1.74 1.74 0 0013 14.19a.66.66 0 000 .14V19h-3v-9h2.9v1.3a3.11 3.11 0 012.7-1.4c1.55 0 3.36.86 3.36 3.66z" />
+    </svg>
+  ),
+  twitter: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  ),
+  facebook: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.69.24 2.69.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.26h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z" />
+    </svg>
+  ),
+  instagram: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  ),
 };
 
 function formatNumber(n) {
   const num = Number(n) || 0;
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return String(num);
 }
 
+function timeAgo(iso) {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
 export default function AnalyticsDashboard() {
   const { getAuthHeaders } = useAuth();
-  const [summary, setSummary] = useState(null);
-  const [metrics, setMetrics] = useState([]);
-  const [comparison, setComparison] = useState(null);
+  const [tab, setTab] = useState('native');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sortBy, setSortBy] = useState('reactions');
-  const [filterBoosted, setFilterBoosted] = useState('');
-  const [tab, setTab] = useState('overview');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState('');
 
-  const authHeaders = getAuthHeaders();
+  const [accountOverview, setAccountOverview] = useState({ accounts: [], totals: null });
+  const [postSummary, setPostSummary] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [comparison, setComparison] = useState(null);
+  const [scribeshift, setScribeshift] = useState(null);
 
-  useEffect(() => { loadData(); }, []);
-  useEffect(() => { loadMetrics(); }, [sortBy, filterBoosted]);
-
-  const loadData = async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
+    setError('');
+    const auth = getAuthHeaders();
     try {
-      const [summaryRes, comparisonRes, metricsRes] = await Promise.all([
-        fetch('/api/metrics/summary', { headers: authHeaders }),
-        fetch('/api/metrics/boosted-vs-organic', { headers: authHeaders }),
-        fetch(`/api/metrics/posts?sort_by=${sortBy}&order=desc`, { headers: authHeaders }),
+      const [accountsRes, summaryRes, postsRes, compRes, ssRes] = await Promise.all([
+        fetch('/api/metrics/account-overview', { headers: auth }),
+        fetch('/api/metrics/summary', { headers: auth }),
+        fetch('/api/metrics/posts?sort_by=engagement_rate&order=desc&limit=10', { headers: auth }),
+        fetch('/api/metrics/boosted-vs-organic', { headers: auth }),
+        fetch('/api/metrics/scribeshift-stats?days=30', { headers: auth }),
       ]);
-      const summaryData = await summaryRes.json();
-      const comparisonData = await comparisonRes.json();
-      const metricsData = await metricsRes.json();
-      if (summaryData.summary) setSummary(summaryData.summary);
-      if (comparisonData.organic) setComparison(comparisonData);
-      if (metricsData.metrics) setMetrics(metricsData.metrics);
-    } catch {
-      setError('Failed to load analytics');
+      const accountsData = accountsRes.ok ? await accountsRes.json() : { accounts: [], totals: {} };
+      const summaryData = summaryRes.ok ? await summaryRes.json() : { summary: null };
+      const postsData = postsRes.ok ? await postsRes.json() : { metrics: [] };
+      const compData = compRes.ok ? await compRes.json() : null;
+      const ssData = ssRes.ok ? await ssRes.json() : null;
+
+      setAccountOverview({ accounts: accountsData.accounts || [], totals: accountsData.totals || {} });
+      setPostSummary(summaryData.summary || null);
+      setPosts(postsData.metrics || []);
+      setComparison(compData);
+      setScribeshift(ssData);
+    } catch (err) {
+      setError(`Failed to load analytics: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
-  const loadMetrics = async () => {
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshNote('');
     try {
-      const params = new URLSearchParams({ sort_by: sortBy, order: 'desc' });
-      if (filterBoosted) params.set('is_boosted', filterBoosted);
-      const res = await fetch(`/api/metrics/posts?${params}`, { headers: authHeaders });
+      const res = await fetch('/api/metrics/refresh', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
-      if (data.metrics) setMetrics(data.metrics);
-    } catch {
-      // silent on filter update
+      if (!res.ok) throw new Error(data.error || 'Refresh failed');
+
+      // Build a per-platform summary line for the user
+      const accountResults = data.accounts || {};
+      const ok = Object.entries(accountResults).filter(([, v]) => v.status === 'ok').map(([p]) => PLATFORM_LABELS[p] || p);
+      const skipped = Object.entries(accountResults).filter(([, v]) => v.status === 'skipped').map(([p]) => PLATFORM_LABELS[p] || p);
+      const errored = Object.entries(accountResults).filter(([, v]) => v.status === 'error').map(([p]) => PLATFORM_LABELS[p] || p);
+      const parts = [];
+      if (ok.length) parts.push(`✓ ${ok.join(', ')}`);
+      if (skipped.length) parts.push(`skipped: ${skipped.join(', ')}`);
+      if (errored.length) parts.push(`errored: ${errored.join(', ')}`);
+      if (data.posts?.synced != null) parts.push(`${data.posts.synced} posts synced`);
+      setRefreshNote(parts.join(' · ') || 'Refreshed');
+
+      await loadAll();
+    } catch (err) {
+      setRefreshNote(`Error: ${err.message}`);
+    } finally {
+      setRefreshing(false);
     }
   };
 
-  const hasData = summary && summary.total_posts > 0;
+  const lastSynced = useMemo(() => {
+    const stamps = (accountOverview.accounts || []).map(a => a.synced_at).filter(Boolean);
+    if (stamps.length === 0) return null;
+    const latest = stamps.sort().pop();
+    return latest;
+  }, [accountOverview]);
 
-  // Build time series from metrics (grouped by date)
-  const timeSeries = useMemo(() => {
-    if (!metrics.length) return [];
-    const map = {};
-    metrics.forEach(m => {
-      const dateStr = m.scheduled_posts?.scheduled_at;
-      if (!dateStr) return;
-      const d = new Date(dateStr);
-      const key = `${d.getMonth() + 1}/${d.getDate()}`;
-      if (!map[key]) {
-        map[key] = { date: key, timestamp: d.getTime(), impressions: 0, engagement: 0, clicks: 0, count: 0 };
-      }
-      map[key].impressions += m.impressions || 0;
-      map[key].clicks += m.clicks || 0;
-      map[key].engagement += m.engagement_rate || 0;
-      map[key].count += 1;
-    });
-    return Object.values(map)
-      .map(row => ({ ...row, engagement: row.count > 0 ? +(row.engagement / row.count).toFixed(2) : 0 }))
-      .sort((a, b) => a.timestamp - b.timestamp);
-  }, [metrics]);
-
-  // Content type breakdown
-  const typeBreakdown = useMemo(() => {
-    if (!metrics.length) return [];
-    const counts = {};
-    metrics.forEach(m => {
-      const p = m.platform || m.scheduled_posts?.platform || 'other';
-      counts[p] = (counts[p] || 0) + 1;
-    });
-    const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    return Object.entries(counts).map(([key, count]) => ({
-      name: key.charAt(0).toUpperCase() + key.slice(1),
-      value: count,
-      pct: total > 0 ? Math.round((count / total) * 100) : 0,
-      color: PLATFORM_COLORS[key] || '#64748b',
-    }));
-  }, [metrics]);
-
-  // Platform bar data
-  const platformBars = useMemo(() => {
-    if (!metrics.length) return [];
-    const map = {};
-    metrics.forEach(m => {
-      const p = m.platform || m.scheduled_posts?.platform || 'other';
-      if (!map[p]) map[p] = { platform: p, impressions: 0, engagement: 0, count: 0 };
-      map[p].impressions += m.impressions || 0;
-      map[p].engagement += m.engagement_rate || 0;
-      map[p].count += 1;
-    });
-    return Object.values(map).map(row => ({
-      ...row,
-      name: row.platform.charAt(0).toUpperCase() + row.platform.slice(1),
-      engagement: row.count > 0 ? +(row.engagement / row.count).toFixed(2) : 0,
-    }));
-  }, [metrics]);
-
-  // Top performing posts
-  const topPosts = useMemo(() => {
-    return [...metrics]
-      .sort((a, b) => (b.engagement_rate || 0) - (a.engagement_rate || 0))
-      .slice(0, 3);
-  }, [metrics]);
-
-  // Right-rail insights derived from real data
-  const insights = useMemo(() => {
-    if (!platformBars.length) return [];
-    const top = [...platformBars].sort((a, b) => b.engagement - a.engagement)[0];
-    const bot = [...platformBars].sort((a, b) => a.engagement - b.engagement)[0];
-    const arr = [];
-    if (top) arr.push({ kind: 'up', text: `${top.name} is your highest engagement channel — ${top.engagement}% avg.` });
-    if (bot && bot !== top) arr.push({ kind: 'down', text: `${bot.name} could use more attention (${bot.engagement}% avg).` });
-    if (summary?.avg_engagement_rate >= 3) {
-      arr.push({ kind: 'up', text: `Strong overall engagement at ${summary.avg_engagement_rate}%.` });
-    }
-    return arr;
-  }, [platformBars, summary]);
-
-  if (loading) {
-    return (
-      <div className="p-6 max-w-[1600px] mx-auto">
-        <div className="flex flex-col items-center justify-center py-20">
-          <div className="loading-spinner" />
-          <p className="text-[13px] text-[var(--text-secondary)] mt-3">Loading analytics...</p>
-        </div>
-      </div>
-    );
-  }
+  const totals = accountOverview.totals || {};
+  const hasAnyAccount = (accountOverview.accounts || []).length > 0;
+  const hasAnyPosts = (postSummary?.total_posts || 0) > 0;
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
+    <div className="analytics-dashboard">
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="text-[22px] font-semibold text-[var(--text)] tracking-tight">Performance Analytics</h2>
-          <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">
-            Track engagement metrics and turn data into better content.
-          </p>
+          <h1 className="section-title">Analytics</h1>
+          <p className="section-desc">Native platform stats — plus what you've shipped through ScribeShift.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-2 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Apr 1 – Apr 30, 2026
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <button className="px-3 py-2 text-[13px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] hover:bg-[var(--bg-card-hover)] flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {lastSynced && (
+            <span className="card-subtitle" style={{ margin: 0, fontSize: '0.78rem' }}>
+              Last sync {timeAgo(lastSynced)}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {refreshing ? 'Syncing…' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 px-4 py-3 bg-[var(--danger-bg)] border border-[var(--danger)]/30 text-[var(--danger)] text-[13px] rounded-md">
-          {error}
+      {refreshNote && (
+        <div className="card-subtitle" style={{ marginTop: '-0.25rem', marginBottom: '0.75rem', fontSize: '0.8rem' }}>
+          {refreshNote}
         </div>
       )}
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        <StatCard
-          tone="blue"
-          icon={Icons.doc}
-          label="Posts Tracked"
-          value={formatNumber(summary?.total_posts || 24)}
-          trend={{ value: '26%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-        <StatCard
-          tone="purple"
-          icon={Icons.eye}
-          label="Impressions"
-          value={formatNumber(summary?.total_impressions || 123500)}
-          trend={{ value: '12%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-        <StatCard
-          tone="pink"
-          icon={Icons.heart}
-          label="Engagements"
-          value={formatNumber((summary?.total_reactions || 0) + (summary?.total_comments || 0) + (summary?.total_shares || 0) || 7800)}
-          trend={{ value: '34%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-        <StatCard
-          tone="green"
-          icon={Icons.rate}
-          label="Avg Engagement Rate"
-          value={summary ? `${summary.avg_engagement_rate || 6.3}%` : '6.3%'}
-          trend={{ value: '8%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-        <StatCard
-          tone="amber"
-          icon={Icons.comment}
-          label="Comments"
-          value={formatNumber(summary?.total_comments || 1200)}
-          trend={{ value: '15%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-        <StatCard
-          tone="slate"
-          icon={Icons.share}
-          label="Shares"
-          value={formatNumber(summary?.total_shares || 842)}
-          trend={{ value: '5%', dir: 'up' }}
-          subtext="vs last 30 days"
-        />
-      </div>
+      {error && (
+        <div className="error-msg" style={{ marginBottom: '1rem' }}>{error}</div>
+      )}
 
-      {/* Tabs */}
-      <div className="mb-4 flex items-center gap-3 flex-wrap">
+      <div className="mb-4 flex items-center gap-3 flex-wrap" style={{ marginBottom: '1rem' }}>
         <Tabs
           items={[
-            { value: 'overview', label: 'Overview' },
-            { value: 'posts', label: 'Post Performance' },
-            { value: 'types', label: 'Content Types' },
-            { value: 'platforms', label: 'Platforms' },
+            { value: 'native', label: 'Native platforms' },
+            { value: 'scribeshift', label: 'Made with ScribeShift' },
             { value: 'compare', label: 'Boosted vs Organic' },
           ]}
           value={tab}
@@ -286,475 +205,465 @@ export default function AnalyticsDashboard() {
         />
       </div>
 
-      {/* Main grid: content + right rail */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 items-start">
-        <div className="min-w-0 space-y-5">
-          {tab === 'overview' && (
-            <>
-              {!hasData && (
-                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                  <div>
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--primary-glow)] text-[var(--primary)] mb-4">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-4-4-3 3"/></svg>
-                    </div>
-                    <h3 className="text-[18px] font-semibold text-[var(--text)] mb-2">
-                      Your insights start with your first post
-                    </h3>
-                    <p className="text-[13px] text-[var(--text-secondary)] mb-5 leading-relaxed">
-                      Publish and engage with your audience using our powerful analytics.
-                      Once you have data, you&apos;ll see what&apos;s working, how to improve, and how to grow faster.
-                    </p>
-                    <div className="flex gap-2">
-                      <button className="px-4 py-2 text-[13px] font-semibold rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-sm">
-                        Create Your First Post
-                      </button>
-                      <button className="px-4 py-2 text-[13px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] hover:bg-[var(--bg-card-hover)]">
-                        Plan My Work
-                      </button>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--bg-raised)] border border-[var(--border)] rounded-md p-5">
-                    <div className="text-[13px] font-semibold text-[var(--text)] mb-3">How it works</div>
-                    <ol className="space-y-3">
-                      {[
-                        { n: 1, t: 'Create or schedule a post' },
-                        { n: 2, t: 'Publish and get engagement' },
-                        { n: 3, t: 'See your insights here' },
-                      ].map(s => (
-                        <li key={s.n} className="flex items-start gap-3">
-                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--primary)] text-white text-[11px] font-bold flex items-center justify-center">
-                            {s.n}
-                          </span>
-                          <span className="text-[13px] text-[var(--text)] pt-0.5">{s.t}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </div>
-              )}
+      {loading && !refreshing && (
+        <div className="card"><div className="loading-spinner" style={{ margin: '2rem auto' }} /></div>
+      )}
 
-              {/* Performance at a glance: 3 line charts */}
-              <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-[var(--text)]">Performance at a Glance</h3>
-                    <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
-                      {hasData ? 'Data grouped by post date.' : 'This is example data. Your actual data appears after your first post.'}
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <MiniLineChart title="Impressions" color="#3b82f6" data={timeSeries} dataKey="impressions" total={summary?.total_impressions || 0} hasData={hasData} />
-                  <MiniLineChart title="Engagement Rate" color="#10b981" data={timeSeries} dataKey="engagement" total={summary ? `${summary.avg_engagement_rate || 0}%` : '—'} hasData={hasData} suffix="%" />
-                  <MiniLineChart title="Profile Clicks" color="#8b5cf6" data={timeSeries} dataKey="clicks" total={formatNumber(metrics.reduce((s, m) => s + (m.clicks || 0), 0))} hasData={hasData} />
-                </div>
-              </div>
+      {!loading && tab === 'native' && (
+        <NativeTab
+          accountOverview={accountOverview}
+          posts={posts}
+          postSummary={postSummary}
+          totals={totals}
+          hasAnyAccount={hasAnyAccount}
+          hasAnyPosts={hasAnyPosts}
+          onRefresh={handleRefresh}
+        />
+      )}
 
-              {/* Content Type Breakdown + Top Performing Posts */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-                  <h3 className="text-[15px] font-semibold text-[var(--text)] mb-1">Content Type Breakdown</h3>
-                  <p className="text-[12px] text-[var(--text-secondary)] mb-3">
-                    See which content types resonate with your audience.
-                  </p>
-                  {typeBreakdown.length === 0 ? (
-                    <div className="py-12 text-center text-[13px] text-[var(--text-secondary)]">
-                      No data yet
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-4">
-                      <div style={{ width: 140, height: 140 }}>
-                        <ResponsiveContainer>
-                          <PieChart>
-                            <Pie
-                              data={typeBreakdown}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={42}
-                              outerRadius={62}
-                              paddingAngle={2}
-                              dataKey="value"
-                            >
-                              {typeBreakdown.map((entry, i) => (
-                                <Cell key={i} fill={entry.color} />
-                              ))}
-                            </Pie>
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <div className="flex-1 space-y-1.5">
-                        {typeBreakdown.map(t => (
-                          <div key={t.name} className="flex items-center justify-between text-[12px]">
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full" style={{ background: t.color }} />
-                              <span className="text-[var(--text)]">{t.name}</span>
-                            </div>
-                            <span className="text-[var(--text-secondary)] font-semibold">{t.pct}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+      {!loading && tab === 'scribeshift' && (
+        <ScribeshiftTab data={scribeshift} />
+      )}
 
-                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-                  <h3 className="text-[15px] font-semibold text-[var(--text)] mb-1">Top Performing Posts</h3>
-                  <p className="text-[12px] text-[var(--text-secondary)] mb-3">
-                    Your best content, ranked by engagement rate.
-                  </p>
-                  {topPosts.length === 0 ? (
-                    <div className="py-8 text-center text-[13px] text-[var(--text-secondary)]">
-                      No posts with metrics yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {topPosts.map((m, i) => {
-                        const platform = m.platform || m.scheduled_posts?.platform || 'post';
-                        return (
-                          <div key={m.id} className="flex items-start gap-3 p-2.5 rounded-md border border-[var(--border)] hover:bg-[var(--bg-card-hover)]">
-                            <div
-                              className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
-                              style={{ background: PLATFORM_COLORS[platform] || '#64748b' }}
-                            >
-                              #{i + 1}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12px] text-[var(--text)] line-clamp-2 mb-1">
-                                {m.scheduled_posts?.post_text?.slice(0, 100) || 'Post'}
-                              </div>
-                              <div className="flex items-center gap-3 text-[11px] text-[var(--text-secondary)]">
-                                <span className="capitalize">{platform}</span>
-                                <span>·</span>
-                                <span className="font-semibold text-[var(--success)]">
-                                  {m.engagement_rate ? `${m.engagement_rate}%` : '—'}
-                                </span>
-                                {m.is_boosted && (
-                                  <span className="text-[10px] font-semibold text-[var(--warning)] uppercase">Boosted</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Post Performance tab */}
-          {tab === 'posts' && (
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-              <div className="flex items-center gap-2 flex-wrap mb-4">
-                <label className="text-[12px] font-medium text-[var(--text-secondary)]">Sort by:</label>
-                <select
-                  className="px-3 py-1.5 text-[13px] rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)]"
-                  value={sortBy}
-                  onChange={e => setSortBy(e.target.value)}
-                >
-                  {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <label className="text-[12px] font-medium text-[var(--text-secondary)] ml-2">Type:</label>
-                <select
-                  className="px-3 py-1.5 text-[13px] rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)]"
-                  value={filterBoosted}
-                  onChange={e => setFilterBoosted(e.target.value)}
-                >
-                  <option value="">All</option>
-                  <option value="true">Boosted</option>
-                  <option value="false">Organic</option>
-                </select>
-              </div>
-              {metrics.length === 0 ? (
-                <div className="py-12 text-center text-[13px] text-[var(--text-secondary)]">
-                  No post metrics available yet.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-[12px]">
-                    <thead>
-                      <tr className="border-b border-[var(--border)] text-[var(--text-secondary)] text-left">
-                        <th className="py-2 pr-3 font-semibold">Post</th>
-                        <th className="py-2 pr-3 font-semibold">Platform</th>
-                        <th className="py-2 pr-3 font-semibold text-right">Impr.</th>
-                        <th className="py-2 pr-3 font-semibold text-right">React.</th>
-                        <th className="py-2 pr-3 font-semibold text-right">Comm.</th>
-                        <th className="py-2 pr-3 font-semibold text-right">Shares</th>
-                        <th className="py-2 pr-3 font-semibold text-right">Clicks</th>
-                        <th className="py-2 pr-3 font-semibold text-right">Eng.</th>
-                        <th className="py-2 pr-3 font-semibold">Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metrics.map(m => (
-                        <tr key={m.id} className="border-b border-[var(--border)] hover:bg-[var(--bg-card-hover)]">
-                          <td className="py-2.5 pr-3 text-[var(--text)] max-w-xs truncate">
-                            {m.scheduled_posts?.post_text?.slice(0, 60) || '—'}
-                          </td>
-                          <td className="py-2.5 pr-3 text-[var(--text)] capitalize">{m.platform || m.scheduled_posts?.platform || '—'}</td>
-                          <td className="py-2.5 pr-3 text-right">{formatNumber(m.impressions || 0)}</td>
-                          <td className="py-2.5 pr-3 text-right">{formatNumber(m.reactions || 0)}</td>
-                          <td className="py-2.5 pr-3 text-right">{formatNumber(m.comments || 0)}</td>
-                          <td className="py-2.5 pr-3 text-right">{formatNumber(m.shares || 0)}</td>
-                          <td className="py-2.5 pr-3 text-right">{formatNumber(m.clicks || 0)}</td>
-                          <td className="py-2.5 pr-3 text-right font-semibold text-[var(--success)]">
-                            {m.engagement_rate ? `${m.engagement_rate}%` : '—'}
-                          </td>
-                          <td className="py-2.5 pr-3">
-                            {m.is_boosted ? (
-                              <span className="text-[10px] font-semibold text-[var(--warning)] uppercase">Boosted</span>
-                            ) : (
-                              <span className="text-[10px] text-[var(--text-secondary)] uppercase">Organic</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Content Types tab */}
-          {tab === 'types' && (
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-              <h3 className="text-[15px] font-semibold text-[var(--text)] mb-3">Content Type Performance</h3>
-              {typeBreakdown.length === 0 ? (
-                <div className="py-12 text-center text-[13px] text-[var(--text-secondary)]">
-                  No content types tracked yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
-                  <div style={{ height: 240 }}>
-                    <ResponsiveContainer>
-                      <PieChart>
-                        <Pie
-                          data={typeBreakdown}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={2}
-                          dataKey="value"
-                        >
-                          {typeBreakdown.map((entry, i) => (
-                            <Cell key={i} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="space-y-2">
-                    {typeBreakdown.map(t => (
-                      <div key={t.name} className="flex items-center justify-between p-3 rounded-md border border-[var(--border)]">
-                        <div className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full" style={{ background: t.color }} />
-                          <span className="text-[13px] text-[var(--text)]">{t.name}</span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[13px] font-semibold text-[var(--text)]">{t.value} posts</div>
-                          <div className="text-[11px] text-[var(--text-secondary)]">{t.pct}%</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Platforms tab */}
-          {tab === 'platforms' && (
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-              <h3 className="text-[15px] font-semibold text-[var(--text)] mb-3">Platform Performance</h3>
-              {platformBars.length === 0 ? (
-                <div className="py-12 text-center text-[13px] text-[var(--text-secondary)]">
-                  No platform data yet.
-                </div>
-              ) : (
-                <div style={{ height: 280 }}>
-                  <ResponsiveContainer>
-                    <BarChart data={platformBars}>
-                      <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={12} />
-                      <YAxis stroke="var(--text-secondary)" fontSize={12} />
-                      <Tooltip cursor={{ fill: 'var(--bg-card-hover)' }} />
-                      <Legend />
-                      <Bar dataKey="impressions" fill="#3b82f6" name="Impressions" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="engagement" fill="#10b981" name="Engagement %" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Boosted vs Organic tab */}
-          {tab === 'compare' && comparison && (
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-sm p-5">
-              <h3 className="text-[15px] font-semibold text-[var(--text)] mb-3">Boosted vs Organic</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ComparisonCard title="Organic" data={comparison.organic} color="#22c55e" />
-                <ComparisonCard title="Boosted" data={comparison.boosted} color="#a855f7" />
-              </div>
-              {comparison.organic.count === 0 && comparison.boosted.count === 0 && (
-                <div className="mt-4 py-6 text-center text-[13px] text-[var(--text-secondary)]">
-                  No metrics data to compare yet.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right rail */}
-        <div className="space-y-4">
-          <RailPanel title="Insights">
-            {insights.length === 0 ? (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded-full bg-[var(--primary-glow)] text-[var(--primary)] flex items-center justify-center">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  </div>
-                  <div className="text-[12px] font-semibold text-[var(--text)]">No data yet, no problem</div>
-                </div>
-                <div className="text-[11px] text-[var(--text-secondary)] mb-3">
-                  Here&apos;s what to look for once you have insights:
-                </div>
-                <ul className="space-y-2 text-[11px] text-[var(--text-secondary)]">
-                  <li className="flex items-start gap-1.5">
-                    <span className="text-[var(--success)] font-bold">→</span>
-                    Which posts get the highest engagement
-                  </li>
-                  <li className="flex items-start gap-1.5">
-                    <span className="text-[var(--success)] font-bold">→</span>
-                    Questions get more comments
-                  </li>
-                  <li className="flex items-start gap-1.5">
-                    <span className="text-[var(--success)] font-bold">→</span>
-                    Consistency matters: posting 2-3× per week drives growth
-                  </li>
-                </ul>
-                <button className="mt-3 text-[11px] text-[var(--primary)] hover:underline">
-                  Learn more about analytics →
-                </button>
-              </div>
-            ) : (
-              insights.map((ins, i) => (
-                <div key={i} className="p-3 rounded-md bg-[var(--bg-raised)] border border-[var(--border)]">
-                  <div className="flex items-start gap-2">
-                    <span className={ins.kind === 'up' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>
-                      {ins.kind === 'up' ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>
-                      )}
-                    </span>
-                    <div className="text-[12px] text-[var(--text)] flex-1">{ins.text}</div>
-                  </div>
-                </div>
-              ))
-            )}
-          </RailPanel>
-
-          <RailPanel title="Recommendations">
-            <div className="text-[10px] text-[var(--text-secondary)] mb-2">Smart insights to help you grow</div>
-            {[
-              {
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
-                tone: '#3b82f6',
-                title: 'Post 2 more times this week',
-                desc: 'You\'re trending up by +25% this week',
-              },
-              {
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
-                tone: '#f59f0a',
-                title: 'Try a video post',
-                desc: 'Videos get 3× more engagement',
-              },
-              {
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>,
-                tone: '#10b981',
-                title: 'Revisit top performers',
-                desc: '3 posts ready to be reused as carousels',
-              },
-            ].map((rec, i) => (
-              <div key={i} className="p-3 rounded-md bg-[var(--bg-raised)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors">
-                <div className="flex items-start gap-2">
-                  <div
-                    className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center"
-                    style={{ background: rec.tone + '20', color: rec.tone }}
-                  >
-                    {rec.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-semibold text-[var(--text)] mb-0.5">{rec.title}</div>
-                    <div className="text-[11px] text-[var(--text-secondary)] line-clamp-2">{rec.desc}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            <button className="w-full text-[11px] text-[var(--primary)] hover:underline mt-2">
-              View all recommendations →
-            </button>
-          </RailPanel>
-        </div>
-      </div>
+      {!loading && tab === 'compare' && (
+        <CompareTab comparison={comparison} hasAnyPosts={hasAnyPosts} />
+      )}
     </div>
   );
 }
 
-function MiniLineChart({ title, color, data, dataKey, total, hasData, suffix = '' }) {
-  // Generate synthetic example data if we have none
-  const displayData = data.length > 0 ? data : [
-    { date: '1', v: 12 }, { date: '2', v: 15 }, { date: '3', v: 10 }, { date: '4', v: 18 },
-    { date: '5', v: 22 }, { date: '6', v: 19 }, { date: '7', v: 26 },
-  ];
-  const key = data.length > 0 ? dataKey : 'v';
+/* ── Native platforms tab ───────────────────────────────────────────── */
+function NativeTab({ accountOverview, posts, postSummary, totals, hasAnyAccount, hasAnyPosts, onRefresh }) {
+  if (!hasAnyAccount) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+        <h3 style={{ marginTop: 0 }}>No connected accounts</h3>
+        <p className="card-subtitle">
+          Connect at least one social account in Settings to start pulling your followers, reach, and post performance.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => { window.location.hash = 'settings'; }}
+        >
+          Go to Settings →
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-md border border-[var(--border)] p-3 bg-[var(--bg-raised)]">
-      <div className="flex items-start justify-between mb-1">
-        <div>
-          <div className="text-[11px] text-[var(--text-secondary)]">{title}</div>
-          <div className="text-[15px] font-semibold text-[var(--text)]">{total}{suffix && typeof total === 'number' ? suffix : ''}</div>
+    <>
+      {/* Cross-platform totals */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <StatCard tone="blue" label="Total followers"
+          value={formatNumber(totals.followers || 0)}
+          subtext={`across ${accountOverview.accounts.length} platform${accountOverview.accounts.length === 1 ? '' : 's'}`} />
+        <StatCard tone="purple" label="30-day reach"
+          value={formatNumber(totals.reach_30d || 0)}
+          subtext="aggregated, where supported" />
+        <StatCard tone="green" label="30-day impressions"
+          value={formatNumber(totals.impressions_30d || 0)}
+          subtext="aggregated, where supported" />
+        <StatCard tone="amber" label="Total posts"
+          value={formatNumber(totals.posts || 0)}
+          subtext="lifetime, per platform API" />
+      </div>
+
+      {/* Per-platform account cards (rich) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+        {accountOverview.accounts.map(a => (
+          <PlatformPanel key={a.id} a={a} />
+        ))}
+      </div>
+
+      {/* Post-level performance */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Post performance</h3>
+            <p className="card-subtitle" style={{ margin: 0 }}>
+              Posts you've sent through ScribeShift, with metrics pulled from each platform.
+            </p>
+          </div>
+          {postSummary && (
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <SummaryStat label="Posts" value={postSummary.total_posts} />
+              <SummaryStat label="Impressions" value={postSummary.total_impressions} />
+              <SummaryStat label="Reactions" value={postSummary.total_reactions} />
+              <SummaryStat label="Engagement" value={`${postSummary.avg_engagement_rate || 0}%`} raw />
+            </div>
+          )}
         </div>
-        {!hasData && (
-          <span className="text-[9px] uppercase text-[var(--text-secondary)]">Example</span>
+
+        {!hasAnyPosts ? (
+          <div style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)' }}>
+            No post metrics yet. After your scheduled posts go live, hit Refresh and we'll pull stats from each platform.
+          </div>
+        ) : (
+          <table className="metrics-table">
+            <thead>
+              <tr>
+                <th>Post</th>
+                <th>Platform</th>
+                <th>Impressions</th>
+                <th>Reactions</th>
+                <th>Comments</th>
+                <th>Shares</th>
+                <th>Engagement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {posts.slice(0, 10).map(p => (
+                <tr key={p.id}>
+                  <td style={{ maxWidth: 320 }}>
+                    {p.scheduled_posts?.external_post_url ? (
+                      <a href={p.scheduled_posts.external_post_url} target="_blank" rel="noreferrer">
+                        {(p.scheduled_posts?.post_text || '').slice(0, 80)}{p.scheduled_posts?.post_text?.length > 80 ? '…' : ''}
+                      </a>
+                    ) : (
+                      (p.scheduled_posts?.post_text || '(no text)').slice(0, 80)
+                    )}
+                  </td>
+                  <td>
+                    <span style={{ color: PLATFORM_COLORS[p.platform] }}>
+                      {PLATFORM_LABELS[p.platform] || p.platform}
+                    </span>
+                  </td>
+                  <td>{formatNumber(p.impressions || 0)}</td>
+                  <td>{formatNumber(p.reactions || 0)}</td>
+                  <td>{formatNumber(p.comments || 0)}</td>
+                  <td>{formatNumber(p.shares || 0)}</td>
+                  <td><strong>{p.engagement_rate ? `${p.engagement_rate}%` : '—'}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
-      <div style={{ height: 50 }}>
-        <ResponsiveContainer>
-          <LineChart data={displayData}>
-            <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+    </>
+  );
+}
+
+/* ── Made with ScribeShift tab ──────────────────────────────────────── */
+function ScribeshiftTab({ data }) {
+  if (!data) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+        <p className="card-subtitle">No data yet — start generating content from the Create tab.</p>
       </div>
+    );
+  }
+
+  const { generated, scheduled, window: w } = data;
+  const contentTypeData = Object.entries(generated.by_content_type || {}).map(([type, count]) => ({ type, count }));
+  const platformData = Object.entries(scheduled.by_platform || {}).map(([platform, count]) => ({ platform: PLATFORM_LABELS[platform] || platform, count }));
+  const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f43f5e', '#64748b'];
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <StatCard tone="blue" label="Pieces generated" value={formatNumber(generated.total)} subtext={`last ${w.days} days`} />
+        <StatCard tone="purple" label="Posts scheduled" value={formatNumber(scheduled.total)} subtext={`last ${w.days} days`} />
+        <StatCard tone="green" label="Posted live" value={formatNumber(scheduled.by_status.posted || 0)} subtext={scheduled.by_status.failed ? `${scheduled.by_status.failed} failed` : 'no failures'} />
+        <StatCard
+          tone="amber"
+          label="First-attempt success"
+          value={scheduled.first_attempt_success_rate != null ? `${scheduled.first_attempt_success_rate}%` : '—'}
+          subtext={scheduled.total_retries ? `${scheduled.total_retries} total retries` : 'no retries needed'}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Content types you've generated</h3>
+          {contentTypeData.length === 0 ? (
+            <p className="card-subtitle" style={{ marginBottom: 0 }}>Nothing in this window.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={contentTypeData} dataKey="count" nameKey="type" cx="50%" cy="50%" outerRadius={80} label={({ type, percent }) => `${type} ${(percent * 100).toFixed(0)}%`}>
+                  {contentTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Where you've scheduled to</h3>
+          {platformData.length === 0 ? (
+            <p className="card-subtitle" style={{ marginBottom: 0 }}>You haven't scheduled anything yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={platformData}>
+                <XAxis dataKey="platform" stroke="var(--text-muted)" />
+                <YAxis stroke="var(--text-muted)" allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <h3 style={{ marginTop: 0 }}>Generation activity</h3>
+          {(!generated.time_series || generated.time_series.length === 0) ? (
+            <p className="card-subtitle" style={{ marginBottom: 0 }}>No generations in this window.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={generated.time_series}>
+                <XAxis dataKey="date" stroke="var(--text-muted)" />
+                <YAxis stroke="var(--text-muted)" allowDecimals={false} />
+                <Tooltip />
+                <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <h3 style={{ marginTop: 0 }}>Schedule pipeline</h3>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {Object.entries(scheduled.by_status).map(([status, count]) => (
+              <div key={status} style={{
+                flex: '1 1 140px',
+                padding: '0.75rem 1rem',
+                background: 'var(--bg-raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+              }}>
+                <div className="card-subtitle" style={{ margin: 0, textTransform: 'capitalize' }}>{status}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Boosted vs Organic tab ─────────────────────────────────────────── */
+function CompareTab({ comparison, hasAnyPosts }) {
+  if (!hasAnyPosts || !comparison) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+        <p className="card-subtitle">No post metrics to compare yet.</p>
+      </div>
+    );
+  }
+  const { organic, boosted } = comparison;
+
+  const Block = ({ title, data, tone }) => (
+    <div className="card" style={{ borderTop: `3px solid ${tone}` }}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem 1.5rem' }}>
+        <Stat label="Posts" value={data.count} />
+        <Stat label="Impressions" value={data.impressions} />
+        <Stat label="Reactions" value={data.reactions} />
+        <Stat label="Comments" value={data.comments} />
+        <Stat label="Shares" value={data.shares} />
+        <Stat label="Clicks" value={data.clicks} />
+        {data.total_spend > 0 && <Stat label="Total spend" value={`$${data.total_spend}`} raw />}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+      <Block title="Organic" data={organic} tone="#10b981" />
+      <Block title="Boosted" data={boosted} tone="#f59e0b" />
     </div>
   );
 }
 
-function ComparisonCard({ title, data, color }) {
+/* ── small helpers ──────────────────────────────────────────────────── */
+function Stat({ label, value, raw = false }) {
+  const display = value == null ? '—' : raw ? value : formatNumber(value);
   return (
-    <div
-      className="rounded-md border p-4"
-      style={{ borderColor: color + '44', background: color + '10' }}
-    >
-      <h4 className="text-[14px] font-semibold mb-2" style={{ color }}>{title}</h4>
-      <div className="mb-3">
-        <div className="text-[24px] font-bold text-[var(--text)]">{data.count}</div>
-        <div className="text-[11px] text-[var(--text-secondary)] uppercase">Posts</div>
+    <div>
+      <div className="card-subtitle" style={{ margin: 0, fontSize: '0.72rem' }}>{label}</div>
+      <div style={{ fontSize: '1.05rem', fontWeight: 600 }}>{display}</div>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value, raw = false }) {
+  const display = value == null ? '—' : raw ? value : formatNumber(value);
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div className="card-subtitle" style={{ margin: 0, fontSize: '0.7rem' }}>{label}</div>
+      <div style={{ fontSize: '1rem', fontWeight: 600 }}>{display}</div>
+    </div>
+  );
+}
+
+/* ── Rich per-platform panel ────────────────────────────────────────── */
+function PlatformPanel({ a }) {
+  const color = PLATFORM_COLORS[a.platform] || '#94a3b8';
+  const extra = a.extra_metrics || {};
+  const recent = Array.isArray(a.recent_posts) ? a.recent_posts : [];
+  const profilePic = extra.profile_image_url || extra.picture || null;
+  const insightsError = extra.insights_error || null;
+  const timelineDisclaimer = extra.timeline_disclaimer || null;
+  const followersDisclaimer = extra.followers_disclaimer || null;
+  const needsReconnect = insightsError && /reconnect/i.test(insightsError);
+
+  // Platform-specific extra-metrics rows (only if value present)
+  const extraRows = [];
+  if (a.platform === 'twitter') {
+    if (extra.tweet_impressions_estimate != null) extraRows.push(['Tweet impressions (recent)', formatNumber(extra.tweet_impressions_estimate)]);
+    if (extra.link_clicks_estimate != null) extraRows.push(['Link clicks (recent)', formatNumber(extra.link_clicks_estimate)]);
+    if (extra.listed_count != null) extraRows.push(['Listed in', formatNumber(extra.listed_count)]);
+  } else if (a.platform === 'facebook') {
+    if (extra.page_views_30d != null) extraRows.push(['Page views 30d', formatNumber(extra.page_views_30d)]);
+    if (extra.new_followers_30d != null) extraRows.push(['New followers 30d', formatNumber(extra.new_followers_30d)]);
+    if (extra.reactions_30d != null) extraRows.push(['Reactions 30d', formatNumber(extra.reactions_30d)]);
+    if (extra.category) extraRows.push(['Category', extra.category]);
+  } else if (a.platform === 'instagram') {
+    if (extra.website_clicks_30d != null) extraRows.push(['Website clicks 30d', formatNumber(extra.website_clicks_30d)]);
+    if (extra.follower_growth_30d != null) extraRows.push(['Follower growth 30d', formatNumber(extra.follower_growth_30d)]);
+    if (extra.website) extraRows.push(['Website', extra.website]);
+  } else if (a.platform === 'linkedin') {
+    if (extra.connections_count != null) extraRows.push(['Connections', formatNumber(extra.connections_count)]);
+  }
+
+  return (
+    <div className="card" style={{ borderTop: `3px solid ${color}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        {profilePic ? (
+          <img src={profilePic} alt="" style={{ width: 44, height: 44, borderRadius: 22, objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: 44, height: 44, borderRadius: 22, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+            {PLATFORM_ICONS[a.platform]}
+          </div>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <strong style={{ color }}>{PLATFORM_LABELS[a.platform] || a.platform}</strong>
+            {extra.verified && (
+              <span title="Verified" style={{ color }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill={color}>
+                  <path d="M22.5 12.5L20 10l1.5-3.5L18 5l-1-3.5L13.5 2 12 0l-1.5 2L7 1.5 6 5l-3.5 1L4 9.5 1.5 12 4 14.5 2.5 18 6 19l1 3.5 3.5-.5L12 24l1.5-2 3.5.5 1-3.5 3.5-1L20 14.5z"/>
+                  <path d="M10 16l-4-4 1.4-1.4L10 13.2l6.6-6.6L18 8z" fill="white"/>
+                </svg>
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{a.platform_user_name || '(unknown)'}</div>
+          {extra.bio && (
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {extra.bio.length > 120 ? extra.bio.slice(0, 120) + '…' : extra.bio}
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+          Synced {timeAgo(a.synced_at) || 'never'}
+        </div>
       </div>
-      <div className="space-y-1 text-[12px] text-[var(--text)]">
-        <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Impressions</span><strong>{formatNumber(data.impressions)}</strong></div>
-        <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Reactions</span><strong>{formatNumber(data.reactions)}</strong></div>
-        <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Comments</span><strong>{formatNumber(data.comments)}</strong></div>
-        <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Shares</span><strong>{formatNumber(data.shares)}</strong></div>
-        <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Clicks</span><strong>{formatNumber(data.clicks)}</strong></div>
-        {data.total_spend > 0 && (
-          <div className="flex justify-between"><span className="text-[var(--text-secondary)]">Total Spend</span><strong>${data.total_spend}</strong></div>
+
+      {/* Headline numbers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
+        <Stat label="Followers" value={a.followers} />
+        <Stat label="Following" value={a.following} />
+        <Stat label="Posts" value={a.posts_count} />
+        <Stat label="Reach 30d" value={a.reach_30d} />
+        <Stat label="Impressions 30d" value={a.impressions_30d} />
+        <Stat label="Profile views 30d" value={a.profile_views_30d} />
+      </div>
+
+      {/* Platform-specific extras */}
+      {extraRows.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem 1rem', marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-raised)', borderRadius: 8 }}>
+          {extraRows.map(([label, value]) => (
+            <div key={label}>
+              <div className="card-subtitle" style={{ fontSize: '0.7rem', margin: 0 }}>{label}</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Soft warnings (insights / timeline / followers disclaimers) */}
+      {(insightsError || timelineDisclaimer || followersDisclaimer) && (
+        <div className="analytics-soft-warning" style={{ marginTop: '1rem' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span style={{ flex: 1 }}>{insightsError || timelineDisclaimer || followersDisclaimer}</span>
+          {needsReconnect && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => { window.location.hash = 'settings'; }}
+            >
+              Reconnect {PLATFORM_LABELS[a.platform]} →
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Recent posts */}
+      <div style={{ marginTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+          <strong style={{ fontSize: '0.85rem' }}>Recent {a.platform === 'instagram' ? 'media' : 'posts'}</strong>
+          <span className="card-subtitle" style={{ fontSize: '0.7rem' }}>
+            {recent.length > 0 ? `${recent.length} most recent` : ''}
+          </span>
+        </div>
+        {recent.length === 0 ? (
+          <p className="card-subtitle" style={{ marginTop: 0 }}>
+            {a.platform === 'linkedin'
+              ? "LinkedIn doesn't expose a member's full post list via API. Posts you ship through ScribeShift will show up here with their stats."
+              : a.platform === 'twitter'
+              ? "We can't list your full tweet timeline on the free X API tier. Tweets you send through ScribeShift will appear here with full stats."
+              : a.platform === 'facebook'
+              ? "Nothing posted to this Page yet — or the Page Insights endpoint can't see them. Posts you publish via ScribeShift will appear here."
+              : 'No recent posts to show. Reconnect to grant insights permission, or post something first.'}
+          </p>
+        ) : (
+          <table className="metrics-table">
+            <thead>
+              <tr>
+                <th>Post</th>
+                <th>Posted</th>
+                <th>Impressions</th>
+                <th>Likes</th>
+                <th>Comments</th>
+                {a.platform === 'twitter' && <th>Retweets</th>}
+                {a.platform === 'facebook' && <th>Shares</th>}
+                {a.platform === 'instagram' && <th>Saved</th>}
+                <th>Clicks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map(p => (
+                <tr key={p.id}>
+                  <td style={{ maxWidth: 320 }}>
+                    {p.permalink ? (
+                      <a href={p.permalink} target="_blank" rel="noreferrer">
+                        {(p.text || '(no text)').slice(0, 100)}{(p.text || '').length > 100 ? '…' : ''}
+                      </a>
+                    ) : (
+                      (p.text || '(no text)').slice(0, 100)
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {p.posted_at ? timeAgo(p.posted_at) : '—'}
+                  </td>
+                  <td>{p.impressions != null ? formatNumber(p.impressions) : '—'}</td>
+                  <td>{p.likes != null ? formatNumber(p.likes) : '—'}</td>
+                  <td>{p.comments != null ? formatNumber(p.comments) : '—'}</td>
+                  {a.platform === 'twitter' && <td>{p.shares != null ? formatNumber(p.shares) : '—'}</td>}
+                  {a.platform === 'facebook' && <td>{p.shares != null ? formatNumber(p.shares) : '—'}</td>}
+                  {a.platform === 'instagram' && <td>{p.saved != null ? formatNumber(p.saved) : '—'}</td>}
+                  <td>{p.link_clicks != null ? formatNumber(p.link_clicks) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>

@@ -14,6 +14,15 @@ function getCachedUser(token) {
   return entry.user;
 }
 
+// Drop every cached entry for a given user id. Call this when the user's
+// profile, company assignment, or role changes, so the next request reloads.
+export function invalidateUserCache(userId) {
+  if (!userId) return;
+  for (const [token, entry] of userCache) {
+    if (entry.user?.id === userId) userCache.delete(token);
+  }
+}
+
 function setCachedUser(token, user) {
   userCache.set(token, { user, expiresAt: Date.now() + CACHE_TTL });
 

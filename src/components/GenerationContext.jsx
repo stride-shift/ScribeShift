@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
 
 const GenerationContext = createContext(null);
@@ -10,16 +10,77 @@ export function useGeneration() {
 }
 
 export function GenerationProvider({ children }) {
-  const { getAuthHeaders } = useAuth();
+  const { getAuthHeaders, isAuthenticated } = useAuth();
 
-  // Brand identity
+  // Brand identity (in-memory copy used by Create — synced from active brand on load)
   const [brand, setBrand] = useState({
     brandName: '',
     primaryColor: '#3b82f6',
     secondaryColor: '#475569',
     logoBase64: null,
     logoPreviewUrl: null,
+    icpDescription: '',
+    brandGuidelines: '',
+    writingSamples: ['', '', ''],
   });
+
+  // List of saved brands and the currently-active brand id (persisted)
+  const [savedBrands, setSavedBrands] = useState([]);
+  const [brandsMeta, setBrandsMeta] = useState({ limit: 1, used: 0 });
+  const [activeBrandId, setActiveBrandIdRaw] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('scribeshift-active-brand') || null;
+  });
+
+  const setActiveBrandId = useCallback((id) => {
+    setActiveBrandIdRaw(id);
+    if (typeof window !== 'undefined') {
+      if (id) localStorage.setItem('scribeshift-active-brand', id);
+      else localStorage.removeItem('scribeshift-active-brand');
+    }
+  }, []);
+
+  const loadBrands = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await fetch('/api/brands', { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = data.brands || [];
+      setSavedBrands(list);
+      setBrandsMeta({ limit: data.limit ?? 1, used: data.used ?? list.length });
+
+      // Pick an active brand: stored id if still valid, else first available
+      let activeId = activeBrandId;
+      if (activeId && !list.some(b => b.id === activeId)) activeId = null;
+      if (!activeId && list.length > 0) activeId = list[0].id;
+      if (activeId !== activeBrandId) setActiveBrandId(activeId);
+
+      // Hydrate the in-memory brand from the active record
+      const active = list.find(b => b.id === activeId);
+      if (active) {
+        setBrand((prev) => ({
+          ...prev,
+          brandName: active.brand_name || '',
+          primaryColor: active.primary_color || '#3b82f6',
+          secondaryColor: active.secondary_color || '#475569',
+          icpDescription: active.icp_description || '',
+          brandGuidelines: active.brand_guidelines || '',
+          writingSamples: (active.writing_samples && active.writing_samples.length > 0)
+            ? active.writing_samples
+            : ['', '', ''],
+        }));
+      }
+    } catch (err) {
+      console.warn('[BRANDS] load failed:', err.message);
+    }
+  }, [getAuthHeaders, isAuthenticated, activeBrandId, setActiveBrandId]);
+
+  // Load brands on auth + when active brand changes
+  useEffect(() => {
+    if (isAuthenticated) loadBrands();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeBrandId]);
 
   // File uploads & inputs
   const [files, setFiles] = useState([]);
@@ -44,6 +105,7 @@ export function GenerationProvider({ children }) {
     selectedStyles: new Set(['minimal', 'vibrant', 'editorial']),
     customGuidelines: '',
     customStylePrompt: '',
+    avoidList: '',
   });
   const [content, setContent] = useState({});
   const [images, setImages] = useState([]);
@@ -88,6 +150,9 @@ export function GenerationProvider({ children }) {
           brandName: brand.brandName,
           primaryColor: brand.primaryColor,
           secondaryColor: brand.secondaryColor,
+          icpDescription: brand.icpDescription,
+          brandGuidelines: brand.brandGuidelines,
+          writingSamples: brand.writingSamples,
         }));
         formData.append('videoUrls', JSON.stringify(videoUrls));
         if (textPrompt.trim()) {
@@ -116,9 +181,11 @@ export function GenerationProvider({ children }) {
 
       if (wantImages) {
         setIsImageGenerating(true);
-        const topicSummary = brand.brandName
-          ? `Professional content for ${brand.brandName}`
-          : 'Content based on uploaded materials';
+        // Prefer the user's own topic description over a generic brand-name placeholder —
+        // weak topic summaries make the model invent dramatic, off-brand scenes.
+        const topicFromPrompt = textPrompt && textPrompt.trim() ? textPrompt.trim().slice(0, 500) : '';
+        const topicSummary = topicFromPrompt
+          || (brand.brandName ? `Professional content for ${brand.brandName}` : 'Content based on uploaded materials');
 
         const promptRes = await fetch('/api/build-image-prompts', {
           method: 'POST',
@@ -134,6 +201,7 @@ export function GenerationProvider({ children }) {
             selectedStyles: [...imageConfig.selectedStyles],
             customGuidelines: imageConfig.customGuidelines,
             customStylePrompt: imageConfig.customStylePrompt,
+            avoidList: imageConfig.avoidList,
           }),
         });
         const promptData = await promptRes.json();
@@ -282,6 +350,8 @@ export function GenerationProvider({ children }) {
 
   const value = {
     brand, setBrand,
+    savedBrands, brandsMeta,
+    activeBrandId, setActiveBrandId, loadBrands,
     files, setFiles,
     videoUrls, setVideoUrls,
     textPrompt, setTextPrompt,

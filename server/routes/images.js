@@ -101,7 +101,7 @@ router.post('/edit-image', imageLimiter, verifyToken, async (req, res) => {
 // Returns the list of prompts for the frontend to generate one at a time
 router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) => {
   try {
-    const { topicSummary, brandData, selectedStyles, customGuidelines, customStylePrompt } = req.body;
+    const { topicSummary, brandData, selectedStyles, customGuidelines, customStylePrompt, avoidList } = req.body;
     if (!topicSummary) return res.status(400).json({ success: false, error: 'No topic provided' });
 
     const styleEntries = [];
@@ -123,6 +123,10 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       'Use a different visual metaphor or perspective.',
     ];
 
+    const avoidBlock = avoidList && avoidList.trim()
+      ? `\n\nDO NOT include any of the following. Treat these as hard exclusions:\n${avoidList.trim()}`
+      : '';
+
     const prompts = [];
     for (const { key, promptTemplate } of styleEntries) {
       const basePrompt = injectBrand(promptTemplate, { ...brandData, topicSummary });
@@ -131,6 +135,7 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
         if (customGuidelines && customGuidelines.trim()) {
           prompt += `\n\nAdditional user guidelines: ${customGuidelines.trim()}`;
         }
+        prompt += avoidBlock;
         prompts.push({ style: key, variant: v, prompt });
       }
     }

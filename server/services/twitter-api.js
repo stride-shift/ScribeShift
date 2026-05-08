@@ -203,7 +203,7 @@ async function loadTokens(userId) {
 }
 
 // ── Get valid access token (auto-refresh) ───────────────────────────
-async function getValidAccessToken(userId) {
+export async function getValidAccessToken(userId) {
   const tokens = await loadTokens(userId);
   if (!tokens) return null;
 

@@ -8670,3 +8670,639 @@ textarea.pillar-input { resize: vertical; }
   .spm-header { flex-wrap: wrap; }
   .spm-steps { margin-left: 0; }
 }
+
+/* ── Onboarding flow ──────────────────────────────────────────────── */
+.onboarding-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: var(--bg);
+}
+.onboarding-card {
+  width: 100%;
+  max-width: 720px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 2.5rem 2.25rem;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+.onboarding-card h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.onboarding-sub {
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.onboarding-progress {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.onboarding-pip {
+  height: 4px;
+  flex: 1;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+.onboarding-pip.done {
+  background: var(--primary);
+}
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.onboarding-tips {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.onboarding-tip {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.onboarding-tip strong { color: var(--text); margin-right: 0.35rem; }
+
+/* ── Brands view ──────────────────────────────────────────────────── */
+.brands-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+}
+.brands-plan-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.brands-plan-count {
+  color: var(--text-muted);
+}
+.brands-active-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.brands-summary {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+.brands-summary-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.brands-summary-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.brands-editor-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.brands-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* ── Brand tile grid ───────────────────────────────────────────────── */
+.brand-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.brand-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1rem 1.25rem;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+  color: var(--text);
+  min-height: 220px;
+  gap: 0.4rem;
+}
+
+.brand-tile:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.brand-tile.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary), 0 8px 24px rgba(59, 130, 246, 0.12);
+}
+
+.brand-tile-swatches {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  gap: 0.2rem;
+}
+.brand-tile-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-card);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+.brand-tile-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 12px;
+  margin-bottom: 0.25rem;
+  background: var(--bg-raised);
+}
+
+.brand-tile-logo-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 0.25rem;
+}
+
+.brand-tile-name {
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.2;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.brand-tile-industry {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+  margin-bottom: 0.5rem;
+}
+
+.brand-tile-meta {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.brand-tile-voice {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+.brand-tile-voice.voice-0 {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+.brand-tile-voice.voice-1, .brand-tile-voice.voice-2 {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+.brand-tile-voice.voice-3 {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.brand-tile-active-tag {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--primary);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.brand-tile-use-btn {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.brand-tile:hover .brand-tile-use-btn { opacity: 1; }
+.brand-tile-use-btn:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* Add-tile variant */
+.brand-tile-add {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-muted);
+  justify-content: center;
+}
+.brand-tile-add:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-glow);
+}
+.brand-tile-add.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.brand-tile-add.is-disabled:hover {
+  border-color: var(--border);
+  color: var(--text-muted);
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+.brand-tile-add-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  border: 1.5px dashed currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Brand modal ───────────────────────────────────────────────────── */
+.brand-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  backdrop-filter: blur(4px);
+}
+
+.brand-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: fadeUp 0.25s var(--ease-out);
+}
+
+.brand-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.brand-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+.brand-modal-close:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.brand-modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.brand-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .brand-modal { max-width: 100%; margin: 0; max-height: 100vh; border-radius: 0; }
+  .brand-modal-overlay { padding: 0; }
+  .brand-tile-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}
+
+/* ── Create header polish ──────────────────────────────────────────── */
+.create-header { padding-bottom: 0.25rem; }
+
+.create-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.create-sparkle {
+  color: var(--primary);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.35));
+}
+
+.create-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+.create-brand-row-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.create-brand-manage {
+  font-size: 0.85rem;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.create-brand-manage:hover { color: var(--primary-hover, var(--primary)); }
+
+/* ── Custom brand picker (logo + name + chevron, popover menu) ─────── */
+.brand-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.brand-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.7rem 0.4rem 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  transition: var(--transition);
+  min-width: 180px;
+}
+.brand-picker-trigger:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+.brand-picker-trigger.is-open {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.brand-picker-logo {
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-raised);
+}
+.brand-picker-logo--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+}
+
+.brand-picker-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.brand-picker-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.brand-picker-trigger.is-open .brand-picker-chevron {
+  transform: rotate(180deg);
+}
+
+.brand-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+  padding: 0.35rem;
+  animation: fadeUp 0.15s var(--ease-out);
+}
+
+.brand-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+  transition: background 0.1s;
+}
+.brand-picker-option:hover { background: var(--bg-raised); }
+.brand-picker-option.is-active {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+.brand-picker-option-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Voice-warning card (clickable) ────────────────────────────────── */
+.create-voice-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  color: #d97706;
+  font-family: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+[data-theme="dark"] .create-voice-warning {
+  background: rgba(245, 158, 11, 0.07);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.create-voice-warning:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+[data-theme="dark"] .create-voice-warning:hover {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.create-voice-warning-icon { flex-shrink: 0; }
+
+.create-voice-warning-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.create-voice-warning-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
+
+.create-voice-warning-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+.create-voice-warning:hover .create-voice-warning-chevron {
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+/* ── Empty-brand prompt card ───────────────────────────────────────── */
+.create-empty-brand-card {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  background: var(--bg-card);
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+}
+
+/* ── Analytics — post-performance table ────────────────────────────── */
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.metrics-table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metrics-table tbody td {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.metrics-table tbody tr:last-child td { border-bottom: none; }
+.metrics-table tbody tr:hover { background: var(--bg-raised); }
+.metrics-table a { color: var(--text); text-decoration: none; }
+.metrics-table a:hover { text-decoration: underline; color: var(--primary); }
+
+.analytics-soft-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #b45309;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+[data-theme="dark"] .analytics-soft-warning {
+  background: rgba(245, 158, 11, 0.07);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+}

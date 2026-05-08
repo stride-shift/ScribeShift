@@ -11,6 +11,8 @@ import ScheduleView from './components/ScheduleView';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ConnectedAccounts from './components/ConnectedAccounts';
 import ContentPillarGraph from './components/ContentPillarGraph';
+import BrandsView from './components/BrandsView';
+import OnboardingFlow from './components/OnboardingFlow';
 import { SidebarShapes } from './components/ui/sidebar-shapes';
 
 // Theme hook with localStorage persistence
@@ -30,12 +32,14 @@ function useTheme() {
 }
 
 // ── Navigation views ──────────────────────────────────────────────
+// Order reflects user mental model: Create → see what you made → schedule it → plan ahead → analyze → admin/settings.
 const NAV_VIEWS = [
   { id: 'create', label: 'Create', icon: 'M12 5v14M5 12h14', roles: ['user', 'admin', 'super_admin'] },
-  { id: 'planner', label: 'Planner', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['user', 'admin', 'super_admin'] },
-  { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', roles: ['user', 'admin', 'super_admin'] },
-  { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'history', label: 'History', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'planner', label: 'Pillars', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'brands', label: 'Brands', icon: 'M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01', roles: ['user', 'admin', 'super_admin'] },
   { id: 'settings', label: 'Settings', icon: 'M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'admin', label: 'Admin', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', roles: ['admin', 'super_admin'] },
 ];
@@ -73,19 +77,20 @@ const NavIcon = ({ d }) => (
 
 // ── Workflow sidebar (only shown on Create view) ──────────────────
 function WorkflowSidebar() {
-  const { brand, files, videoUrls, textPrompt, selectedTypes, isGenerating, hasResults } = useGeneration();
+  const { files, videoUrls, textPrompt, selectedTypes, isGenerating, hasResults } = useGeneration();
 
+  // Active step inferred from progress through the form.
   const getActiveStep = () => {
-    if (hasResults) return 'generate';
-    if (isGenerating) return 'generate';
-    if (selectedTypes.has('images')) return 'visuals';
-    if (selectedTypes.size > 0) return 'style';
-    if (files.length > 0 || videoUrls.length > 0 || textPrompt.trim()) return 'context';
-    if (brand.brandName || brand.logoBase64) return 'topic';
-    return 'types';
+    if (hasResults || isGenerating) return 'generate';
+    if (selectedTypes.size > 0 && (files.length > 0 || videoUrls.length > 0 || textPrompt.trim())) return 'style';
+    return 'source';
   };
-
   const activeStep = getActiveStep();
+
+  const scrollToStep = (id) => {
+    const el = document.getElementById(`step-${id}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <>
@@ -96,19 +101,57 @@ function WorkflowSidebar() {
           const isActive = activeStep === step.id;
           const isCompleted = SIDEBAR_STEPS.findIndex(s => s.id === activeStep) > SIDEBAR_STEPS.findIndex(s => s.id === step.id);
           return (
-            <div key={step.id} className={`sidebar-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
+            <button
+              key={step.id}
+              type="button"
+              className={`sidebar-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
+              onClick={() => scrollToStep(step.id)}
+              style={{ background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}
+            >
               <span className="step-number">
                 {isCompleted ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 ) : step.num}
               </span>
               <div className="step-info"><div className="step-label">{step.label}</div><div className="step-sublabel">{step.sub}</div></div>
-            </div>
+            </button>
           );
         })}
       </nav>
     </>
   );
+}
+
+// ── Onboarding gate: show flow until user has a company AND at least one brand ──
+function OnboardingGate({ children }) {
+  const { user } = useAuth();
+  const { savedBrands, brandsMeta, loadBrands } = useGeneration();
+  const [dismissed, setDismissed] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    loadBrands().finally(() => setChecked(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  if (!checked) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+        <p>Loading your workspace...</p>
+      </div>
+    );
+  }
+
+  const needsCompany = !user?.company_id;
+  const needsBrand = (savedBrands?.length || brandsMeta?.used || 0) === 0;
+  const needsOnboarding = !dismissed && (needsCompany || needsBrand);
+
+  if (needsOnboarding) {
+    return <OnboardingFlow onComplete={() => setDismissed(true)} />;
+  }
+  return children;
 }
 
 // ── Main app shell ──────────────────────────────────────────────
@@ -152,10 +195,11 @@ function AppShell() {
 
   const renderView = () => {
     switch (activeView) {
-      case 'planner': return <ErrorBoundary label="Planner"><ContentPillarGraph /></ErrorBoundary>;
+      case 'planner': return <ErrorBoundary label="Pillars"><ContentPillarGraph /></ErrorBoundary>;
       case 'schedule': return <ErrorBoundary label="Schedule"><ScheduleView /></ErrorBoundary>;
       case 'analytics': return <ErrorBoundary label="Analytics"><AnalyticsDashboard /></ErrorBoundary>;
       case 'history': return <ErrorBoundary label="History"><ContentHistory /></ErrorBoundary>;
+      case 'brands': return <ErrorBoundary label="Brands"><BrandsView /></ErrorBoundary>;
       case 'settings': return <ErrorBoundary label="Settings"><ConnectedAccounts /></ErrorBoundary>;
       case 'admin': return <ErrorBoundary label="Admin"><AdminDashboard /></ErrorBoundary>;
       case 'create':
@@ -178,7 +222,7 @@ function AppShell() {
             <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="44" y2="44"><stop offset="0%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#2563eb" /></linearGradient></defs>
             <circle cx="22" cy="22" r="20" stroke="url(#logoGrad)" strokeWidth="2.5" /><circle cx="22" cy="22" r="7" fill="url(#logoGrad)" />
           </svg>
-          <span className="navbar-title">Scribe Shift</span>
+          <span className="navbar-title">ScribeShift</span>
         </div>
         <div className="navbar-spacer" />
         <div className="navbar-actions">
@@ -249,7 +293,9 @@ export default function App() {
 
   return (
     <GenerationProvider>
-      <AppShell />
+      <OnboardingGate>
+        <AppShell />
+      </OnboardingGate>
     </GenerationProvider>
   );
 }
