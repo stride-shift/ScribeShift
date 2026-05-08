@@ -333,16 +333,67 @@ export default function BrandsView() {
             </div>
 
             <div className="brand-modal-body">
-              <div className="brands-editor-row">
-                <div className="wizard-context-block" style={{ flex: 2 }}>
-                  <label className="wizard-context-label">Brand name *</label>
-                  <input
-                    className="wizard-context-input"
-                    value={draft.brand_name}
-                    placeholder="e.g. StrideShift"
-                    onChange={(e) => setDraft({ ...draft, brand_name: e.target.value })}
-                  />
+              {/* Logo: either upload an image OR type a text logo (which is also the brand name) */}
+              <div className="wizard-context-block">
+                <label className="wizard-context-label">Logo *</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.6rem' }}>
+                  Upload an image, or just type your brand name and we'll use it as a text logo.
+                </p>
+                <div className="brand-logo-row">
+                  <div className="brand-logo-preview" style={{ background: draft.primary_color }}>
+                    {draft.logoPreview ? (
+                      <img src={draft.logoPreview} alt="" />
+                    ) : (
+                      <span className="brand-logo-text-fallback">
+                        {draft.brand_name ? draft.brand_name.slice(0, 14) : '?'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="brand-logo-actions" style={{ flex: 1, minWidth: 220 }}>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoFile}
+                      style={{ display: 'none' }}
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {draft.logoPreview ? 'Replace image' : 'Upload image'}
+                      </button>
+                      {draft.logoPreview && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={clearLogo}
+                          style={{ color: '#ef4444' }}
+                        >
+                          Remove image
+                        </button>
+                      )}
+                      <span className="card-subtitle" style={{ margin: 0, fontSize: '0.72rem' }}>
+                        PNG, JPG, WEBP, SVG · max 5MB
+                      </span>
+                    </div>
+                    <div className="brand-logo-divider">— or —</div>
+                    <input
+                      className="wizard-context-input"
+                      placeholder="Type your brand name (e.g. StrideShift)"
+                      value={draft.brand_name}
+                      onChange={(e) => setDraft({ ...draft, brand_name: e.target.value })}
+                    />
+                    <p className="card-subtitle" style={{ margin: '0.3rem 0 0', fontSize: '0.7rem' }}>
+                      We'll style this in your primary colour as a text logo.
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              <div className="brands-editor-row" style={{ marginTop: '1rem' }}>
                 <div className="wizard-context-block" style={{ flex: 1 }}>
                   <label className="wizard-context-label">Industry</label>
                   <select
@@ -359,9 +410,6 @@ export default function BrandsView() {
                     <option value="other">Other</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="brands-editor-row">
                 <div className="wizard-color-picker">
                   <label className="wizard-context-label">Primary colour</label>
                   <div className="wizard-color-input">
@@ -374,54 +422,6 @@ export default function BrandsView() {
                   <div className="wizard-color-input">
                     <input type="color" value={draft.secondary_color} onChange={(e) => setDraft({ ...draft, secondary_color: e.target.value })} />
                     <input type="text" value={draft.secondary_color} onChange={(e) => setDraft({ ...draft, secondary_color: e.target.value })} className="color-hex" maxLength={7} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Logo: image upload or fall back to brand-name text */}
-              <div className="wizard-context-block" style={{ marginTop: '1rem' }}>
-                <label className="wizard-context-label">Logo</label>
-                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
-                  Upload an image, or skip to use the brand name as a text logo.
-                </p>
-                <div className="brand-logo-row">
-                  <div className="brand-logo-preview" style={{ background: draft.primary_color }}>
-                    {draft.logoPreview ? (
-                      <img src={draft.logoPreview} alt="" />
-                    ) : (
-                      <span className="brand-logo-text-fallback">
-                        {draft.brand_name ? draft.brand_name.slice(0, 14) : '?'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="brand-logo-actions">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                      onChange={handleLogoFile}
-                      style={{ display: 'none' }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {draft.logoPreview ? 'Replace image' : 'Upload image'}
-                    </button>
-                    {draft.logoPreview && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={clearLogo}
-                        style={{ color: '#ef4444' }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <p className="card-subtitle" style={{ margin: 0, fontSize: '0.72rem' }}>
-                      PNG, JPG, WEBP, or SVG · max 5MB
-                    </p>
                   </div>
                 </div>
               </div>

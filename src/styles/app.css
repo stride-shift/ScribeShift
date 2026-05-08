@@ -8829,8 +8829,26 @@ textarea.pillar-input { resize: vertical; }
 .brand-logo-actions {
   display: flex;
   gap: 0.5rem;
+  align-items: stretch;
+  flex-direction: column;
+}
+.brand-logo-divider {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.brand-logo-divider::before,
+.brand-logo-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 .brands-editor-actions {
   display: flex;
