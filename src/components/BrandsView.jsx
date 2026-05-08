@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useGeneration } from './GenerationContext';
 
@@ -17,6 +17,10 @@ const EMPTY_DRAFT = {
   icp_description: '',
   brand_guidelines: '',
   writing_samples: ['', '', ''],
+  logo_url: null,
+  logoBase64: null,    // local-only: pending image to upload
+  logoPreview: null,   // local-only: data URL for inline preview
+  logoMimeType: null,
 };
 
 export default function BrandsView() {
@@ -73,6 +77,10 @@ export default function BrandsView() {
       writing_samples: (brand.writing_samples && brand.writing_samples.length > 0)
         ? [...brand.writing_samples, '', '', ''].slice(0, Math.max(3, brand.writing_samples.length))
         : ['', '', ''],
+      logo_url: brand.logo_url || null,
+      logoBase64: null,
+      logoPreview: brand.logo_url || null,
+      logoMimeType: null,
     });
     setError('');
     setModalMode('edit');
@@ -92,6 +100,38 @@ export default function BrandsView() {
     setDraft({ ...draft, writing_samples: samples });
   };
 
+  const fileInputRef = useRef(null);
+  const handleLogoFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Logo must be an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Logo must be under 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const base64 = String(dataUrl).split(',')[1];
+      setDraft(prev => ({
+        ...prev,
+        logoBase64: base64,
+        logoPreview: dataUrl,
+        logoMimeType: file.type,
+        logo_url: prev.logo_url, // keep existing until upload completes on save
+      }));
+      setError('');
+    };
+    reader.readAsDataURL(file);
+  };
+  const clearLogo = () => {
+    setDraft(prev => ({ ...prev, logoBase64: null, logoPreview: null, logoMimeType: null, logo_url: null }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const saveDraft = async () => {
     if (!draft.brand_name.trim()) {
       setError('Brand name is required');
@@ -100,15 +140,42 @@ export default function BrandsView() {
     setSaving(true);
     setError('');
     try {
+      // Strip local-only image fields before sending to the JSON endpoint —
+      // images upload separately to /logo to avoid 1MB JSON payload limits.
+      // eslint-disable-next-line no-unused-vars
+      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ...payload } = draft;
+
+      // If user explicitly cleared the logo (preview is null but the brand
+      // had a logo before), forward that as null so the backend wipes it.
+      if (draftLogoUrl === null && editingId) {
+        payload.logo_url = null;
+      }
+
       const url = editingId ? `/api/brands/${editingId}` : '/api/brands';
       const method = editingId ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method,
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Failed to ${editingId ? 'update' : 'create'} brand`);
+
+      const brandId = editingId || data.brand?.id;
+
+      // If a new image is queued, upload it to the dedicated logo endpoint.
+      if (brandId && logoBase64) {
+        const upRes = await fetch(`/api/brands/${brandId}/logo`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64: logoBase64, mimeType: logoMimeType || 'image/png' }),
+        });
+        if (!upRes.ok) {
+          const upData = await upRes.json().catch(() => ({}));
+          throw new Error(upData.error || 'Brand saved, but logo upload failed');
+        }
+      }
+
       if (!editingId && data.brand?.id) {
         setActiveBrandId(data.brand.id);
       }
@@ -172,8 +239,12 @@ export default function BrandsView() {
         {brand.logo_url ? (
           <img src={brand.logo_url} alt="" className="brand-tile-logo" />
         ) : (
-          <div className="brand-tile-logo-placeholder" style={{ background: brand.primary_color || '#3b82f6' }}>
-            {(brand.brand_name || '?').charAt(0).toUpperCase()}
+          <div
+            className="brand-tile-logo-placeholder brand-tile-logo-text"
+            style={{ background: brand.primary_color || '#3b82f6' }}
+            title={brand.brand_name || ''}
+          >
+            <span>{brand.brand_name || '?'}</span>
           </div>
         )}
 
@@ -303,6 +374,54 @@ export default function BrandsView() {
                   <div className="wizard-color-input">
                     <input type="color" value={draft.secondary_color} onChange={(e) => setDraft({ ...draft, secondary_color: e.target.value })} />
                     <input type="text" value={draft.secondary_color} onChange={(e) => setDraft({ ...draft, secondary_color: e.target.value })} className="color-hex" maxLength={7} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Logo: image upload or fall back to brand-name text */}
+              <div className="wizard-context-block" style={{ marginTop: '1rem' }}>
+                <label className="wizard-context-label">Logo</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                  Upload an image, or skip to use the brand name as a text logo.
+                </p>
+                <div className="brand-logo-row">
+                  <div className="brand-logo-preview" style={{ background: draft.primary_color }}>
+                    {draft.logoPreview ? (
+                      <img src={draft.logoPreview} alt="" />
+                    ) : (
+                      <span className="brand-logo-text-fallback">
+                        {draft.brand_name ? draft.brand_name.slice(0, 14) : '?'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="brand-logo-actions">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoFile}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {draft.logoPreview ? 'Replace image' : 'Upload image'}
+                    </button>
+                    {draft.logoPreview && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={clearLogo}
+                        style={{ color: '#ef4444' }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <p className="card-subtitle" style={{ margin: 0, fontSize: '0.72rem' }}>
+                      PNG, JPG, WEBP, or SVG · max 5MB
+                    </p>
                   </div>
                 </div>
               </div>
