@@ -92,45 +92,49 @@ export function buildVoiceContext(brandData = {}) {
 
 // ── TEXT SKILLS ─────────────────────────────────────────────────────
 
-export const SKILL_TRANSCRIPT_TO_BLOG = `# Transcript to Blog Post
+export const SKILL_TRANSCRIPT_TO_BLOG = `# Source to Blog Post
 
-Turn raw spoken content into a blog post that sounds like a real person wrote it — someone with opinions, texture, and a voice that doesn't sound like every other AI-generated post on the internet.
+Turn the source content into a blog post that reads like a real person with a perspective wrote it — someone with opinions, texture, and a voice that doesn't sound like every other AI-generated post on the internet. Match the brand voice provided.
 
 {{BRAND_IDENTITY}}
 
-## CRITICAL: Source-Based Content
-The blog post MUST be entirely derived from the source transcript/content provided below. Extract the actual topics, arguments, stories, and insights from the source. Do NOT invent new topics. The blog should faithfully represent the source material's ideas, reorganized into blog format.
+## CRITICAL: Source-faithful, structured output
+- The blog MUST be entirely derived from the source content provided. Use the source's actual arguments, examples, and voice. Do NOT invent topics that aren't in the source.
+- The output MUST use proper Markdown structure so it renders correctly in any preview:
+  - **# Title** on the first line — 5-10 words, specific, not clickbait
+  - **An italicised one-line subtitle/dek** directly below the title (e.g. *A practical look at why most teams confuse activity with progress.*)
+  - **## Section headings** for each main section (2-4 sections total)
+  - **Short paragraphs** (2-4 sentences each) — long walls of text don't render well on the web
+  - **At least one block quote** (\`> ...\`) for a punchline or memorable insight
+  - **Optionally a short bulleted list** if the source content lends itself to one — but only if it adds value, not as filler
 
 ## Voice & Feel
-- Write like you talk. If a sentence sounds like it came from a corporate communications department, delete it.
-- Keep the speaker's actual phrases, slang, and verbal quirks when they add character — that's the gold. Don't sand it down.
-- Vary your rhythm. A two-word sentence. Then something longer that lets an idea unspool and breathe a little. Mix it up.
-- It's fine to end a section on a question that doesn't have a tidy answer.
-- Humor is welcome when it's natural — forced wit is worse than no wit.
-- NO motivational-poster endings. NO "and that's the real lesson." NO kumbaya wrap-ups.
-- If the original speaker was blunt, be blunt. If they were funny, be funny. Don't homogenize personality.
+- Write like a thoughtful person, not a content marketing department. If a sentence could appear in any other company's blog, rewrite it.
+- Keep the speaker's actual phrases when they add character. Don't sand the personality off.
+- Vary your sentence rhythm. Mix short, declarative sentences with longer ones that let an idea unspool.
+- Be specific. Concrete numbers > vague claims. Real scenarios > hypotheticals.
+- Humor is welcome when natural; forced wit is worse than none.
+- NO motivational-poster endings, NO "and that's the real lesson," NO kumbaya wrap-ups.
 
-## Structure
-1. Opening (50-75 words): Drop the reader into something — a moment, a question, a provocation. No throat-clearing. No "In today's fast-paced world..."
-2. Core (400-450 words): 2-4 sections with subheadings. Each section should have one clear idea, not three ideas blended into mush.
-3. Close (50-100 words): End with something that sticks. A question, a challenge, an unresolved tension. NOT a neat summary of everything you just said.
+## Structure (target: 600-800 words)
+1. **Title + dek** (one line each) — hook the reader without clickbait
+2. **Opening** (60-90 words): drop the reader into a moment, question, or provocation. NO "In today's fast-paced world..." NO throat-clearing.
+3. **2-4 body sections** with ## subheadings. Each section has one clear idea developed across 2-4 short paragraphs.
+4. **A pull-quote block (\`>\`)** somewhere in the middle — the line you'd want a reader to screenshot.
+5. **Close** (60-100 words): end with something that sticks — a question, a tension, a forward-looking claim. NOT a tidy summary.
 
-## Hard Rules
-- Maximum 600 words (excluding title)
-- Title: 5-10 words. Make it specific and interesting, not clickbait.
-- 2-3 subheadings to break up text
-- Zero filler. Every sentence must earn its place.
-
-## What to KILL on Sight
-- "In today's [anything]..." openings
-- "At the end of the day..."
-- "It's not about X, it's about Y" (overused structure)
-- Tidy three-part conclusions that wrap everything in a bow
+## What to KILL on sight
+- "In today's [X]..." openings, "At the end of the day...", "It's not about X, it's about Y"
+- Tidy three-part conclusions, motivational-poster endings, Hallmark-card sentiment
 - Buzzwords: synergy, leverage, ecosystem, unlock, empower (unless used satirically)
-- Hallmark-card sentiment — if it could be printed on a greeting card, rewrite it
-- Forced positivity or false resolution — real content has rough edges
+- Forced positivity, false resolution, filler transitions ("With that said...", "Now, let me explain...")
+- Unsourced claims — if you state a fact, anchor it to something specific from the source
 
-When the user provides a transcript, transform it into a blog post ABOUT THAT SPECIFIC CONTENT following these guidelines. Every section must be grounded in the source material.`;
+## Output rules
+- Output ONLY the blog post in Markdown. No preamble, no code fences, no "Here's your blog post:".
+- Start with the # title. End with the last word of the closing paragraph.
+
+When the user provides a source, transform it into a blog post ABOUT THAT SPECIFIC CONTENT following these guidelines.`;
 
 export const SKILL_BLOG_TO_VIDEO = `# Blog to Video Script
 
@@ -175,51 +179,50 @@ When the user provides a blog post, generate a complete video script ABOUT THAT 
 
 export const SKILL_WEEKLY_NEWSLETTER = `# Weekly Newsletter
 
-Write a newsletter that reads like an email from someone the reader actually likes hearing from — not a company broadcast. The best newsletters feel like a conversation, not content marketing.
+Write a newsletter that reads like a thoughtful email from someone the reader actually likes hearing from — not a company broadcast. Match the brand voice. Use proper Markdown structure so it renders correctly inside any of the four newsletter templates the app supports (Executive, Modern, Bold, Classic).
 
 {{BRAND_IDENTITY}}
 
-## CRITICAL: Source-Based Content
-The newsletter MUST be entirely derived from the blog post/content provided below. Featured content, insights, and questions should all come from the source material. Do NOT invent topics.
-
-## Brand Integration
-- If a brand name is provided, use it as the sender identity
-- Use brand colors {{PRIMARY_COLOR}} and {{SECONDARY_COLOR}} in any color references
+## CRITICAL: Source-faithful, structured output
+- Every section MUST be derived from the source content. Don't invent topics.
+- Output MUST use Markdown headings the templates can parse:
+  - **First line: \`Subject: <subject line>\`** — under 60 chars, specific (NOT "This Week's Newsletter!")
+  - **## Hello / Greeting** — the opener
+  - **## What's been on my mind** — the hook
+  - **## Featured** — the main piece
+  - **## Quick hits** — 2-3 marginalia items as a bulleted list
+  - **## Question to sit with** — one real question
+  - **## Coming up** — a tease
+  - **## Sign-off** — closing line + name
 
 ## Voice
-- Write like someone who respects the reader's time and intelligence
-- Be specific, not vague. "This week I stumbled on something that changed how I think about [specific thing]" beats "This week we have some exciting insights to share!"
-- Genuine > polished. If something surprised you, confused you, or made you rethink something — say that.
-- Skip the corporate warmth. "Hey" is fine. A joke is fine. Getting straight to it is fine.
+- Write like someone who respects the reader's time. Skip the "Happy Tuesday!" greeting.
+- Be specific. "I watched a tool demo Friday that broke three assumptions I had" beats "exciting innovations this week."
+- Genuine > polished. If something surprised you, say that.
+- "Hey," is fine. A joke is fine. Getting straight to it is fine.
+- NO "Warm regards, The Team." Be a person.
 
-## Requirements
-- Target length: 400-600 words
-- Subject line: Under 50 characters, specific and intriguing (not "This Week's Newsletter!")
+## Section sizes (target 500-700 words total)
+- **Subject line**: 1 line, ≤60 chars
+- **Greeting**: 15-25 words
+- **What's been on my mind**: 60-90 words. Specific moment or insight from the source.
+- **Featured**: 180-250 words. The main thing. Give enough to be valuable. End at a tension, not a tidy resolution.
+- **Quick hits**: 3 bullet points, each 1-2 short sentences. Texture > bullet points that read like memos.
+- **Question to sit with**: 30-50 words. Specific enough to be interesting, open enough to be worth thinking about.
+- **Coming up**: 25-40 words. Tease, don't list.
+- **Sign-off**: 15-25 words. Human.
 
-## Newsletter Structure
+## What to kill
+- "Happy [Day]!", "We're excited to share..."
+- Corporate "we" when a singular voice would land harder
+- Tidy bow-tied conclusions
+- Bullet lists that read like internal status updates
 
-### 1. Opening (20-30 words)
-Skip the "Happy [day]!" greeting. Start with something real — a thought, an observation, a question. Or just "Hey — " and get into it.
+## Output rules
+- Output ONLY the newsletter in Markdown. Start with \`Subject: ...\` on line 1.
+- No preamble, no code fences, no "Here is your newsletter:" wrapper.
 
-### 2. The Hook (50-80 words)
-What's been on your mind this week? Be specific. Not "I've been thinking about innovation" but "I watched someone demo a tool on Friday that made me question three assumptions I've held for years."
-
-### 3. Featured Piece (150-200 words)
-The main insight from the source content. Give enough to be valuable on its own, but leave the reader wanting more. End at a moment of tension or curiosity, not resolution.
-
-### 4. Quick Hits (80-120 words)
-2-3 standalone fragments — quotes, observations, half-formed ideas, or provocations. These should feel like marginalia, not bullet points. The kind of thing you'd text a friend.
-
-### 5. Question to Sit With (40-60 words)
-Not a survey question. A real question — the kind that doesn't have an obvious answer. Specific enough to be interesting, open enough to be worth thinking about.
-
-### 6. What's Coming (30-50 words)
-Tease next week. Create curiosity, not a table of contents.
-
-### 7. Sign-Off (20-30 words)
-Be human. Not "Warm regards, The Team."
-
-When the user provides content, compile it into a newsletter ABOUT THAT SPECIFIC CONTENT following these guidelines.`;
+When the user provides content, transform it into a newsletter ABOUT THAT CONTENT.`;
 
 // ── SOCIAL MEDIA SKILLS ─────────────────────────────────────────────
 // Updated with 2025-2026 trending best practices from top-performing
