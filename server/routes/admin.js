@@ -227,16 +227,49 @@ router.delete('/users/:id', requireRole('super_admin'), async (req, res) => {
   }
 });
 
+// Default brand-count limit per plan, mirrored from server/routes/brands.js.
+// Keep these in sync — the brands route enforces them and admin UI displays them.
+const PLAN_BRAND_LIMITS = {
+  free: 1,
+  starter: 3,
+  agency: 10,
+  enterprise: 50,
+};
+
 // ── GET /api/admin/companies ────────────────────────────────────────
+// Includes a `brand_count` and resolved `effective_brand_limit` per row so
+// the super-admin UI can show "X / Y brands used" without N+1 queries.
 router.get('/companies', requireRole('super_admin'), async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data: companies, error } = await supabase
       .from('companies')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ companies: data });
+
+    // One grouped count query for all brands at once
+    const { data: brandRows } = await supabase
+      .from('brands')
+      .select('company_id');
+
+    const counts = new Map();
+    for (const b of brandRows || []) {
+      if (!b.company_id) continue;
+      counts.set(b.company_id, (counts.get(b.company_id) || 0) + 1);
+    }
+
+    const enriched = (companies || []).map(c => ({
+      ...c,
+      brand_count: counts.get(c.id) || 0,
+      effective_brand_limit:
+        typeof c.max_brands === 'number'
+          ? c.max_brands
+          : (PLAN_BRAND_LIMITS[c.plan] ?? PLAN_BRAND_LIMITS.free),
+      plan_brand_limit: PLAN_BRAND_LIMITS[c.plan] ?? PLAN_BRAND_LIMITS.free,
+    }));
+
+    res.json({ companies: enriched, plan_limits: PLAN_BRAND_LIMITS });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch companies' });
   }
@@ -272,13 +305,15 @@ router.post('/companies', requireRole('super_admin'), async (req, res) => {
 // ── PUT /api/admin/companies/:id ────────────────────────────────────
 router.put('/companies/:id', requireRole('super_admin'), async (req, res) => {
   try {
-    const { name, plan, credit_balance, credit_monthly_limit, logo_url } = req.body;
+    const { name, plan, credit_balance, credit_monthly_limit, logo_url, max_brands } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (plan !== undefined) updates.plan = plan;
     if (credit_balance !== undefined) updates.credit_balance = credit_balance;
     if (credit_monthly_limit !== undefined) updates.credit_monthly_limit = credit_monthly_limit;
     if (logo_url !== undefined) updates.logo_url = logo_url;
+    // null = clear override (fall back to plan default), number = explicit cap
+    if (max_brands !== undefined) updates.max_brands = max_brands;
     updates.updated_at = new Date().toISOString();
 
     const { error } = await supabase

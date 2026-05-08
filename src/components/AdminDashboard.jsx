@@ -210,6 +210,7 @@ export default function AdminDashboard() {
           plan: editingCompany.plan,
           credit_balance: editingCompany.credit_balance,
           credit_monthly_limit: editingCompany.credit_monthly_limit,
+          max_brands: editingCompany.max_brands ?? null,
         }),
       });
       if (!res.ok) {
@@ -217,10 +218,32 @@ export default function AdminDashboard() {
         setError(data.error || 'Failed to update company');
         return;
       }
-      setCompanies(prev => prev.map(c => c.id === editingCompany.id ? { ...c, ...editingCompany } : c));
+      // Reload to get fresh effective_brand_limit / brand_count
+      await loadData();
       setEditingCompany(null);
     } catch {
       setError('Failed to update company');
+    }
+  };
+
+  // Bump max_brands by 1 (or set to plan_default + 1 if there's no override yet).
+  const handleAddBrandSlot = async (company) => {
+    const currentLimit = company.effective_brand_limit ?? 1;
+    const next = currentLimit + 1;
+    try {
+      const res = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ max_brands: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Failed to add brand slot');
+        return;
+      }
+      await loadData();
+    } catch {
+      setError('Failed to add brand slot');
     }
   };
 
@@ -575,9 +598,10 @@ export default function AdminDashboard() {
                 <input placeholder="Company name" value={newCompany.name}
                   onChange={e => setNewCompany(p => ({ ...p, name: e.target.value }))} />
                 <select value={newCompany.plan} onChange={e => setNewCompany(p => ({ ...p, plan: e.target.value }))}>
-                  <option value="free">Free</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="free">Free (1 brand)</option>
+                  <option value="starter">Starter (3 brands)</option>
+                  <option value="agency">Agency (10 brands)</option>
+                  <option value="enterprise">Enterprise (50 brands)</option>
                 </select>
                 {newCompany.credit_monthly_limit !== -1 && (
                   <input type="number" placeholder="Credits" value={newCompany.credit_balance}
@@ -607,9 +631,10 @@ export default function AdminDashboard() {
                 <input placeholder="Company name" value={editingCompany.name}
                   onChange={e => setEditingCompany(p => ({ ...p, name: e.target.value }))} />
                 <select value={editingCompany.plan} onChange={e => setEditingCompany(p => ({ ...p, plan: e.target.value }))}>
-                  <option value="free">Free</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="free">Free (1 brand)</option>
+                  <option value="starter">Starter (3 brands)</option>
+                  <option value="agency">Agency (10 brands)</option>
+                  <option value="enterprise">Enterprise (50 brands)</option>
                 </select>
                 {editingCompany.credit_monthly_limit !== -1 && (
                   <>
@@ -626,6 +651,25 @@ export default function AdminDashboard() {
                       credit_monthly_limit: e.target.checked ? -1 : 100,
                     }))} />
                   Unlimited credits
+                </label>
+              </div>
+              <div className="admin-form-row" style={{ marginTop: '0.5rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', flex: 1 }}>
+                  <span style={{ minWidth: 110 }}>Brand limit override</span>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder={`Plan default: ${editingCompany.plan_brand_limit ?? '1'}`}
+                    value={editingCompany.max_brands ?? ''}
+                    onChange={e => setEditingCompany(p => ({
+                      ...p,
+                      max_brands: e.target.value === '' ? null : Number(e.target.value),
+                    }))}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Leave empty to use the plan default
+                  </span>
                 </label>
               </div>
               <div className="admin-form-actions">
@@ -660,6 +704,7 @@ export default function AdminDashboard() {
                   <tr>
                     <th>Name</th>
                     <th>Plan</th>
+                    <th>Brands</th>
                     <th>Credits</th>
                     <th>Monthly Limit</th>
                     <th>Created</th>
@@ -669,15 +714,37 @@ export default function AdminDashboard() {
                 <tbody>
                   {companies.map(c => {
                     const isUnlimited = c.credit_monthly_limit === -1;
+                    const brandUsed = c.brand_count ?? 0;
+                    const brandLimit = c.effective_brand_limit ?? 1;
+                    const planLimit = c.plan_brand_limit ?? 1;
+                    const isOverride = typeof c.max_brands === 'number';
+                    const atLimit = brandUsed >= brandLimit;
                     return (
                       <tr key={c.id}>
                         <td><strong>{c.name}</strong></td>
                         <td><span className={`plan-badge ${c.plan}`}>{c.plan}</span></td>
+                        <td>
+                          <span style={{ fontWeight: 600, color: atLimit ? '#ef4444' : 'inherit' }}>
+                            {brandUsed} / {brandLimit}
+                          </span>
+                          {isOverride && (
+                            <span title={`Plan default is ${planLimit}; override active`} style={{ marginLeft: 6, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                              (override)
+                            </span>
+                          )}
+                        </td>
                         <td>{isUnlimited ? <span className="plan-badge enterprise">Unlimited</span> : c.credit_balance}</td>
                         <td>{isUnlimited ? <span className="plan-badge enterprise">Unlimited</span> : c.credit_monthly_limit}</td>
                         <td>{new Date(c.created_at).toLocaleDateString()}</td>
                         <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                           <button className="admin-btn-sm" onClick={() => setEditingCompany({ ...c })}>Edit</button>
+                          <button
+                            className="admin-btn-sm success"
+                            onClick={() => handleAddBrandSlot(c)}
+                            title="Increase this company's brand limit by 1"
+                          >
+                            + Brand slot
+                          </button>
                           {!isUnlimited && (
                             <button className="admin-btn-sm success" onClick={() => setAddCreditsTarget({ id: c.id, name: c.name, amount: '' })}>
                               + Credits
