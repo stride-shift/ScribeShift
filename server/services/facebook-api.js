@@ -13,7 +13,10 @@ const FB_API_BASE = 'https://graph.facebook.com/v21.0';
 // business_management is required so Facebook Login for Business tokens can
 // list the user's Businesses and their owned Pages — /me/accounts returns
 // empty for FBLB tokens so we fall back to the Business → owned_pages path.
-const SCOPES = 'pages_show_list,pages_manage_posts,pages_read_engagement,business_management';
+// `read_insights` is required to call /{pageId}/insights for follower
+// growth, page impressions, reach, etc. Without it the API returns
+// (#100) "The value must be a valid insights metric" on every metric.
+const SCOPES = 'pages_show_list,pages_manage_posts,pages_read_engagement,read_insights,business_management';
 const PLATFORM = 'facebook';
 
 // ── Generate OAuth authorization URL ────────────────────────────────
