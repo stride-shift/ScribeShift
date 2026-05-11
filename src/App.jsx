@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './components/AuthProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import LoginPage from './components/LoginPage';
@@ -13,6 +13,7 @@ import ConnectedAccounts from './components/ConnectedAccounts';
 import ContentPillarGraph from './components/ContentPillarGraph';
 import BrandsView from './components/BrandsView';
 import OnboardingFlow from './components/OnboardingFlow';
+import TourProvider, { useTour } from './components/tour/TourProvider';
 import { SidebarShapes } from './components/ui/sidebar-shapes';
 
 // Theme hook with localStorage persistence
@@ -69,6 +70,81 @@ const LogoutIcon = () => (
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
   </svg>
 );
+const HelpIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+function HelpMenu() {
+  const {
+    available,
+    availableTours,
+    startViewTour,
+    startSequentialTour,
+    startMainTour,
+  } = useTour();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const onEsc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', onClick);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  if (!available) return null;
+
+  const handle = (fn) => () => { setOpen(false); fn(); };
+
+  return (
+    <div className="help-menu-wrap" ref={wrapRef}>
+      <button
+        className="theme-toggle"
+        onClick={() => setOpen((o) => !o)}
+        title="Take a tour"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Open help menu"
+      >
+        <HelpIcon />
+      </button>
+      {open && (
+        <div className="help-menu" role="menu">
+          <button className="help-menu-item help-menu-item--primary" onClick={handle(startSequentialTour)} role="menuitem">
+            <span className="help-menu-item-title">Walk me through every tab</span>
+            <span className="help-menu-item-sub">A guided tour across the whole app</span>
+          </button>
+          <button className="help-menu-item" onClick={handle(startMainTour)} role="menuitem">
+            <span className="help-menu-item-title">Replay nav walkthrough</span>
+            <span className="help-menu-item-sub">Quick orientation of the side nav</span>
+          </button>
+          <div className="help-menu-section">Tour a specific tab</div>
+          {availableTours.map((t) => (
+            <button
+              key={t.id}
+              className="help-menu-item help-menu-item--compact"
+              onClick={handle(() => startViewTour(t.id))}
+              role="menuitem"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 const NavIcon = ({ d }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d={d} />
@@ -124,14 +200,39 @@ function WorkflowSidebar() {
 
 // ── Onboarding gate: show flow until user has a company AND at least one brand ──
 function OnboardingGate({ children }) {
-  const { user } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
   const { savedBrands, brandsMeta, loadBrands } = useGeneration();
   const [dismissed, setDismissed] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [pillarCount, setPillarCount] = useState(null);
 
+  // Load workspace state we use to decide whether onboarding is complete:
+  // brands (already in context) and pillars (one extra fetch). Both have to
+  // be present before we let the user into the main app — per Shanne's ask,
+  // the goal is to prevent generating content before the foundation is set.
   useEffect(() => {
     if (!user) return;
-    loadBrands().finally(() => setChecked(true));
+    let cancelled = false;
+    (async () => {
+      try {
+        const [_brands, pillarsRes] = await Promise.all([
+          loadBrands(),
+          fetch('/api/planner/pillars', { headers: getAuthHeaders() }),
+        ]);
+        if (cancelled) return;
+        if (pillarsRes.ok) {
+          const data = await pillarsRes.json();
+          setPillarCount((data.pillars || []).length);
+        } else {
+          setPillarCount(0);
+        }
+      } catch {
+        if (!cancelled) setPillarCount(0);
+      } finally {
+        if (!cancelled) setChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -146,7 +247,8 @@ function OnboardingGate({ children }) {
 
   const needsCompany = !user?.company_id;
   const needsBrand = (savedBrands?.length || brandsMeta?.used || 0) === 0;
-  const needsOnboarding = !dismissed && (needsCompany || needsBrand);
+  const needsPillars = (pillarCount ?? 0) === 0;
+  const needsOnboarding = !dismissed && (needsCompany || needsBrand || needsPillars);
 
   if (needsOnboarding) {
     return <OnboardingFlow onComplete={() => setDismissed(true)} />;
@@ -209,7 +311,7 @@ function AppShell() {
   };
 
   return (
-    <>
+    <TourProvider activeView={activeView} setActiveView={setActiveView}>
       <nav className="app-navbar">
         <button
           className="sidebar-toggle"
@@ -233,6 +335,7 @@ function AppShell() {
           <button className="theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
+          <HelpMenu />
           <button className="logout-btn" onClick={logout} title="Sign out"><LogoutIcon /></button>
         </div>
       </nav>
@@ -244,7 +347,9 @@ function AppShell() {
           <div className="sidebar-section-label">Views</div>
           <nav className="view-nav">
             {visibleViews.map((view) => (
-              <button key={view.id} className={`view-nav-btn ${activeView === view.id ? 'active' : ''}`}
+              <button key={view.id}
+                data-tour={`nav-${view.id}`}
+                className={`view-nav-btn ${activeView === view.id ? 'active' : ''}`}
                 onClick={() => {
                   setActiveView(view.id);
                   if (typeof window !== 'undefined' && window.innerWidth < 900) setSidebarOpen(false);
@@ -268,7 +373,7 @@ function AppShell() {
           </div>
         </main>
       </div>
-    </>
+    </TourProvider>
   );
 }
 

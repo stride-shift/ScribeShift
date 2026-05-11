@@ -369,7 +369,9 @@ export default function AdminDashboard() {
       {/* Tab navigation */}
       <div className="admin-tabs">
         {tabs.map(t => (
-          <button key={t.id} className={`admin-tab ${tab === t.id ? 'active' : ''}`}
+          <button key={t.id}
+            data-tour={`admin-tab-${t.id}`}
+            className={`admin-tab ${tab === t.id ? 'active' : ''}`}
             onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
       </div>

@@ -443,7 +443,7 @@ export default function ScheduleView() {
           <h2 className="text-[22px] font-semibold text-[var(--text)] tracking-tight">Post Schedule</h2>
           <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">Plan, organize, and grow your content with purpose.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-tour="schedule-mode-toggle">
           <Tabs
             items={[{ value: 'calendar', label: 'Calendar' }, { value: 'list', label: 'List' }]}
             value={viewMode}
@@ -465,7 +465,7 @@ export default function ScheduleView() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" data-tour="schedule-stats">
         <StatCard
           tone="green"
           icon={Icons.health}
@@ -648,7 +648,7 @@ export default function ScheduleView() {
                 </div>
 
                 {/* Day headers */}
-                <div className={`sched-grid ${calendarMode === 'week' ? 'sched-grid--week' : ''}`}>
+                <div data-tour="schedule-calendar" className={`sched-grid ${calendarMode === 'week' ? 'sched-grid--week' : ''}`}>
                   {DAYS.map(d => (
                     <div key={d} className="sched-grid__dayname">{d}</div>
                   ))}

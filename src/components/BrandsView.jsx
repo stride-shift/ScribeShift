@@ -36,6 +36,12 @@ export default function BrandsView() {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
 
+  // URL-extract state lives alongside the modal so we can reset it on close.
+  const [extractUrl, setExtractUrl] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState('');
+  const [extractedFrom, setExtractedFrom] = useState('');
+
   const planLabel = PLAN_LABELS[user?.company?.plan] || 'Free';
   const atLimit = used >= limit;
 
@@ -92,6 +98,81 @@ export default function BrandsView() {
     setEditingId(null);
     setDraft(EMPTY_DRAFT);
     setError('');
+    setExtractUrl('');
+    setExtractError('');
+    setExtractedFrom('');
+  };
+
+  // Paste a website URL → AI fills the brand form. Mirrors the same flow in
+  // OnboardingFlow's brand step (POST /api/brands/extract-from-url). Existing
+  // user input is preserved — we only fill empty fields so the user never
+  // loses anything they typed.
+  const extractFromUrl = async () => {
+    const trimmed = extractUrl.trim();
+    if (!trimmed) {
+      setExtractError('Paste a website URL first.');
+      return;
+    }
+    setExtracting(true);
+    setExtractError('');
+    setExtractedFrom('');
+    try {
+      const res = await fetch('/api/brands/extract-from-url', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      // Defensive parsing: the endpoint may return HTML (e.g. if the dev API
+      // server is running stale code without this route, the response could
+      // be an SPA fallback). Don't blow up with a JSON parse error — show a
+      // helpful message instead.
+      const rawText = await res.text();
+      let data;
+      try { data = JSON.parse(rawText); }
+      catch {
+        throw new Error(
+          res.status === 404
+            ? 'Server is missing the extract endpoint — restart your dev server (npm run dev) and try again.'
+            : `Server returned an unexpected response (HTTP ${res.status}). Check that the API server is running.`
+        );
+      }
+      if (!res.ok) throw new Error(data.error || 'Could not analyse that site');
+      const d = data.draft || {};
+      setDraft((prev) => ({
+        ...prev,
+        brand_name: prev.brand_name || d.brand_name || '',
+        primary_color: prev.primary_color && prev.primary_color !== '#3b82f6'
+          ? prev.primary_color
+          : (d.primary_color || prev.primary_color),
+        secondary_color: prev.secondary_color && prev.secondary_color !== '#475569'
+          ? prev.secondary_color
+          : (d.secondary_color || prev.secondary_color),
+        industry: prev.industry && prev.industry !== 'general'
+          ? prev.industry
+          : (d.industry || prev.industry),
+        icp_description: prev.icp_description || d.icp_description || '',
+        brand_guidelines: prev.brand_guidelines || d.brand_guidelines || '',
+        writing_samples: (() => {
+          const ai = Array.isArray(d.writing_samples) ? d.writing_samples : [];
+          const merged = [...(prev.writing_samples || ['', '', ''])];
+          for (let i = 0; i < Math.max(3, merged.length); i += 1) {
+            if (!merged[i] || !merged[i].trim()) merged[i] = ai[i] || merged[i] || '';
+          }
+          return merged;
+        })(),
+        // Only pull in the remote logo if the user hasn't uploaded their own
+        // (logoBase64) and the existing record doesn't already have one.
+        logo_url: prev.logoBase64 ? prev.logo_url : (prev.logo_url || d.logo_url || null),
+        logoPreview: prev.logoBase64
+          ? prev.logoPreview
+          : (prev.logoPreview || d.logo_url || null),
+      }));
+      setExtractedFrom(d.source_url || trimmed);
+    } catch (err) {
+      setExtractError(err.message);
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const setSample = (idx, value) => {
@@ -277,6 +358,7 @@ export default function BrandsView() {
   const AddBrandTile = () => (
     <button
       type="button"
+      data-tour="brands-create"
       className={`brand-tile brand-tile-add ${atLimit ? 'is-disabled' : ''}`}
       onClick={openCreate}
       disabled={atLimit}
@@ -303,7 +385,7 @@ export default function BrandsView() {
             <h1 className="section-title">Brands</h1>
             <p className="section-desc">Set up brand voice once. Every generation pulls from here.</p>
           </div>
-          <div className="brands-plan-badge">
+          <div className="brands-plan-badge" data-tour="brands-limit">
             <span className="brands-plan-label">{planLabel} plan</span>
             <span className="brands-plan-count">{used} / {limit === Infinity ? '∞' : limit} brands</span>
           </div>
@@ -313,7 +395,7 @@ export default function BrandsView() {
       {loading ? (
         <div className="card"><div className="loading-spinner" style={{ margin: '2rem auto' }} /></div>
       ) : (
-        <div className="brand-tile-grid">
+        <div className="brand-tile-grid" data-tour="brands-list">
           {brands.map((b) => <BrandTile key={b.id} brand={b} />)}
           <AddBrandTile />
         </div>
@@ -333,6 +415,49 @@ export default function BrandsView() {
             </div>
 
             <div className="brand-modal-body">
+              {/* URL-to-brand shortcut: paste a site, AI fills the form. Same
+                  endpoint and merge behaviour as in OnboardingFlow. */}
+              <div className="onboarding-extract-block" style={{ marginTop: 0, marginBottom: '1rem' }}>
+                <div className="onboarding-extract-header">
+                  <span className="onboarding-extract-badge">AI</span>
+                  <div>
+                    <div className="onboarding-extract-title">
+                      {modalMode === 'create' ? 'Shortcut: pull this in from a website' : 'Refresh from a website'}
+                    </div>
+                    <div className="onboarding-extract-sub">
+                      Paste a homepage URL and we'll fill in the logo, colours, tone, and writing samples below. Anything you've already typed is kept.
+                    </div>
+                  </div>
+                </div>
+                <div className="onboarding-extract-row">
+                  <input
+                    type="url"
+                    className="wizard-context-input"
+                    placeholder="https://yourcompany.com"
+                    value={extractUrl}
+                    onChange={(e) => setExtractUrl(e.target.value)}
+                    disabled={extracting}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={extractFromUrl}
+                    disabled={extracting || !extractUrl.trim()}
+                  >
+                    {extracting ? 'Analysing…' : 'Extract'}
+                  </button>
+                </div>
+                {extractError && (
+                  <div className="error-msg" style={{ marginTop: '0.5rem', fontSize: 13 }}>{extractError}</div>
+                )}
+                {extractedFrom && !extractError && (
+                  <div className="onboarding-extract-success">
+                    ✓ Pulled in suggestions from <strong>{extractedFrom}</strong>. Review the fields below.
+                  </div>
+                )}
+              </div>
+
               {/* Logo: either upload an image OR type a text logo (which is also the brand name) */}
               <div className="wizard-context-block">
                 <label className="wizard-context-label">Logo *</label>

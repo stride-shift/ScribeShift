@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, invalidateUserCache } from '../middleware/auth.js';
 import { sendEmail } from '../services/email.js';
 import { passwordResetEmail } from '../templates/emails.js';
 
@@ -151,6 +151,9 @@ router.post('/login', async (req, res) => {
         company_id: profile?.company_id,
         company: profile?.companies,
         avatar_url: profile?.avatar_url,
+        tour_user_completed: !!profile?.tour_user_completed,
+        tour_admin_completed: !!profile?.tour_admin_completed,
+        tour_super_admin_completed: !!profile?.tour_super_admin_completed,
       },
       session: data.session,
     });
@@ -185,6 +188,72 @@ router.put('/me', verifyToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// ── POST /api/auth/tour-complete ────────────────────────────────────
+// Marks the product-tour for a given role as completed for the current user.
+// Body: { role: 'user' | 'admin' | 'super_admin' }
+router.post('/tour-complete', verifyToken, async (req, res) => {
+  try {
+    const role = String(req.body?.role || '').trim();
+    const columnByRole = {
+      user: 'tour_user_completed',
+      admin: 'tour_admin_completed',
+      super_admin: 'tour_super_admin_completed',
+    };
+    const column = columnByRole[role];
+    if (!column) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({ [column]: true })
+      .eq('id', req.user.id);
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    invalidateUserCache(req.user.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AUTH] tour-complete error:', err);
+    res.status(500).json({ error: 'Failed to mark tour complete' });
+  }
+});
+
+// ── POST /api/auth/tour-reset ───────────────────────────────────────
+// Clears the tour-completed flag for the current user's current role so
+// the tour will auto-run again (used by the Help button "Restart tour").
+router.post('/tour-reset', verifyToken, async (req, res) => {
+  try {
+    const role = String(req.body?.role || '').trim();
+    const columnByRole = {
+      user: 'tour_user_completed',
+      admin: 'tour_admin_completed',
+      super_admin: 'tour_super_admin_completed',
+    };
+    const column = columnByRole[role];
+    if (!column) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({ [column]: false })
+      .eq('id', req.user.id);
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    invalidateUserCache(req.user.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AUTH] tour-reset error:', err);
+    res.status(500).json({ error: 'Failed to reset tour' });
   }
 });
 
@@ -223,9 +292,9 @@ router.post('/forgot-password', async (req, res) => {
       } else {
         const frontend = (process.env.FRONTEND_URL || '').split(',')[0]?.trim() || 'http://localhost:5173';
         const resetUrl = `${frontend}/reset-password?token=${rawToken}`;
-        const { subject, html } = passwordResetEmail({ resetUrl, expiresMinutes: RESET_TOKEN_TTL_MINUTES });
+        const { subject, html, attachments } = passwordResetEmail({ resetUrl, expiresMinutes: RESET_TOKEN_TTL_MINUTES });
         try {
-          await sendEmail({ to: userRow.email, subject, html });
+          await sendEmail({ to: userRow.email, subject, html, attachments });
         } catch (emailErr) {
           console.error('[AUTH] Failed to send reset email:', emailErr.message);
         }

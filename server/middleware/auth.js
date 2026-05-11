@@ -112,6 +112,9 @@ export async function verifyToken(req, res, next) {
       company: profile.companies,
       full_name: profile.full_name,
       avatar_url: profile.avatar_url,
+      tour_user_completed: !!profile.tour_user_completed,
+      tour_admin_completed: !!profile.tour_admin_completed,
+      tour_super_admin_completed: !!profile.tour_super_admin_completed,
     };
 
     // Cache and attach

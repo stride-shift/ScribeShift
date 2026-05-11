@@ -526,7 +526,7 @@ export default function ContentHistory() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 p-1 border border-[var(--border)] rounded-md bg-[var(--bg-card)]">
+          <div data-tour="history-view-modes" className="flex items-center gap-1 p-1 border border-[var(--border)] rounded-md bg-[var(--bg-card)]">
             {VIEW_MODES.map(vm => {
               const active = viewMode === vm.value;
               return (
@@ -569,6 +569,7 @@ export default function ContentHistory() {
       {/* Search bar (top row) */}
       <form
         onSubmit={handleSearch}
+        data-tour="history-search"
         className="mb-3 flex items-center gap-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-md px-3 shadow-sm"
       >
         <span className="text-[var(--text-secondary)]">{Icons.search}</span>
@@ -640,7 +641,7 @@ export default function ContentHistory() {
       </div>
 
       {/* Stat card row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" data-tour="history-stats">
         <StatCard
           tone="blue"
           icon={Icons.docs}

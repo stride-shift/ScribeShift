@@ -193,7 +193,7 @@ export default function AnalyticsDashboard() {
         <div className="error-msg" style={{ marginBottom: '1rem' }}>{error}</div>
       )}
 
-      <div className="mb-4 flex items-center gap-3 flex-wrap" style={{ marginBottom: '1rem' }}>
+      <div className="mb-4 flex items-center gap-3 flex-wrap" style={{ marginBottom: '1rem' }} data-tour="analytics-tabs">
         <Tabs
           items={[
             { value: 'native', label: 'Native platforms' },
@@ -255,7 +255,7 @@ function NativeTab({ accountOverview, posts, postSummary, totals, hasAnyAccount,
   return (
     <>
       {/* Cross-platform totals */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-5" data-tour="analytics-top-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
         <StatCard tone="blue" label="Total followers"
           value={formatNumber(totals.followers || 0)}
           subtext={`across ${accountOverview.accounts.length} platform${accountOverview.accounts.length === 1 ? '' : 's'}`} />
@@ -301,7 +301,7 @@ function NativeTab({ accountOverview, posts, postSummary, totals, hasAnyAccount,
             No post metrics yet. After your scheduled posts go live, hit Refresh and we'll pull stats from each platform.
           </div>
         ) : (
-          <table className="metrics-table">
+          <table className="metrics-table" data-tour="analytics-posts-table">
             <thead>
               <tr>
                 <th>Post</th>

@@ -590,7 +590,7 @@ export default function ContentPillarGraph() {
 
       {/* View Switcher */}
       {!isEmpty && (
-        <div className="pillar-view-bar">
+        <div className="pillar-view-bar" data-tour="pillar-view-modes">
           <div className="view-mode-toggle pillar-view-toggle">
             {VIEW_MODES.map(v => (
               <button key={v.id} className={'view-mode-btn' + (viewMode === v.id ? ' active' : '')} onClick={() => setViewMode(v.id)}>
@@ -605,7 +605,7 @@ export default function ContentPillarGraph() {
       {/* ═══ DONUT ═══ */}
       {!isEmpty && viewMode === 'donut' && (
         <>
-          <div className="pillar-wheel-layout">
+          <div className="pillar-wheel-layout" data-tour="pillar-chart">
             <div className="pillar-wheel-canvas-wrap">
               <DonutChart {...chartProps} />
             </div>

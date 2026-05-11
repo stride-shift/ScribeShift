@@ -1,7 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../config/supabase.js';
-import { verifyToken, scopeByRole } from '../middleware/auth.js';
+import { verifyToken } from '../middleware/auth.js';
+
+// Pillars and the content pieces inside them are a COMPANY-shared resource —
+// the team agrees on themes once and everyone publishes against them. Same
+// rationale as brands: scoping these to a single user_id would silo a
+// teammate's pillars from the rest of the org, and onboarding would force
+// every new teammate to recreate the same pillar set.
+//
+// Super admins see everything across companies. Users without a company yet
+// (edge case during initial signup) fall back to their own user_id.
+function scopePlanner(req, query) {
+  if (req.user.role === 'super_admin') return query;
+  if (req.user.company_id) return query.eq('company_id', req.user.company_id);
+  return query.eq('user_id', req.user.id);
+}
 
 const pillarSchema = z.object({
   label: z.string().min(1, 'Label is required').max(100),
@@ -37,7 +51,7 @@ router.get('/pillars', async (req, res) => {
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     const { data, error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -112,7 +126,7 @@ router.put('/pillars/:id', async (req, res) => {
       })
       .eq('id', req.params.id);
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     const { error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -133,7 +147,7 @@ router.delete('/pillars/:id', async (req, res) => {
       .delete()
       .eq('id', req.params.id);
 
-    delQuery = scopeByRole(req)(delQuery);
+    delQuery = scopePlanner(req, delQuery);
 
     const { error } = await delQuery;
     if (error) return res.status(400).json({ error: error.message });
@@ -162,7 +176,7 @@ router.get('/pieces', async (req, res) => {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     if (pillar_id) query = query.eq('pillar_id', pillar_id);
     if (status) query = query.eq('status', status);
@@ -258,7 +272,7 @@ router.put('/pieces/:id', async (req, res) => {
       })
       .eq('id', req.params.id);
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     const { error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -280,7 +294,7 @@ router.patch('/pieces/:id/status', async (req, res) => {
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     const { error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -300,7 +314,7 @@ router.delete('/pieces/:id', async (req, res) => {
       .delete()
       .eq('id', req.params.id);
 
-    query = scopeByRole(req)(query);
+    query = scopePlanner(req, query);
 
     const { error } = await query;
     if (error) return res.status(400).json({ error: error.message });

@@ -127,16 +127,20 @@ router.post('/', async (req, res) => {
       try {
         const toEmail = req.user?.email;
         if (!toEmail) return;
-        const { subject, html } = scheduleConfirmationEmail({
+        const { subject, html, attachments: logoAttachments } = scheduleConfirmationEmail({
           platform: data.platform,
           scheduledAt: data.scheduled_at,
           preview: data.post_text,
         });
+        const allAttachments = [
+          ...(logoAttachments || []),
+          ...(gcalConnected ? [] : [icsAttachment(data)]),
+        ];
         await sendEmail({
           to: toEmail,
           subject,
           html,
-          attachments: gcalConnected ? undefined : [icsAttachment(data)],
+          attachments: allAttachments.length ? allAttachments : undefined,
         });
       } catch (emailErr) {
         console.error('[SCHEDULE] Confirmation email failed:', emailErr.message);

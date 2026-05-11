@@ -30,15 +30,23 @@ export function cleanResponse(text) {
 }
 
 // ── Gemini Text Generation (with 429 retry + response validation) ──
-export async function geminiText(prompt, maxRetries = 3) {
+// `opts.temperature` defaults to 0.7 (good for creative copy). Use a lower
+// value (~0.2) when you need reliable structured/JSON output.
+// `opts.responseMimeType` can force JSON mode ("application/json") so the
+// model can't wander into prose.
+export async function geminiText(prompt, maxRetries = 3, opts = {}) {
+  const temperature = typeof opts.temperature === 'number' ? opts.temperature : 0.7;
+  const responseMimeType = opts.responseMimeType;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_KEY}`;
+    const generationConfig = { temperature };
+    if (responseMimeType) generationConfig.responseMimeType = responseMimeType;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 },
+        generationConfig,
       }),
     });
 

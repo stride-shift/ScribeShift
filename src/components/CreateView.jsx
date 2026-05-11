@@ -401,7 +401,7 @@ export default function CreateView() {
           </div>
         ) : (
           <>
-            <div className="create-brand-row">
+            <div className="create-brand-row" data-tour="create-brand-selector">
               <span className="create-brand-row-label">Generating for:</span>
               <BrandPicker
                 brands={savedBrands}
