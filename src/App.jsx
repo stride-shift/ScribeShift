@@ -264,7 +264,9 @@ function AppShell() {
     if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('scribeshift-sidebar-open');
     if (stored !== null) return stored === 'true';
-    return window.innerWidth >= 900;
+    // Default to open on every viewport. The user can still collapse it
+    // manually; the choice is persisted in localStorage for next visit.
+    return true;
   });
 
   useEffect(() => {

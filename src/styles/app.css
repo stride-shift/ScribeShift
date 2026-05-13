@@ -240,7 +240,11 @@ body {
 /* ─── Sidebar ──────────────────────────────────────────────────── */
 .app-sidebar {
   width: var(--sidebar-width);
-  background: #0a0c14;
+  /* Dark mode: near-black base with the same subtle blue dot pattern as
+     the login canvas. Light mode overrides this below. */
+  background-color: #0a0c14;
+  background-image: radial-gradient(circle, rgba(59, 130, 246, 0.18) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   position: fixed;
   top: var(--navbar-height);
@@ -255,6 +259,23 @@ body {
   flex-direction: column;
   transform: translateX(0);
 }
+
+/* Light mode: white base with the same blue dot pattern */
+[data-theme="light"] .app-sidebar {
+  background-color: #ffffff;
+  background-image: radial-gradient(circle, rgba(59, 130, 246, 0.22) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+  border-right: 1px solid var(--border);
+}
+/* Light mode: sidebar text labels need dark colour to be readable on white */
+[data-theme="light"] .sidebar-section-label { color: rgba(15, 23, 42, 0.45); }
+[data-theme="light"] .view-nav-btn { color: var(--text); }
+[data-theme="light"] .view-nav-btn:hover { background: rgba(59, 130, 246, 0.08); color: var(--primary); }
+[data-theme="light"] .view-nav-btn.active { background: rgba(59, 130, 246, 0.12); color: var(--primary); }
+[data-theme="light"] .sidebar-divider { background: rgba(15, 23, 42, 0.08); }
+[data-theme="light"] .sidebar-step { color: var(--text-muted); }
+[data-theme="light"] .sidebar-step .step-info .step-label { color: var(--text); }
+[data-theme="light"] .sidebar-footer-text { color: var(--text-muted); }
 
 /* Retracted state — sidebar slides off-screen on every viewport */
 .app-layout.sidebar-closed .app-sidebar {
