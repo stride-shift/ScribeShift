@@ -520,6 +520,7 @@ router.post('/', async (req, res) => {
     const {
       brand_name, primary_color, secondary_color, logo_url, industry,
       icp_description, brand_guidelines, writing_samples,
+      default_audience, default_image_styles,
     } = req.body;
 
     // Enforce per-plan brand count before insert
@@ -549,6 +550,8 @@ router.post('/', async (req, res) => {
         icp_description: icp_description || null,
         brand_guidelines: brand_guidelines || null,
         writing_samples: normalizeSamples(writing_samples),
+        default_audience: default_audience || null,
+        default_image_styles: Array.isArray(default_image_styles) ? default_image_styles : [],
       })
       .select()
       .single();
@@ -566,13 +569,18 @@ router.put('/:id', async (req, res) => {
     const updates = {};
     const allowed = [
       'brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry',
-      'icp_description', 'brand_guidelines',
+      'icp_description', 'brand_guidelines', 'default_audience',
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     if (req.body.writing_samples !== undefined) {
       updates.writing_samples = normalizeSamples(req.body.writing_samples);
+    }
+    if (req.body.default_image_styles !== undefined) {
+      updates.default_image_styles = Array.isArray(req.body.default_image_styles)
+        ? req.body.default_image_styles
+        : [];
     }
     updates.updated_at = new Date().toISOString();
 

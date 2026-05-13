@@ -302,13 +302,51 @@ export default function OnboardingFlow({ onComplete }) {
   const stepIndex = STEPS.indexOf(step);
   const anySocialConnected = Object.values(socialStatuses).some((s) => s?.connected);
 
+  // Onboarding is rendered before the main app shell mounts, so the global
+  // theme toggle in the navbar isn't available yet. Give the user a tiny
+  // toggle right here — it reads/writes the same localStorage key + data-theme
+  // attribute the rest of the app uses, so the choice persists.
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') return 'light';
+    return localStorage.getItem('scribeshift-theme') || 'light';
+  });
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+      try { localStorage.setItem('scribeshift-theme', theme); } catch {}
+    }
+  }, [theme]);
+
   return (
     <div className="onboarding-shell">
       <div className="onboarding-card">
-        <div className="onboarding-progress">
-          {STEPS.slice(0, -1).map((s, i) => (
-            <div key={s} className={`onboarding-pip ${i <= stepIndex ? 'done' : ''}`} title={s} />
-          ))}
+        <div className="onboarding-header-row">
+          <div className="onboarding-progress">
+            {STEPS.slice(0, -1).map((s, i) => (
+              <div key={s} className={`onboarding-pip ${i <= stepIndex ? 'done' : ''}`} title={s} />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="onboarding-theme-toggle"
+            onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
         </div>
 
         {/* ── Step 1: Company ───────────────────────────────────────── */}

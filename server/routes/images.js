@@ -20,7 +20,7 @@ const imageLimiter = rateLimit({
 // ── POST /api/generate-image ────────────────────────────────────────
 router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
   try {
-    const { prompt, logoBase64 } = req.body;
+    const { prompt, logoBase64, referenceImageBase64, referenceImageMimeType } = req.body;
     if (!prompt) return res.status(400).json({ success: false, error: 'No prompt provided' });
 
     const creditCheck = await checkCredits(req.user.company_id, 'generate_image');
@@ -28,12 +28,30 @@ router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
       return res.status(402).json({ error: creditCheck.error });
     }
 
-    console.log(`[IMAGE] Single generation: ${prompt.substring(0, 80)}...`);
-    const parts = buildImageParts(prompt, logoBase64);
+    console.log(`[IMAGE] Single generation: ${prompt.substring(0, 80)}...${referenceImageBase64 ? ' (with reference image)' : ''}`);
+
+    let parts = buildImageParts(prompt, logoBase64);
+    // Inject the reference image at the start with an instruction so Gemini
+    // treats it as style/composition inspiration rather than a literal source.
+    if (referenceImageBase64) {
+      parts = [
+        {
+          inline_data: {
+            mime_type: referenceImageMimeType || 'image/png',
+            data: referenceImageBase64,
+          },
+        },
+        { text: 'STYLE REFERENCE: Use the image above as inspiration for visual style, mood, colour palette, and composition. Do NOT copy it literally — create something new that shares the same aesthetic. The brand and topic below take priority over the reference image.' },
+        ...parts,
+      ];
+    }
     const result = await geminiImageWithParts(parts);
 
     if (result.success) {
-      await deductCredits(req.user.id, req.user.company_id, 'generate_image', 1, { prompt: prompt.substring(0, 200) });
+      await deductCredits(req.user.id, req.user.company_id, 'generate_image', 1, {
+        prompt: prompt.substring(0, 200),
+        has_reference_image: !!referenceImageBase64,
+      });
     }
 
     res.json(result);
@@ -123,9 +141,21 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       'Use a different visual metaphor or perspective.',
     ];
 
-    const avoidBlock = avoidList && avoidList.trim()
-      ? `\n\nDO NOT include any of the following. Treat these as hard exclusions:\n${avoidList.trim()}`
+    // Hard guardrails included on EVERY image, regardless of user input.
+    // Prevents the rotational-symmetry-into-political-symbol failure mode
+    // (one user saw an abstract LinkedIn graphic that resembled a swastika).
+    const BASE_AVOID = [
+      'NO rotationally symmetric geometric shapes that resemble political, religious, or extremist symbols (especially: swastikas, Iron Cross, runic symbols, hammer-and-sickle).',
+      'NO real human faces, NO recognisable celebrities or public figures, NO political figures.',
+      'NO weapons, NO violence, NO gore, NO sexual content.',
+      'NO copyrighted brand logos other than the brand whose logo was explicitly provided.',
+      'NO text artefacts, gibberish text, or misspelled words rendered into the image — if text is included it must be the headline cleanly typeset.',
+    ].join('\n- ');
+
+    const userAvoidPart = avoidList && avoidList.trim()
+      ? `\n\nAdditional user exclusions:\n${avoidList.trim()}`
       : '';
+    const avoidBlock = `\n\nDO NOT include any of the following. Treat these as hard exclusions:\n- ${BASE_AVOID}${userAvoidPart}`;
 
     const prompts = [];
     for (const { key, promptTemplate } of styleEntries) {

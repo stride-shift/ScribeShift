@@ -787,6 +787,79 @@ export default function CreateView() {
                 />
               </div>
 
+              {/* Optional reference image — upload one and the AI matches its style. */}
+              <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
+                <label className="wizard-context-label">Reference image (optional)</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                  Upload an image to guide the style, mood, and composition. The AI uses it as inspiration, not a literal copy.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {imageConfig.referenceImagePreview ? (
+                    <img
+                      src={imageConfig.referenceImagePreview}
+                      alt="Reference"
+                      style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 80, height: 80, borderRadius: 8, border: '1px dashed var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)',
+                        fontSize: '1.5rem',
+                      }}
+                    >
+                      +
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      id="reference-image-upload"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 5 * 1024 * 1024) {
+                          alert('Reference image must be under 5MB');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const dataUrl = String(reader.result);
+                          const base64 = dataUrl.split(',')[1];
+                          setImageConfig({
+                            ...imageConfig,
+                            referenceImageBase64: base64,
+                            referenceImageMimeType: file.type,
+                            referenceImagePreview: dataUrl,
+                          });
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    <label htmlFor="reference-image-upload" className="btn btn-sm" style={{ cursor: 'pointer' }}>
+                      {imageConfig.referenceImagePreview ? 'Replace image' : 'Upload reference'}
+                    </label>
+                    {imageConfig.referenceImagePreview && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setImageConfig({
+                          ...imageConfig,
+                          referenceImageBase64: null,
+                          referenceImageMimeType: null,
+                          referenceImagePreview: null,
+                        })}
+                        style={{ color: '#ef4444' }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="image-summary">
                 {styleCount} style{styleCount !== 1 ? 's' : ''} selected
                 {customAdds > 0 ? ' + custom' : ''} — <strong>{totalImages} images</strong> will be generated

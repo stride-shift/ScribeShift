@@ -21,7 +21,29 @@ const EMPTY_DRAFT = {
   logoBase64: null,    // local-only: pending image to upload
   logoPreview: null,   // local-only: data URL for inline preview
   logoMimeType: null,
+  default_audience: '',
+  default_image_styles: [],
 };
+
+const AUDIENCE_OPTIONS = [
+  { value: '', label: 'No default — pick each time' },
+  { value: 'general', label: 'General' },
+  { value: 'executives', label: 'Executives' },
+  { value: 'technical', label: 'Technical' },
+  { value: 'educators', label: 'Educators' },
+  { value: 'funders', label: 'Funders / Investors' },
+];
+
+const IMAGE_STYLE_CHIPS = [
+  { key: 'minimal',    label: 'Clean & Minimal' },
+  { key: 'vibrant',    label: 'Bold & Vibrant' },
+  { key: 'editorial',  label: 'Editorial' },
+  { key: 'artistic',   label: 'Artistic' },
+  { key: 'retro',      label: 'Retro' },
+  { key: 'modern',     label: 'Modern' },
+  { key: 'futuristic', label: 'Futuristic' },
+  { key: 'cinematic',  label: 'Cinematic' },
+];
 
 export default function BrandsView() {
   const { getAuthHeaders, user } = useAuth();
@@ -87,6 +109,8 @@ export default function BrandsView() {
       logoBase64: null,
       logoPreview: brand.logo_url || null,
       logoMimeType: null,
+      default_audience: brand.default_audience || '',
+      default_image_styles: Array.isArray(brand.default_image_styles) ? brand.default_image_styles : [],
     });
     setError('');
     setModalMode('edit');
@@ -595,6 +619,55 @@ export default function BrandsView() {
                     style={{ marginBottom: '0.5rem' }}
                   />
                 ))}
+              </div>
+
+              {/* Defaults: pre-fill the Create step so the user doesn't pick these each time */}
+              <div className="wizard-context-block" style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <label className="wizard-context-label">Generation defaults</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                  Optional. These pre-fill the Create form when this brand is active — you can still override per generation.
+                </p>
+
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Default audience</label>
+                  <select
+                    className="wizard-context-select"
+                    value={draft.default_audience}
+                    onChange={(e) => setDraft({ ...draft, default_audience: e.target.value })}
+                  >
+                    {AUDIENCE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginTop: '0.85rem' }}>
+                  <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Default visual styles for images</label>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
+                    {IMAGE_STYLE_CHIPS.map(s => {
+                      const isOn = draft.default_image_styles.includes(s.key);
+                      return (
+                        <button
+                          key={s.key}
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => {
+                            const next = isOn
+                              ? draft.default_image_styles.filter(k => k !== s.key)
+                              : [...draft.default_image_styles, s.key];
+                            setDraft({ ...draft, default_image_styles: next });
+                          }}
+                          style={{
+                            borderColor: isOn ? draft.primary_color : undefined,
+                            background: isOn ? `${draft.primary_color}18` : undefined,
+                          }}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {error && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{error}</div>}

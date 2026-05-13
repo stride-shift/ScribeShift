@@ -8724,7 +8724,31 @@ textarea.pillar-input { resize: vertical; }
 .onboarding-progress {
   display: flex;
   gap: 0.5rem;
+  flex: 1;
+}
+.onboarding-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
+}
+.onboarding-theme-toggle {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.onboarding-theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
 }
 .onboarding-pip {
   height: 4px;

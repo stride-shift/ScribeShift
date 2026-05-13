@@ -70,6 +70,27 @@ export function GenerationProvider({ children }) {
             ? active.writing_samples
             : ['', '', ''],
         }));
+
+        // Brand-level defaults for audience + visual style: only apply when
+        // the user hasn't actively changed them this session (i.e. still at
+        // the generic 'general' / starter style set).
+        if (active.default_audience) {
+          setOptions((prev) => (
+            prev.audience && prev.audience !== 'general'
+              ? prev
+              : { ...prev, audience: active.default_audience }
+          ));
+        }
+        if (Array.isArray(active.default_image_styles) && active.default_image_styles.length > 0) {
+          setImageConfig((prev) => {
+            const currentKeys = [...prev.selectedStyles].sort().join(',');
+            const starterKeys = ['editorial', 'minimal', 'vibrant'].sort().join(',');
+            // Only overwrite when the user is still on the starter selection
+            // so we don't clobber an active editing session.
+            if (currentKeys !== starterKeys) return prev;
+            return { ...prev, selectedStyles: new Set(active.default_image_styles) };
+          });
+        }
       }
     } catch (err) {
       console.warn('[BRANDS] load failed:', err.message);
@@ -106,6 +127,9 @@ export function GenerationProvider({ children }) {
     customGuidelines: '',
     customStylePrompt: '',
     avoidList: '',
+    referenceImageBase64: null,
+    referenceImageMimeType: null,
+    referenceImagePreview: null,  // data URL for the UI preview only
   });
   const [content, setContent] = useState({});
   const [images, setImages] = useState([]);
@@ -219,7 +243,12 @@ export function GenerationProvider({ children }) {
               const res = await fetch('/api/generate-image', {
                 method: 'POST',
                 headers: { ...authHeaders, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, logoBase64: brand.logoBase64 }),
+                body: JSON.stringify({
+                  prompt,
+                  logoBase64: brand.logoBase64,
+                  referenceImageBase64: imageConfig.referenceImageBase64,
+                  referenceImageMimeType: imageConfig.referenceImageMimeType,
+                }),
               });
               const data = await res.json();
               imageResults.push({ style, variant, prompt, ...data });
