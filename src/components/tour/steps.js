@@ -54,7 +54,7 @@ const NAV_VIEW_STEPS = [
   {
     target: '[data-tour="nav-settings"]',
     title: 'Settings',
-    content: 'Connect your social accounts and your Google Calendar here. Reconnect anytime tokens expire.',
+    content: 'Connect your social accounts and your Google Calendar here.',
     view: 'settings',
   },
 ];
@@ -279,7 +279,7 @@ export const viewTours = {
     {
       target: '[data-tour="settings-socials"]',
       title: 'Social accounts',
-      content: 'LinkedIn, Twitter, Facebook, Instagram — one click each. Tokens expire occasionally; just hit Reconnect.',
+      content: 'LinkedIn, Twitter, Facebook, Instagram — one click each.',
     },
     {
       target: '[data-tour="settings-calendar"]',

@@ -222,7 +222,7 @@ export default function OnboardingFlow({ onComplete }) {
       .filter((p) => p.label.length > 0);
 
     if (validPillars.length === 0) {
-      setError('Add at least one pillar — these guide every piece of content.');
+      setError('Add at least one content type — these are the buckets your posts fall into.');
       return;
     }
 
@@ -505,12 +505,12 @@ export default function OnboardingFlow({ onComplete }) {
           </>
         )}
 
-        {/* ── Step 3: Pillars ───────────────────────────────────────── */}
+        {/* ── Step 3: Content Types ─────────────────────────────────── */}
         {step === 'pillars' && (
           <>
-            <h1>Define your content pillars</h1>
+            <h1>Define your content types</h1>
             <p className="onboarding-sub">
-              Pillars are the 3-6 themes every post falls under. They make your content feel intentional instead of scattershot.
+              Set up 3 to 6 buckets that every post falls into — e.g. "Product updates", "Customer stories", "Behind the scenes". Helps the AI keep your output on-strategy instead of scattershot.
             </p>
 
             <div className="wizard-context-block" style={{ marginTop: '1rem', background: 'var(--bg-raised, #f8fafc)', padding: '0.85rem 1rem', borderRadius: 10 }}>
@@ -550,12 +550,12 @@ export default function OnboardingFlow({ onComplete }) {
                     value={p.color}
                     onChange={(e) => setPillar(idx, { color: e.target.value })}
                     className="onboarding-pillar-color"
-                    title="Pillar colour"
+                    title="Content type colour"
                   />
                   <input
                     type="text"
                     className="wizard-context-input"
-                    placeholder={`Pillar ${idx + 1} name — e.g. ${PILLAR_SUGGESTIONS[idx % PILLAR_SUGGESTIONS.length]}`}
+                    placeholder={`Content type ${idx + 1} — e.g. ${PILLAR_SUGGESTIONS[idx % PILLAR_SUGGESTIONS.length]}`}
                     value={p.label}
                     onChange={(e) => setPillar(idx, { label: e.target.value })}
                     style={{ flex: 1 }}
@@ -565,8 +565,8 @@ export default function OnboardingFlow({ onComplete }) {
                       type="button"
                       className="onboarding-pillar-remove"
                       onClick={() => removePillar(idx)}
-                      aria-label="Remove pillar"
-                      title="Remove pillar"
+                      aria-label="Remove content type"
+                      title="Remove content type"
                     >×</button>
                   )}
                 </div>
@@ -577,7 +577,7 @@ export default function OnboardingFlow({ onComplete }) {
                   type="button"
                   className="onboarding-pillar-add"
                   onClick={addPillar}
-                >+ Add another pillar</button>
+                >+ Add another content type</button>
               )}
             </div>
 
@@ -585,7 +585,7 @@ export default function OnboardingFlow({ onComplete }) {
 
             <div className="onboarding-actions">
               <button className="btn btn-primary" onClick={submitPillars} disabled={busy} type="button">
-                {busy ? 'Saving…' : 'Save pillars & continue'}
+                {busy ? 'Saving…' : 'Save content types & continue'}
               </button>
             </div>
           </>

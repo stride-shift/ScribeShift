@@ -81,6 +81,10 @@ function parsePosts(rawContent) {
   return posts.slice(0, 5);
 }
 
+// Posts longer than this get a Read more / Show less toggle so the card
+// doesn't grow indefinitely and dominate the screen.
+const COLLAPSE_THRESHOLD_CHARS = 500;
+
 function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
   const config = PLATFORM_CONFIG[platform];
   const [editing, setEditing] = useState(false);
@@ -90,10 +94,12 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
   const [generatingImage, setGeneratingImage] = useState(null);
   const [postImage, setPostImage] = useState(null);
   const [generatingPostImage, setGeneratingPostImage] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const imageTags = parseImageTags(text);
   const displayText = stripImageTags(text);
   const charCount = displayText.length;
+  const isLong = charCount > COLLAPSE_THRESHOLD_CHARS;
 
   const handleSave = () => {
     onEdit(index, editText);
@@ -268,7 +274,21 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
             style={{ color: config.textColor, background: 'transparent' }}
           />
         ) : (
-          <div className="post-text">{displayText}</div>
+          <>
+            <div className={`post-text ${isLong && !expanded ? 'is-clamped' : ''}`}>
+              {displayText}
+            </div>
+            {isLong && (
+              <button
+                type="button"
+                className="post-expand-toggle"
+                onClick={() => setExpanded(v => !v)}
+                style={{ color: config.color }}
+              >
+                {expanded ? 'Show less' : 'Read more'}
+              </button>
+            )}
+          </>
         )}
       </div>
 
