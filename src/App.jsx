@@ -15,6 +15,7 @@ import BrandsView from './components/BrandsView';
 import OnboardingFlow from './components/OnboardingFlow';
 import TourProvider, { useTour } from './components/tour/TourProvider';
 import { SidebarShapes } from './components/ui/sidebar-shapes';
+import AppBackground from './components/ui/AppBackground';
 
 // Theme hook with localStorage persistence
 function useTheme() {
@@ -314,6 +315,7 @@ function AppShell() {
 
   return (
     <TourProvider activeView={activeView} setActiveView={setActiveView}>
+      <AppBackground />
       <nav className="app-navbar">
         <button
           className="sidebar-toggle"

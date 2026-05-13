@@ -161,6 +161,21 @@ body {
    APP SHELL — Navbar, Sidebar, Main Content
    ═══════════════════════════════════════════════════════════════════ */
 
+/* ─── Animated WebGL dot background ────────────────────────────────
+   Sits behind every page (sidebar + navbar + main have translucent
+   backgrounds so the dots show through). Matches the login canvas. */
+.app-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+}
+.app-background--light { opacity: 0.5; }
+.app-background--dark { opacity: 0.55; }
+.app-background > div { width: 100%; height: 100%; }
+
 /* ─── Navbar ───────────────────────────────────────────────────── */
 .app-navbar {
   position: fixed;
@@ -240,11 +255,11 @@ body {
 /* ─── Sidebar ──────────────────────────────────────────────────── */
 .app-sidebar {
   width: var(--sidebar-width);
-  /* Dark mode: near-black base with the same subtle blue dot pattern as
-     the login canvas. Light mode overrides this below. */
-  background-color: #0a0c14;
-  background-image: radial-gradient(circle, rgba(59, 130, 246, 0.18) 1.2px, transparent 1.2px);
-  background-size: 22px 22px;
+  /* Translucent over the animated AppBackground canvas. Backdrop-blur keeps
+     text legible without hiding the dots. */
+  background-color: rgba(10, 12, 20, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   position: fixed;
   top: var(--navbar-height);
@@ -260,11 +275,11 @@ body {
   transform: translateX(0);
 }
 
-/* Light mode: white base with the same blue dot pattern */
+/* Light mode: translucent white over the animated canvas */
 [data-theme="light"] .app-sidebar {
-  background-color: #ffffff;
-  background-image: radial-gradient(circle, rgba(59, 130, 246, 0.22) 1.2px, transparent 1.2px);
-  background-size: 22px 22px;
+  background-color: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-right: 1px solid var(--border);
 }
 /* Light mode: sidebar text labels need dark colour to be readable on white */
