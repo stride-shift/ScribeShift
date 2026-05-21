@@ -29,6 +29,10 @@ export function getAuthorizationUrl(userId, companyId) {
     redirect_uri: LINKEDIN_REDIRECT_URI,
     state,
     scope: SCOPES,
+    // Force LinkedIn to show the login screen instead of silently using the
+    // already-logged-in account. Lets users connect a different LinkedIn
+    // account than the one their browser is signed into.
+    prompt: 'login',
   });
 
   return { url: `${LINKEDIN_AUTH_URL}?${params}`, state };

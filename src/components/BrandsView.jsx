@@ -23,6 +23,12 @@ const EMPTY_DRAFT = {
   logoMimeType: null,
   default_audience: '',
   default_image_styles: [],
+  source_url: null,
+  // CI document fields — local pending state for upload, saved fields on edit
+  ci_document_url: null,
+  ci_document_name: null,
+  ci_document_text: null,
+  ciDocPending: null,  // { base64, mimeType, filename } before upload
 };
 
 const AUDIENCE_OPTIONS = [
@@ -111,7 +117,15 @@ export default function BrandsView() {
       logoMimeType: null,
       default_audience: brand.default_audience || '',
       default_image_styles: Array.isArray(brand.default_image_styles) ? brand.default_image_styles : [],
+      source_url: brand.source_url || null,
+      ci_document_url: brand.ci_document_url || null,
+      ci_document_name: brand.ci_document_name || null,
+      ci_document_text: brand.ci_document_text || null,
+      ciDocPending: null,
     });
+    // Prefill the extract input so the user can see what URL we used
+    // for this brand and tweak/re-run if they want a fresh pull.
+    if (brand.source_url) setExtractUrl(brand.source_url);
     setError('');
     setModalMode('edit');
   };
@@ -190,6 +204,7 @@ export default function BrandsView() {
         logoPreview: prev.logoBase64
           ? prev.logoPreview
           : (prev.logoPreview || d.logo_url || null),
+        source_url: d.source_url || trimmed,
       }));
       setExtractedFrom(d.source_url || trimmed);
     } catch (err) {
@@ -245,10 +260,10 @@ export default function BrandsView() {
     setSaving(true);
     setError('');
     try {
-      // Strip local-only image fields before sending to the JSON endpoint —
-      // images upload separately to /logo to avoid 1MB JSON payload limits.
+      // Strip local-only fields before sending to the JSON endpoint — files
+      // upload separately to dedicated endpoints to avoid the 1MB JSON cap.
       // eslint-disable-next-line no-unused-vars
-      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ...payload } = draft;
+      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ciDocPending, ...payload } = draft;
 
       // If user explicitly cleared the logo (preview is null but the brand
       // had a logo before), forward that as null so the backend wipes it.
@@ -278,6 +293,23 @@ export default function BrandsView() {
         if (!upRes.ok) {
           const upData = await upRes.json().catch(() => ({}));
           throw new Error(upData.error || 'Brand saved, but logo upload failed');
+        }
+      }
+
+      // If a new CI document is queued, upload + extract text on the server.
+      if (brandId && ciDocPending?.base64) {
+        const ciRes = await fetch(`/api/brands/${brandId}/ci-doc`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: ciDocPending.base64,
+            mimeType: ciDocPending.mimeType || 'application/pdf',
+            filename: ciDocPending.filename || 'brand-ci-document.pdf',
+          }),
+        });
+        if (!ciRes.ok) {
+          const ciData = await ciRes.json().catch(() => ({}));
+          throw new Error(ciData.error || 'Brand saved, but CI document upload failed');
         }
       }
 
@@ -619,6 +651,96 @@ export default function BrandsView() {
                     style={{ marginBottom: '0.5rem' }}
                   />
                 ))}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={async () => {
+                    const url = window.prompt('Paste a blog post or article URL — we\'ll pull the text into the next empty sample.');
+                    if (!url) return;
+                    try {
+                      const res = await fetch('/api/brands/extract-sample-from-url', {
+                        method: 'POST',
+                        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Could not pull from that URL');
+                      // Drop into the first empty slot, else append a 4th.
+                      const samples = [...draft.writing_samples];
+                      const emptyIdx = samples.findIndex(s => !s || !s.trim());
+                      if (emptyIdx >= 0) samples[emptyIdx] = data.text;
+                      else samples.push(data.text);
+                      setDraft({ ...draft, writing_samples: samples });
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                  style={{ marginTop: '0.25rem' }}
+                >
+                  + Pull a sample from a URL
+                </button>
+              </div>
+
+              {/* CI / brand identity document — optional. Uploaded file is
+                   parsed for text by the server and that text is added to
+                   the brand voice context the AI gets on every generation. */}
+              <div className="wizard-context-block" style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <label className="wizard-context-label">Brand identity document (optional)</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                  Upload your CI / brand book (PDF or .txt). We'll extract the rules and feed them to the AI alongside everything above.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="file"
+                    accept="application/pdf,text/plain,text/markdown,.md"
+                    id="brand-ci-upload"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) {
+                        setError('CI document must be under 10MB');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const base64 = String(reader.result).split(',')[1];
+                        setDraft({
+                          ...draft,
+                          ciDocPending: { base64, mimeType: file.type || 'application/pdf', filename: file.name },
+                          ci_document_name: file.name,
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <label htmlFor="brand-ci-upload" className="btn btn-sm" style={{ cursor: 'pointer' }}>
+                    {draft.ci_document_url || draft.ciDocPending ? 'Replace document' : 'Upload PDF / text file'}
+                  </label>
+                  {(draft.ci_document_url || draft.ciDocPending) && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setDraft({
+                        ...draft,
+                        ci_document_url: null,
+                        ci_document_name: null,
+                        ci_document_text: null,
+                        ciDocPending: null,
+                      })}
+                      style={{ color: '#ef4444' }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <span className="card-subtitle" style={{ margin: 0, fontSize: '0.72rem' }}>
+                    {draft.ciDocPending
+                      ? `Ready to upload: ${draft.ciDocPending.filename}`
+                      : draft.ci_document_name
+                        ? `Current: ${draft.ci_document_name}`
+                        : 'PDF, plain text, or markdown · max 10MB'}
+                  </span>
+                </div>
               </div>
 
               {/* Defaults: pre-fill the Create step so the user doesn't pick these each time */}

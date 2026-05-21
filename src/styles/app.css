@@ -172,6 +172,11 @@ body {
   opacity: 0.6;
   transition: opacity 0.3s ease;
 }
+/* Force pointer-events:none on every descendant. The inner <canvas>
+   the WebGL renderer creates would otherwise have its own
+   pointer-events: auto and could intercept clicks intended for the
+   Schedule calendar cells underneath. */
+.app-background, .app-background * { pointer-events: none !important; }
 .app-background--light { opacity: 0.5; }
 .app-background--dark { opacity: 0.55; }
 .app-background > div { width: 100%; height: 100%; }

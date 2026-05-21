@@ -31,6 +31,10 @@ export function getAuthorizationUrl(userId, companyId) {
     state,
     scope: SCOPES,
     response_type: 'code',
+    // Force the account chooser so users with multiple FB accounts can
+    // pick which one to connect, instead of FB auto-picking the
+    // currently-logged-in account.
+    auth_type: 'reauthenticate',
   });
 
   return { url: `${FB_AUTH_URL}?${params}`, state };

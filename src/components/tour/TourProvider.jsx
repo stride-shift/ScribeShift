@@ -36,7 +36,7 @@ const VIEW_LABELS = {
   create: 'Create',
   history: 'History',
   schedule: 'Schedule',
-  planner: 'Pillars',
+  planner: 'Content Types',
   analytics: 'Analytics',
   brands: 'Brands',
   settings: 'Settings',

@@ -69,7 +69,41 @@ export function GenerationProvider({ children }) {
           writingSamples: (active.writing_samples && active.writing_samples.length > 0)
             ? active.writing_samples
             : ['', '', ''],
+          ciDocumentText: active.ci_document_text || '',
+          // Keep logo_url so image gen can fetch it on demand.
+          logoUrl: active.logo_url || null,
         }));
+
+        // If the active brand has a logo URL but no base64 yet, fetch the
+        // image and convert to base64 so image generation can inline it.
+        // Without this step the image-gen prompt has nothing to attach.
+        if (active.logo_url) {
+          (async () => {
+            try {
+              const r = await fetch(active.logo_url, { mode: 'cors' });
+              if (!r.ok) return;
+              const blob = await r.blob();
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const dataUrl = String(reader.result || '');
+                const base64 = dataUrl.split(',')[1] || null;
+                if (base64) {
+                  setBrand((p) => ({
+                    ...p,
+                    logoBase64: base64,
+                    logoPreviewUrl: dataUrl,
+                  }));
+                }
+              };
+              reader.readAsDataURL(blob);
+            } catch (err) {
+              console.warn('[BRANDS] Could not load logo for image gen:', err.message);
+            }
+          })();
+        } else {
+          // Brand has no logo — clear any stale base64 from a previous brand.
+          setBrand((p) => ({ ...p, logoBase64: null, logoPreviewUrl: null }));
+        }
 
         // Brand-level defaults for audience + visual style: only apply when
         // the user hasn't actively changed them this session (i.e. still at
@@ -177,6 +211,7 @@ export function GenerationProvider({ children }) {
           icpDescription: brand.icpDescription,
           brandGuidelines: brand.brandGuidelines,
           writingSamples: brand.writingSamples,
+          ciDocumentText: brand.ciDocumentText,
         }));
         formData.append('videoUrls', JSON.stringify(videoUrls));
         if (textPrompt.trim()) {

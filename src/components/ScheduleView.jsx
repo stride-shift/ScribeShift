@@ -213,13 +213,25 @@ export default function ScheduleView() {
     }
   };
 
+  // Single click selects + opens the new-post modal with the date prefilled.
+  // Previously single-click only set selectedDate (silent), so it felt frozen.
+  // Past dates still select but don't open the modal — you can't schedule into
+  // the past, and the visual selection lets the user review existing posts.
   const handleCalendarDateClick = (date) => {
     setSelectedDate(date);
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    if (dayStart.getTime() >= todayStart.getTime()) {
+      openNewPostModal(date);
+    }
   };
 
+  // Double-click kept as a no-op-now-handler for backwards compat (some
+  // muscle memory). Same effect as single-click.
   const handleCellDoubleClick = (e, date) => {
     e.stopPropagation();
-    openNewPostModal(date);
+    handleCalendarDateClick(date);
   };
 
   const formatTime = (dateStr) => new Date(dateStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });

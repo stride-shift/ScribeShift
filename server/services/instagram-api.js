@@ -30,6 +30,10 @@ export function getAuthorizationUrl(userId, companyId) {
     state,
     scope: SCOPES,
     response_type: 'code',
+    // Force the account chooser so users can pick a different FB account
+    // than the one they're currently signed in with (typical case: signed
+    // into ScribeShift with a work email, want to post under a personal IG).
+    auth_type: 'reauthenticate',
   });
 
   return { url: `${FB_AUTH_URL}?${params}`, state };

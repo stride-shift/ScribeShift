@@ -79,6 +79,14 @@ export function buildVoiceContext(brandData = {}) {
     );
   }
 
+  // CI / brand-identity document text extracted by the upload endpoint.
+  // Treat as authoritative — these are the user's own brand rules.
+  if (brandData.ciDocumentText && brandData.ciDocumentText.trim()) {
+    blocks.push(
+      `## CI / BRAND IDENTITY DOCUMENT\nThis is the brand's official identity document. Treat as authoritative:\n${brandData.ciDocumentText.trim().slice(0, 10_000)}`
+    );
+  }
+
   const samples = Array.isArray(brandData.writingSamples)
     ? brandData.writingSamples.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean)
     : [];

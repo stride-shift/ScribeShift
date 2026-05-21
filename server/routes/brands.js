@@ -301,6 +301,54 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ── POST /api/brands/extract-sample-from-url ───────────────────────
+// Lightweight helper: fetch a public page and return its readable body
+// text so the user can drop a blog post URL into a writing sample slot
+// without copy-pasting. Capped at ~6k chars (more than enough as a voice
+// sample for the AI to learn rhythm from).
+router.post('/extract-sample-from-url', async (req, res) => {
+  try {
+    const raw = String(req.body?.url || '').trim();
+    if (!raw) return res.status(400).json({ error: 'A URL is required' });
+    let url;
+    try {
+      url = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+    } catch {
+      return res.status(400).json({ error: 'That URL doesn\'t look valid' });
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    let html;
+    try {
+      const r = await fetch(url.toString(), {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ScribeShiftBot/1.0)' },
+      });
+      if (!r.ok) return res.status(400).json({ error: `Fetch failed (${r.status})` });
+      html = await r.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // Prefer <article> body if present (typical blog posts), else full page.
+    const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const targetHtml = articleMatch ? articleMatch[1] : html;
+    const text = extractBodyText(targetHtml).slice(0, 6000);
+
+    if (text.length < 50) {
+      return res.status(400).json({ error: 'Could not pull readable text from that page' });
+    }
+
+    res.json({ text, source_url: url.toString() });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      return res.status(504).json({ error: 'That page took too long to load' });
+    }
+    console.error('[BRANDS] extract-sample-from-url error:', err.message);
+    res.status(500).json({ error: 'Failed to extract sample' });
+  }
+});
+
 // ── POST /api/brands/extract-from-url ───────────────────────────────
 // Given a public website URL, fetches the page, parses obvious meta tags
 // (og:image as logo, theme-color as primary colour), strips the body to
@@ -521,6 +569,7 @@ router.post('/', async (req, res) => {
       brand_name, primary_color, secondary_color, logo_url, industry,
       icp_description, brand_guidelines, writing_samples,
       default_audience, default_image_styles,
+      source_url, ci_document_url, ci_document_text, ci_document_name,
     } = req.body;
 
     // Enforce per-plan brand count before insert
@@ -552,6 +601,10 @@ router.post('/', async (req, res) => {
         writing_samples: normalizeSamples(writing_samples),
         default_audience: default_audience || null,
         default_image_styles: Array.isArray(default_image_styles) ? default_image_styles : [],
+        source_url: source_url || null,
+        ci_document_url: ci_document_url || null,
+        ci_document_text: ci_document_text || null,
+        ci_document_name: ci_document_name || null,
       })
       .select()
       .single();
@@ -570,6 +623,7 @@ router.put('/:id', async (req, res) => {
     const allowed = [
       'brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry',
       'icp_description', 'brand_guidelines', 'default_audience',
+      'source_url', 'ci_document_url', 'ci_document_text', 'ci_document_name',
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -615,6 +669,115 @@ router.post('/:id/logo', async (req, res) => {
   } catch (err) {
     console.error('[BRANDS] Logo upload error:', err.message);
     res.status(500).json({ error: 'Failed to upload logo' });
+  }
+});
+
+// ── POST /api/brands/:id/ci-doc ─────────────────────────────────────
+// Upload a brand identity / CI document (PDF or plain text). We store the
+// file in Supabase Storage AND extract a plain-text summary that gets
+// injected into the AI's brand context alongside ICP / guidelines.
+//
+// Supported mime types: application/pdf, text/plain, text/markdown.
+// Anything else is stored but text isn't extracted.
+router.post('/:id/ci-doc', async (req, res) => {
+  try {
+    const { base64, mimeType, filename } = req.body;
+    if (!base64) return res.status(400).json({ error: 'No file data provided' });
+
+    const safeName = (filename || 'brand-ci-document')
+      .replace(/[^A-Za-z0-9._-]/g, '_')
+      .slice(0, 80);
+    const ext = (mimeType || 'application/pdf').split('/')[1] || 'pdf';
+    const filePath = `${req.user.id}/${req.params.id}-ci.${ext}`;
+    const publicUrl = await uploadBase64('brand-logos', filePath, base64, mimeType || 'application/pdf');
+
+    // Best-effort text extraction. For PDFs we route through Gemini's File
+    // API and ask it to extract the text. For plain text we just decode.
+    // If extraction fails we still store the file URL — generation falls
+    // back to the existing brand fields.
+    let extractedText = null;
+    try {
+      if (mimeType === 'text/plain' || mimeType === 'text/markdown') {
+        extractedText = Buffer.from(base64, 'base64').toString('utf-8').slice(0, 50_000);
+      } else if (mimeType === 'application/pdf') {
+        const { uploadToGemini, waitForFileProcessing, geminiText } = await import('../config/gemini.js');
+        // uploadToGemini wants a file path on disk. Write the base64 to a
+        // temp file first.
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const os = await import('os');
+        const tmpFile = path.join(os.tmpdir(), `ci-${req.params.id}-${Date.now()}.pdf`);
+        await fs.writeFile(tmpFile, Buffer.from(base64, 'base64'));
+        try {
+          const uploaded = await uploadToGemini(tmpFile, mimeType, safeName);
+          const processed = await waitForFileProcessing(uploaded.name, 60_000);
+          // Use the multimodal text endpoint to ask Gemini to summarise the
+          // document into brand context — caps at ~6000 chars so it fits
+          // alongside ICP/guidelines.
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+          const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { file_data: { file_uri: processed.uri, mime_type: mimeType } },
+                  { text: 'Extract the brand identity context from this document. Output ONLY a clean plain-text summary covering: brand positioning, tone/voice rules, visual guidelines (colours, fonts, imagery rules), target audience, words/phrases to use, words/phrases to avoid. No headings shouted in caps; no preamble; no markdown.' },
+                ],
+              }],
+            }),
+          });
+          if (r.ok) {
+            const data = await r.json();
+            extractedText = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').slice(0, 12_000);
+          }
+        } finally {
+          try { await fs.unlink(tmpFile); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[BRANDS] CI text extraction failed:', err.message);
+    }
+
+    const { error: updateError } = await supabase
+      .from('brands')
+      .update({
+        ci_document_url: publicUrl,
+        ci_document_name: safeName,
+        ci_document_text: extractedText,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
+    if (updateError) return res.status(400).json({ error: updateError.message });
+
+    res.json({
+      success: true,
+      ci_document_url: publicUrl,
+      ci_document_name: safeName,
+      extracted: !!extractedText,
+      extracted_text_length: extractedText ? extractedText.length : 0,
+    });
+  } catch (err) {
+    console.error('[BRANDS] CI doc upload error:', err.message);
+    res.status(500).json({ error: 'Failed to upload CI document' });
+  }
+});
+
+// ── DELETE /api/brands/:id/ci-doc ───────────────────────────────────
+router.delete('/:id/ci-doc', async (req, res) => {
+  try {
+    await supabase
+      .from('brands')
+      .update({
+        ci_document_url: null,
+        ci_document_name: null,
+        ci_document_text: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove CI document' });
   }
 });
 

@@ -300,7 +300,7 @@ function AppShell() {
 
   const renderView = () => {
     switch (activeView) {
-      case 'planner': return <ErrorBoundary label="Pillars"><ContentPillarGraph /></ErrorBoundary>;
+      case 'planner': return <ErrorBoundary label="Content Types"><ContentPillarGraph /></ErrorBoundary>;
       case 'schedule': return <ErrorBoundary label="Schedule"><ScheduleView /></ErrorBoundary>;
       case 'analytics': return <ErrorBoundary label="Analytics"><AnalyticsDashboard /></ErrorBoundary>;
       case 'history': return <ErrorBoundary label="History"><ContentHistory /></ErrorBoundary>;
