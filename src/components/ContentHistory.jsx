@@ -3,6 +3,7 @@ import { useAuth } from './AuthProvider';
 import { StatCard } from './ui/stat-card';
 import { Tabs } from './ui/tabs';
 import { RailPanel, EmptyPanel } from './ui/empty-panel';
+import { PostPreview } from './SchedulePreviews';
 
 const CONTENT_TYPES = [
   { value: '', label: 'All Types' },
@@ -158,6 +159,9 @@ export default function ContentHistory() {
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState(null);
+  // 'native' = render the content as it'd appear on the actual social platform / preview.
+  // 'raw'    = the original raw text Gemini produced (markdown/markers visible).
+  const [previewMode, setPreviewMode] = useState('native');
   const [facets, setFacets] = useState({ pillars: [], tones: [], statuses: [], content_types: [] });
   const searchInputRef = useRef(null);
 
@@ -903,6 +907,21 @@ export default function ContentHistory() {
         const item = items.find(i => i.id === expanded);
         if (!item) return null;
         const ptColor = PLATFORM_COLORS[item.content_type] || '#6366f1';
+        const SOCIAL_PLATFORMS = ['linkedin', 'twitter', 'facebook', 'instagram'];
+        const isSocial = SOCIAL_PLATFORMS.includes(item.content_type);
+        const isLongForm = ['blog', 'newsletter', 'video'].includes(item.content_type);
+        const canPreviewNative = isSocial || isLongForm;
+        // Social bodies usually contain 5 posts wrapped in [POST N] markers.
+        // Split them so each renders as its own native-platform card.
+        const posts = (() => {
+          if (!isSocial) return [item.body];
+          const firstIdx = item.body.search(/\[POST\s+\d+/i);
+          const content = firstIdx > 0 ? item.body.slice(firstIdx) : item.body;
+          const parts = content.split(/\[POST\s+\d+[^\]]*\]\s*/i)
+            .map(p => p.trim().replace(/\(\d+\s*characters?\)\s*$/i, '').trim())
+            .filter(p => p.length > 10);
+          return parts.length > 0 ? parts : [item.body];
+        })();
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -943,11 +962,65 @@ export default function ContentHistory() {
                 </button>
               </div>
 
-              {/* Modal body — scrollable */}
+              {/* Mode toggle — only show when a native preview is available */}
+              {canPreviewNative && (
+                <div className="px-6 pt-3 pb-2 flex items-center gap-2 border-b border-[var(--border)]/50">
+                  <span className="text-[11px] uppercase tracking-wide text-[var(--text-secondary)] font-semibold">View as:</span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('native')}
+                    className={`text-[12px] px-2.5 py-1 rounded-md border transition-colors ${
+                      previewMode === 'native'
+                        ? 'border-[var(--primary)] text-[var(--primary)] bg-[var(--primary-glow)]'
+                        : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    {isSocial ? `${(item.content_type || '').charAt(0).toUpperCase()}${(item.content_type || '').slice(1)} preview` : 'Native preview'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('raw')}
+                    className={`text-[12px] px-2.5 py-1 rounded-md border transition-colors ${
+                      previewMode === 'raw'
+                        ? 'border-[var(--primary)] text-[var(--primary)] bg-[var(--primary-glow)]'
+                        : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    Raw text
+                  </button>
+                </div>
+              )}
+
+              {/* Modal body — scrollable. Renders native platform preview when
+                  available, falls back to raw text view otherwise. */}
               <div className="flex-1 overflow-y-auto px-6 py-4">
-                <pre className="text-[13px] text-[var(--text)] whitespace-pre-wrap font-sans leading-relaxed">
-                  {item.body}
-                </pre>
+                {canPreviewNative && previewMode === 'native' ? (
+                  isSocial ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {posts.map((postText, idx) => (
+                        <PostPreview
+                          key={idx}
+                          contentType="social"
+                          platform={item.content_type}
+                          text={postText}
+                          scheduledAt={item.created_at}
+                          viewMode="platform-preview"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <PostPreview
+                      contentType={item.content_type}
+                      text={item.body}
+                      scheduledAt={item.created_at}
+                      viewMode="longform"
+                    />
+                  )
+                ) : (
+                  <pre className="text-[13px] text-[var(--text)] whitespace-pre-wrap font-sans leading-relaxed">
+                    {item.body}
+                  </pre>
+                )}
               </div>
 
               {/* Modal footer — actions */}
