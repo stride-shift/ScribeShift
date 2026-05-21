@@ -121,10 +121,48 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
     document.body.removeChild(link);
   };
 
+  // Build a brand-aware image prompt that respects whatever the user has
+  // defined on the brand (colours, logo, guidelines, CI document). Each
+  // call gets a different "variant" so Regenerate produces variety rather
+  // than the same composition with model jitter.
+  const buildBrandedImagePrompt = ({ topic, regenSeed = 0 }) => {
+    const brandName = brand?.brandName || 'the brand';
+    const primary = brand?.primaryColor || '#3b82f6';
+    const secondary = brand?.secondaryColor || '#475569';
+    const guidelines = (brand?.brandGuidelines || '').trim();
+    const ciDoc = (brand?.ciDocumentText || '').trim().slice(0, 3000);
+
+    const variants = [
+      'Centered composition, single clear focal point.',
+      'Asymmetric layout with depth — foreground subject, soft background.',
+      'Conceptual / metaphor-driven composition, no literal scene.',
+      'Editorial photo-illustration mood with negative space.',
+    ];
+    const variant = variants[regenSeed % variants.length];
+
+    const parts = [
+      `Create a standalone social media graphic for ${config.name} — NOT a webpage, NOT a UI screenshot.`,
+      `Topic: ${topic}`,
+      `Brand: ${brandName}. Primary colour: ${primary}. Secondary colour: ${secondary}.`,
+      `Use the brand colours as the dominant palette.`,
+      `16:9 aspect ratio. One clear headline if text is included (5-8 words max), cleanly typeset.`,
+      `Composition: ${variant}`,
+    ];
+    if (guidelines) parts.push(`BRAND GUIDELINES (respect these):\n${guidelines}`);
+    if (ciDoc) parts.push(`BRAND IDENTITY DOCUMENT (authoritative):\n${ciDoc}`);
+    parts.push(
+      `DO NOT include: rotationally symmetric shapes resembling political/religious/extremist symbols (swastikas, runic, etc.), real human faces or celebrities, weapons, violence, gibberish text artefacts, web/app UI chrome, browser frames, copyrighted logos other than the brand's own.`
+    );
+    return parts.join('\n\n');
+  };
+
   const handleGenerateImage = async (tag, tagIndex) => {
     setGeneratingImage(tagIndex);
     try {
-      const prompt = `Social media post image for ${platform}: ${tag.description}. Clean, high quality, suitable for ${config.name}. 16:9 aspect ratio.`;
+      const prompt = buildBrandedImagePrompt({
+        topic: tag.description,
+        regenSeed: Date.now() % 4,
+      });
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
@@ -147,11 +185,15 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
     }
   };
 
+  // Track regen count so each Regenerate cycles to the next composition
+  // variant instead of producing the same layout each time.
+  const postImageRegenRef = React.useRef(0);
   const handleGeneratePostImage = async () => {
     setGeneratingPostImage(true);
     try {
-      const summary = displayText.length > 200 ? displayText.slice(0, 200) + '...' : displayText;
-      const prompt = `Create a visually engaging social media image for a ${config.name} post. The post is about: ${summary}. Style: clean, modern, professional, suitable for ${config.name}. 16:9 aspect ratio.`;
+      const topic = displayText.length > 200 ? displayText.slice(0, 200) + '…' : displayText;
+      const seed = postImageRegenRef.current++;
+      const prompt = buildBrandedImagePrompt({ topic, regenSeed: seed });
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
