@@ -256,11 +256,16 @@ export function GenerationProvider({ children }) {
               primaryColor: brand.primaryColor,
               secondaryColor: brand.secondaryColor,
               logoBase64: brand.logoBase64,
+              // Pass full brand voice context so image prompts can honour
+              // guidelines + CI document without overriding visual style.
+              brandGuidelines: brand.brandGuidelines,
+              ciDocumentText: brand.ciDocumentText,
             },
             selectedStyles: [...imageConfig.selectedStyles],
             customGuidelines: imageConfig.customGuidelines,
             customStylePrompt: imageConfig.customStylePrompt,
             avoidList: imageConfig.avoidList,
+            hasReferenceImage: !!imageConfig.referenceImageBase64,
           }),
         });
         const promptData = await promptRes.json();

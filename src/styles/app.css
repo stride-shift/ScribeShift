@@ -2734,6 +2734,32 @@ body {
 .gallery-cell:hover img { transform: scale(1.04); }
 .gallery-cell.failed { cursor: default; border-color: rgba(248, 113, 113, 0.2); }
 
+/* Always-rendered regen button on each gallery cell. Fades in on hover so
+   it doesn't clutter the grid; on touch devices it's persistently visible. */
+.gallery-cell-regen {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.78);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  z-index: 2;
+}
+.gallery-cell:hover .gallery-cell-regen { opacity: 1; }
+.gallery-cell-regen:hover { background: var(--primary); border-color: var(--primary); transform: scale(1.05); }
+.gallery-cell-regen:disabled { opacity: 0.6; cursor: not-allowed; }
+@media (hover: none) { .gallery-cell-regen { opacity: 0.85; } }
+
 .gallery-cell-error {
   display: flex;
   flex-direction: column;

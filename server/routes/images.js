@@ -5,6 +5,30 @@ import { IMAGE_STYLE_MAP, injectBrand } from '../config/skills.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 
+// Used when the user selects images but doesn't pick a visual style AND the
+// brand has guidelines / a CI document. The brand identity IS the style:
+// no preset aesthetic competing with what the user has spent time defining.
+const BRAND_ALIGNED_TEMPLATE = `Generate a standalone social media graphic about the following topic, styled entirely from the brand's own identity guidelines.
+
+STYLE: Match what the brand identity tells you. Read the BRAND GUIDELINES and BRAND IDENTITY DOCUMENT sections below and treat them as the design brief. Use the brand colours as the dominant palette.
+
+COLORS:
+- Primary: {{PRIMARY_COLOR}}
+- Secondary: {{SECONDARY_COLOR}}
+
+BRAND: {{BRAND_NAME}}
+
+CONTENT TOPIC: {{TOPIC_SUMMARY}}
+
+REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
+- Include the brand name tastefully
+- One clear headline (5-8 words max)
+- Composition + mood should feel like it belongs to this brand specifically
+- 16:9 aspect ratio
+- All text must be clearly legible`;
+
 const router = Router();
 
 // Image generation rate limiter (10/min) — applied per-route here so it
@@ -116,22 +140,55 @@ router.post('/edit-image', imageLimiter, verifyToken, async (req, res) => {
 });
 
 // ── POST /api/build-image-prompts ───────────────────────────────────
-// Returns the list of prompts for the frontend to generate one at a time
+// Returns the list of prompts for the frontend to generate one at a time.
+// Behaviour hierarchy when picking what visual style to use:
+//   1. User-uploaded reference image (handled in /generate-image, passed via flag)
+//   2. User-typed customStylePrompt
+//   3. User-picked selectedStyles
+//   4. Brand-aligned fallback (brand guidelines / CI document act as the style)
+//   5. Generic minimal/vibrant/editorial default
+// Brand context (guidelines + CI document) is layered into EVERY prompt so
+// even with a preset style picked, brand voice still influences the output.
 router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) => {
   try {
-    const { topicSummary, brandData, selectedStyles, customGuidelines, customStylePrompt, avoidList } = req.body;
+    const {
+      topicSummary, brandData, selectedStyles,
+      customGuidelines, customStylePrompt, avoidList,
+      hasReferenceImage,
+    } = req.body;
     if (!topicSummary) return res.status(400).json({ success: false, error: 'No topic provided' });
 
-    const styleEntries = [];
-    const styleKeys = selectedStyles && selectedStyles.length > 0
-      ? selectedStyles.filter(k => IMAGE_STYLE_MAP[k])
-      : ['minimal', 'vibrant', 'editorial'];
+    const hasUserStyle = (selectedStyles && selectedStyles.length > 0)
+      || (customStylePrompt && customStylePrompt.trim())
+      || hasReferenceImage;
+    const hasBrandContext = !!(
+      (brandData?.brandGuidelines && brandData.brandGuidelines.trim())
+      || (brandData?.ciDocumentText && brandData.ciDocumentText.trim())
+    );
 
-    for (const key of styleKeys) {
-      styleEntries.push({ key, promptTemplate: IMAGE_STYLE_MAP[key] });
+    const styleEntries = [];
+    if (selectedStyles && selectedStyles.length > 0) {
+      for (const key of selectedStyles.filter(k => IMAGE_STYLE_MAP[k])) {
+        styleEntries.push({ key, promptTemplate: IMAGE_STYLE_MAP[key] });
+      }
+    } else if (customStylePrompt && customStylePrompt.trim()) {
+      // User typed their own style prompt, no preset picked.
+      styleEntries.push({ key: 'custom', promptTemplate: customStylePrompt.trim() });
+    } else if (hasBrandContext) {
+      // Brand-aligned fallback: no preset style, but we have brand guidelines
+      // or a CI document. Generate three variations using ONLY the brand voice
+      // as the style guide — no preset aesthetic interfering.
+      styleEntries.push({ key: 'brand-aligned', promptTemplate: BRAND_ALIGNED_TEMPLATE });
+    } else {
+      // No preset, no brand context — fall back to the generic trio.
+      for (const key of ['minimal', 'vibrant', 'editorial']) {
+        styleEntries.push({ key, promptTemplate: IMAGE_STYLE_MAP[key] });
+      }
     }
 
-    if (customStylePrompt && customStylePrompt.trim()) {
+    // If user added customStylePrompt on top of preset selections, also
+    // generate a custom variant (existing behaviour).
+    if ((selectedStyles && selectedStyles.length > 0) && customStylePrompt && customStylePrompt.trim()) {
       styleEntries.push({ key: 'custom', promptTemplate: customStylePrompt.trim() });
     }
 
@@ -142,8 +199,6 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
     ];
 
     // Hard guardrails included on EVERY image, regardless of user input.
-    // Prevents the rotational-symmetry-into-political-symbol failure mode
-    // (one user saw an abstract LinkedIn graphic that resembled a swastika).
     const BASE_AVOID = [
       'NO rotationally symmetric geometric shapes that resemble political, religious, or extremist symbols (especially: swastikas, Iron Cross, runic symbols, hammer-and-sickle).',
       'NO real human faces, NO recognisable celebrities or public figures, NO political figures.',
@@ -157,11 +212,27 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       : '';
     const avoidBlock = `\n\nDO NOT include any of the following. Treat these as hard exclusions:\n- ${BASE_AVOID}${userAvoidPart}`;
 
+    // Brand context block: included on every image unless the user opted to
+    // override style via a reference image (in which case the reference IS
+    // the style anchor and we don't want to fight it).
+    let brandContextBlock = '';
+    if (hasBrandContext && !hasReferenceImage) {
+      const parts = [];
+      if (brandData?.brandGuidelines?.trim()) {
+        parts.push(`BRAND GUIDELINES (respect these):\n${brandData.brandGuidelines.trim()}`);
+      }
+      if (brandData?.ciDocumentText?.trim()) {
+        parts.push(`BRAND IDENTITY DOCUMENT (authoritative):\n${brandData.ciDocumentText.trim().slice(0, 4000)}`);
+      }
+      brandContextBlock = `\n\n${parts.join('\n\n')}`;
+    }
+
     const prompts = [];
     for (const { key, promptTemplate } of styleEntries) {
       const basePrompt = injectBrand(promptTemplate, { ...brandData, topicSummary });
       for (let v = 0; v < 3; v++) {
         let prompt = `${basePrompt}\n\nVariant ${v + 1} of 3: ${variantInstructions[v]}`;
+        prompt += brandContextBlock;
         if (customGuidelines && customGuidelines.trim()) {
           prompt += `\n\nAdditional user guidelines: ${customGuidelines.trim()}`;
         }
@@ -170,7 +241,11 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       }
     }
 
-    res.json({ success: true, prompts });
+    res.json({
+      success: true,
+      prompts,
+      fallback_used: !hasUserStyle && hasBrandContext ? 'brand-aligned' : null,
+    });
   } catch (err) {
     console.error('[PROMPTS] Error:', err);
     res.status(500).json({ success: false, error: err.message });

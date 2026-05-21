@@ -514,11 +514,16 @@ export default function BrandsView() {
                 )}
               </div>
 
-              {/* Logo: either upload an image OR type a text logo (which is also the brand name) */}
+              {/* Logo: either upload an image OR type a text logo. When an
+                  image is present we hide the text-logo input — the image IS
+                  the brand identity. A small "Brand name" input still exists
+                  for the picker / nav display, but it's de-emphasised. */}
               <div className="wizard-context-block">
                 <label className="wizard-context-label">Logo *</label>
                 <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.6rem' }}>
-                  Upload an image, or just type your brand name and we'll use it as a text logo.
+                  {draft.logoPreview
+                    ? 'Looking good. Your logo will appear everywhere the brand shows up.'
+                    : "Upload an image, or just type your brand name and we'll use it as a text logo."}
                 </p>
                 <div className="brand-logo-row">
                   <div className="brand-logo-preview" style={{ background: draft.primary_color }}>
@@ -560,16 +565,36 @@ export default function BrandsView() {
                         PNG, JPG, WEBP, SVG · max 5MB
                       </span>
                     </div>
-                    <div className="brand-logo-divider">— or —</div>
-                    <input
-                      className="wizard-context-input"
-                      placeholder="Type your brand name (e.g. StrideShift)"
-                      value={draft.brand_name}
-                      onChange={(e) => setDraft({ ...draft, brand_name: e.target.value })}
-                    />
-                    <p className="card-subtitle" style={{ margin: '0.3rem 0 0', fontSize: '0.7rem' }}>
-                      We'll style this in your primary colour as a text logo.
-                    </p>
+
+                    {/* Text-logo input: full-blown when there's no image,
+                        compact "display name" when there is. */}
+                    {draft.logoPreview ? (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <label className="wizard-context-label" style={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                          Display name (used in nav + picker)
+                        </label>
+                        <input
+                          className="wizard-context-input"
+                          placeholder="e.g. StrideShift"
+                          value={draft.brand_name}
+                          onChange={(e) => setDraft({ ...draft, brand_name: e.target.value })}
+                          style={{ marginTop: '0.3rem' }}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="brand-logo-divider">— or —</div>
+                        <input
+                          className="wizard-context-input"
+                          placeholder="Type your brand name (e.g. StrideShift)"
+                          value={draft.brand_name}
+                          onChange={(e) => setDraft({ ...draft, brand_name: e.target.value })}
+                        />
+                        <p className="card-subtitle" style={{ margin: '0.3rem 0 0', fontSize: '0.7rem' }}>
+                          We'll style this in your primary colour as a text logo.
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

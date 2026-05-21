@@ -111,10 +111,27 @@ export default function ImageGallery({ images, onRegenerateImage, onEditImage, i
                     onClick={() => img.success && handleExpand(globalIndex)}
                   >
                     {img.success && img.base64 ? (
-                      <img
-                        src={`data:${img.mimeType || 'image/png'};base64,${img.base64}`}
-                        alt={`${style} variant ${img.variant + 1}`}
-                      />
+                      <>
+                        <img
+                          src={`data:${img.mimeType || 'image/png'};base64,${img.base64}`}
+                          alt={`${style} variant ${img.variant + 1}`}
+                        />
+                        {/* Always-visible regen icon on hover. Avoids the
+                            user having to expand the image just to find it. */}
+                        <button
+                          type="button"
+                          className="gallery-cell-regen"
+                          title="Regenerate this image"
+                          onClick={(e) => { e.stopPropagation(); onRegenerateImage(globalIndex, img.prompt); }}
+                          disabled={isRegenerating}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="23 4 23 10 17 10" />
+                            <polyline points="1 20 1 14 7 14" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                          </svg>
+                        </button>
+                      </>
                     ) : (
                       <div className="gallery-cell-error">
                         <span>Failed</span>
