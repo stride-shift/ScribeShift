@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthProvider';
+import { PostPreview } from './SchedulePreviews';
 
 const PLATFORM_CONFIG = {
   linkedin: {
@@ -370,23 +371,68 @@ export default function SocialPreview({ platform, content, onContentUpdate, bran
     onContentUpdate(platform, rebuilt);
   };
 
+  // 'edit'   = the rich editable PostCard with copy/edit/generate-image controls.
+  // 'native' = the same way the post would actually render on the platform.
+  const [viewMode, setViewMode] = useState('edit');
+
   if (!posts.length) {
     return <div className="social-empty">No posts generated yet.</div>;
   }
 
+  const platformLabel = ({
+    linkedin: 'LinkedIn',
+    twitter: 'Twitter / X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  })[platform] || 'platform';
+
   return (
     <div className="social-preview">
-      {posts.map((post, i) => (
-        <PostCard
-          key={i}
-          platform={platform}
-          text={post}
-          index={i}
-          onEdit={handleEdit}
-          brand={brand}
-          authHeaders={authHeaders}
-        />
-      ))}
+      {/* View toggle — Edit cards (default, with controls) vs Native preview
+          (what it'd actually look like on the platform). */}
+      <div className="social-preview-toggle">
+        <span className="social-preview-toggle-label">View as:</span>
+        <button
+          type="button"
+          className={`social-preview-toggle-btn ${viewMode === 'edit' ? 'active' : ''}`}
+          onClick={() => setViewMode('edit')}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className={`social-preview-toggle-btn ${viewMode === 'native' ? 'active' : ''}`}
+          onClick={() => setViewMode('native')}
+        >
+          {platformLabel} preview
+        </button>
+      </div>
+
+      {viewMode === 'native' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {posts.map((post, i) => (
+            <PostPreview
+              key={i}
+              contentType="social"
+              platform={platform}
+              text={post}
+              viewMode="platform-preview"
+            />
+          ))}
+        </div>
+      ) : (
+        posts.map((post, i) => (
+          <PostCard
+            key={i}
+            platform={platform}
+            text={post}
+            index={i}
+            onEdit={handleEdit}
+            brand={brand}
+            authHeaders={authHeaders}
+          />
+        ))
+      )}
     </div>
   );
 }

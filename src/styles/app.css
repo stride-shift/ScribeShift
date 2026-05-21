@@ -2448,6 +2448,40 @@ body {
    ═══════════════════════════════════════════════════════════════════ */
 .social-preview { display: flex; flex-direction: column; gap: 1.15rem; }
 
+/* Edit / Native preview toggle above the post stack */
+.social-preview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+.social-preview-toggle-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-right: 0.25rem;
+}
+.social-preview-toggle-btn {
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.social-preview-toggle-btn:hover { color: var(--text); border-color: var(--border-hover); }
+.social-preview-toggle-btn.active {
+  background: var(--primary-glow);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 .social-empty { text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.88rem; }
 
 .social-post-card {
