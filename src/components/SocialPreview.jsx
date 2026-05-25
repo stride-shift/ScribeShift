@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
+import { marked } from 'marked';
 import { useAuth } from './AuthProvider';
 import { PostPreview } from './SchedulePreviews';
+
+// Render *italic* and **bold** in post bodies. Inline-only (no block tags)
+// so it doesn't wrap each paragraph in a <p>. Newlines are preserved by the
+// surrounding `white-space: pre-wrap` styling.
+function renderInlineMarkdown(text) {
+  if (!text) return '';
+  return marked.parseInline(text, { breaks: true });
+}
 
 const PLATFORM_CONFIG = {
   linkedin: {
@@ -86,14 +95,12 @@ function parsePosts(rawContent) {
 // doesn't grow indefinitely and dominate the screen.
 const COLLAPSE_THRESHOLD_CHARS = 500;
 
-function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
+function PostCard({ platform, text, index, onEdit, brand, authHeaders, postImage, setPostImage, generatedImages, setGeneratedImages }) {
   const config = PLATFORM_CONFIG[platform];
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(text);
   const [copied, setCopied] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState({});
   const [generatingImage, setGeneratingImage] = useState(null);
-  const [postImage, setPostImage] = useState(null);
   const [generatingPostImage, setGeneratingPostImage] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -281,7 +288,37 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
         </div>
       )}
 
-      {/* Generated post image */}
+      <div className="post-card-body" style={{ background: config.bgColor, color: config.textColor }}>
+        {editing ? (
+          <textarea
+            className="post-edit-textarea"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            style={{ color: config.textColor, background: 'transparent' }}
+          />
+        ) : (
+          <>
+            <div
+              className={`post-text ${isLong && !expanded ? 'is-clamped' : ''}`}
+              dangerouslySetInnerHTML={{ __html: renderInlineMarkdown(displayText) }}
+            />
+
+            {isLong && (
+              <button
+                type="button"
+                className="post-expand-toggle"
+                onClick={() => setExpanded(v => !v)}
+                style={{ color: config.color }}
+              >
+                {expanded ? 'Show less' : 'Read more'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Generated post image — rendered AFTER the body so the card reads
+          like the actual platform (text, then media, then engagement bar). */}
       {postImage && (
         <div className="post-image-section">
           <div className="post-image-slot">
@@ -308,45 +345,23 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
         </div>
       )}
 
-      <div className="post-card-body" style={{ background: config.bgColor, color: config.textColor }}>
-        {editing ? (
-          <textarea
-            className="post-edit-textarea"
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            style={{ color: config.textColor, background: 'transparent' }}
-          />
-        ) : (
-          <>
-            <div className={`post-text ${isLong && !expanded ? 'is-clamped' : ''}`}>
-              {displayText}
-            </div>
-            {isLong && (
-              <button
-                type="button"
-                className="post-expand-toggle"
-                onClick={() => setExpanded(v => !v)}
-                style={{ color: config.color }}
-              >
-                {expanded ? 'Show less' : 'Read more'}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
       <div className="post-card-footer">
         <div className="post-char-count" style={{ color: charCount > config.maxChars ? '#ef4444' : 'var(--text-muted)' }}>
           {charCount} / {config.maxChars}
         </div>
         <div className="post-footer-actions-row">
-          <button
-            className={`post-action-btn post-gen-image-btn ${generatingPostImage ? 'loading' : ''}`}
-            onClick={handleGeneratePostImage}
-            disabled={generatingPostImage || generatingImage !== null}
-          >
-            {generatingPostImage ? '' : (postImage ? 'Regenerate Image' : 'Generate Image')}
-          </button>
+          {/* Footer button only shows when no image yet — once an image
+              exists, the in-image Regenerate covers it. Avoids the duplicate
+              Regenerate Image button that previously appeared. */}
+          {!postImage && (
+            <button
+              className={`post-action-btn post-gen-image-btn ${generatingPostImage ? 'loading' : ''}`}
+              onClick={handleGeneratePostImage}
+              disabled={generatingPostImage || generatingImage !== null}
+            >
+              {generatingPostImage ? '' : 'Generate Image'}
+            </button>
+          )}
           <div className="post-social-actions">
             {config.footer.map((action) => (
               <span key={action} className="post-footer-action">{action}</span>
@@ -358,7 +373,7 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders }) {
   );
 }
 
-export default function SocialPreview({ platform, content, onContentUpdate, brand }) {
+export default function SocialPreview({ platform, content, onContentUpdate, brand, suiteImages }) {
   const { getAuthHeaders } = useAuth();
   const posts = parsePosts(content);
   const authHeaders = getAuthHeaders();
@@ -374,6 +389,50 @@ export default function SocialPreview({ platform, content, onContentUpdate, bran
   // 'edit'   = the rich editable PostCard with copy/edit/generate-image controls.
   // 'native' = the same way the post would actually render on the platform.
   const [viewMode, setViewMode] = useState('edit');
+
+  // Per-post image state lives here (lifted out of PostCard) so the native
+  // preview branch can render the same images the edit cards show.
+  // Keyed BY PLATFORM as well as postIndex — otherwise switching tabs would
+  // make a LinkedIn-generated image show up on Facebook/Twitter/Instagram.
+  // Shape:
+  //   postImages   = { [platform]: { [postIndex]: { base64, mimeType } } }
+  //   taggedImages = { [platform]: { [postIndex]: { [tagIndex]: { base64, mimeType } } } }
+  const [postImages, setPostImages] = useState({});
+  const [taggedImages, setTaggedImages] = useState({});
+
+  const currentPostImages = postImages[platform] || {};
+  const currentTaggedImages = taggedImages[platform] || {};
+
+  const setPostImage = (idx) => (img) => {
+    setPostImages(prev => {
+      const platformImgs = { ...(prev[platform] || {}), [idx]: img };
+      return { ...prev, [platform]: platformImgs };
+    });
+  };
+  const setGeneratedImages = (idx) => (updater) => {
+    setTaggedImages(prev => {
+      const platformTags = prev[platform] || {};
+      const current = platformTags[idx] || {};
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      return { ...prev, [platform]: { ...platformTags, [idx]: next } };
+    });
+  };
+
+  // Native-preview image lookup is now strictly per-(platform, postIndex):
+  //   1. Image the user generated for THIS post via the bottom button
+  //   2. First [IMAGE:] tag image generated for this post
+  //   (We deliberately do NOT fall back to the Image Suite — those are a
+  //    separate gallery, not auto-paired with social posts, so falling back
+  //    made the same image bleed across every platform.)
+  const imageForPost = (idx) => {
+    if (currentPostImages[idx]) return currentPostImages[idx];
+    const tags = currentTaggedImages[idx];
+    if (tags) {
+      const firstKey = Object.keys(tags)[0];
+      if (firstKey !== undefined) return tags[firstKey];
+    }
+    return null;
+  };
 
   if (!posts.length) {
     return <div className="social-empty">No posts generated yet.</div>;
@@ -410,15 +469,22 @@ export default function SocialPreview({ platform, content, onContentUpdate, bran
 
       {viewMode === 'native' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {posts.map((post, i) => (
-            <PostPreview
-              key={i}
-              contentType="social"
-              platform={platform}
-              text={post}
-              viewMode="platform-preview"
-            />
-          ))}
+          {posts.map((post, i) => {
+            const img = imageForPost(i);
+            const media = img
+              ? { url: `data:${img.mimeType || 'image/png'};base64,${img.base64}`, type: 'image' }
+              : null;
+            return (
+              <PostPreview
+                key={i}
+                contentType="social"
+                platform={platform}
+                text={stripImageTags(post)}
+                media={media}
+                viewMode="platform-preview"
+              />
+            );
+          })}
         </div>
       ) : (
         posts.map((post, i) => (
@@ -430,6 +496,10 @@ export default function SocialPreview({ platform, content, onContentUpdate, bran
             onEdit={handleEdit}
             brand={brand}
             authHeaders={authHeaders}
+            postImage={currentPostImages[i] || null}
+            setPostImage={setPostImage(i)}
+            generatedImages={currentTaggedImages[i] || {}}
+            setGeneratedImages={setGeneratedImages(i)}
           />
         ))
       )}

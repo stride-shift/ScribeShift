@@ -11,15 +11,27 @@ const TYPE_LABELS = {
   instagram: 'Instagram',
 };
 
+const SOCIAL_PLATFORMS = ['linkedin', 'twitter', 'facebook', 'instagram'];
+
+// Default the date picker to tomorrow 9am local — sensible "send tomorrow morning" default
+function defaultScheduledAt() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 export default function ScheduleFromResults({ content, onClose, onScheduled }) {
   const { getAuthHeaders } = useAuth();
   const [selected, setSelected] = useState(new Set());
-  const [editing, setEditing] = useState(null); // type being edited
+  const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');
-  const [editedTexts, setEditedTexts] = useState({}); // { itemId: editedText }
+  const [editedTexts, setEditedTexts] = useState({});
   const [selectedPillar, setSelectedPillar] = useState('');
   const [pillars, setPillars] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState(defaultScheduledAt);
+  const [connectedAccounts, setConnectedAccounts] = useState({});
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -32,20 +44,33 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
       } catch { /* empty */ }
       return;
     }
+    // Pull pillars + connected social accounts in parallel — both feed the form.
     fetch('/api/planner/pillars', { headers }).then(r => r.json()).then(data => {
       if (data.pillars) { setPillars(data.pillars); if (data.pillars.length > 0) setSelectedPillar(data.pillars[0].id); }
     }).catch(() => {});
+
+    Promise.all(SOCIAL_PLATFORMS.map(async (p) => {
+      try {
+        const res = await fetch(`/api/auth/${p}/status`, { headers });
+        const data = await res.json();
+        return [p, data];
+      } catch {
+        return [p, { connected: false }];
+      }
+    })).then(results => {
+      const map = {};
+      for (const [k, v] of results) map[k] = v;
+      setConnectedAccounts(map);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Parse social posts into individual items
   const parseContent = () => {
     const items = [];
     for (const [type, text] of Object.entries(content)) {
       if (!text) continue;
 
-      const isSocial = ['linkedin', 'twitter', 'facebook', 'instagram'].includes(type);
+      const isSocial = SOCIAL_PLATFORMS.includes(type);
       if (isSocial) {
-        // Split social content into individual posts
         const posts = text.split(/\[POST \d+[^\]]*\]/i).filter(p => p.trim());
         posts.forEach((post, i) => {
           const cleaned = post.replace(/\(\d+ characters?\)/gi, '').trim();
@@ -56,6 +81,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
               label: `${TYPE_LABELS[type]} #${i + 1}`,
               text: cleaned,
               platform: type,
+              schedulable: true,
             });
           }
         });
@@ -66,6 +92,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
           label: TYPE_LABELS[type] || type,
           text,
           platform: type,
+          schedulable: false,
         });
       }
     }
@@ -84,11 +111,8 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
   };
 
   const selectAll = () => {
-    if (selected.size === items.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(items.map(i => i.id)));
-    }
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map(i => i.id)));
   };
 
   const startEdit = (item) => {
@@ -102,18 +126,108 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
     setEditText('');
   };
 
-  const handleAddToPillars = async () => {
-    if (selected.size === 0) {
-      setError('Please select at least one item');
+  const selectedItems = items.filter(i => selected.has(i.id));
+  const schedulableSelected = selectedItems.filter(i => i.schedulable);
+  const draftOnlySelected = selectedItems.filter(i => !i.schedulable);
+
+  // Block the Schedule action when a selected social platform has no connected account —
+  // /api/schedule will accept it but the post can never actually go out.
+  const missingConnections = [...new Set(schedulableSelected.map(i => i.platform))]
+    .filter(p => !connectedAccounts[p]?.connected || connectedAccounts[p]?.isExpired);
+
+  // ── Schedule selected social posts via /api/schedule ──────────────
+  const handleSchedule = async () => {
+    if (schedulableSelected.length === 0) {
+      setError('Select at least one social post to schedule.');
+      return;
+    }
+    if (!scheduledAt) {
+      setError('Pick a date and time.');
+      return;
+    }
+    if (missingConnections.length > 0) {
+      setError(`Connect ${missingConnections.join(', ')} first (Settings → Social accounts).`);
       return;
     }
 
-    setSaving(true);
+    setBusy(true);
+    setError('');
+    setSuccess('');
+
+    const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+    let okCount = 0;
+    let lastErr = '';
+
+    for (const item of schedulableSelected) {
+      const postText = editedTexts[item.id] ?? item.text;
+      try {
+        const res = await fetch('/api/schedule', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            post_text: postText,
+            platform: item.platform,
+            scheduled_at: new Date(scheduledAt).toISOString(),
+            is_boosted: false,
+          }),
+        });
+        if (res.ok) okCount++;
+        else {
+          const d = await res.json().catch(() => ({}));
+          lastErr = d.error || 'Schedule failed';
+        }
+      } catch (err) {
+        lastErr = err.message || 'Network error';
+      }
+    }
+
+    // Long-form items in the selection still get saved as pillar drafts — they
+    // can't be auto-posted to a social platform, so drafts are the next-best.
+    let draftCount = 0;
+    if (draftOnlySelected.length > 0) {
+      for (const item of draftOnlySelected) {
+        try {
+          const piece = {
+            title: item.label,
+            body: editedTexts[item.id] ?? item.text,
+            pillarId: selectedPillar || '',
+            platform: item.platform.charAt(0).toUpperCase() + item.platform.slice(1),
+            contentType: ({ blog: 'Article', video: 'Video', newsletter: 'Newsletter' })[item.platform] || 'Post',
+            status: 'draft',
+            notes: '',
+          };
+          if (headers.Authorization) {
+            const r = await fetch('/api/planner/pieces', { method: 'POST', headers, body: JSON.stringify(piece) });
+            if (r.ok) draftCount++;
+          }
+        } catch { /* continue */ }
+      }
+    }
+
+    setBusy(false);
+    if (okCount > 0) {
+      const parts = [`Scheduled ${okCount} post${okCount > 1 ? 's' : ''}`];
+      if (draftCount > 0) parts.push(`saved ${draftCount} draft${draftCount > 1 ? 's' : ''} to pillars`);
+      setSuccess(parts.join(' • '));
+      onScheduled?.();
+      setTimeout(() => onClose(), 2200);
+    } else {
+      setError(lastErr || 'Nothing was scheduled.');
+    }
+  };
+
+  // ── Save all selected as pillar drafts (the old "Add to Pillars" path) ──
+  const handleAddToPillars = async () => {
+    if (selected.size === 0) {
+      setError('Select at least one item.');
+      return;
+    }
+
+    setBusy(true);
     setError('');
     setSuccess('');
 
     const headers = getAuthHeaders();
-    const selectedItems = items.filter(i => selected.has(i.id));
     let addedCount = 0;
 
     for (const item of selectedItems) {
@@ -127,7 +241,6 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
         status: 'draft',
         notes: '',
       };
-
       if (headers.Authorization) {
         try {
           const res = await fetch('/api/planner/pieces', {
@@ -148,13 +261,13 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
       }
     }
 
-    setSaving(false);
+    setBusy(false);
     if (addedCount > 0) {
-      setSuccess(`Added ${addedCount} piece${addedCount > 1 ? 's' : ''} to pillars!`);
-      if (onScheduled) onScheduled();
-      setTimeout(() => onClose(), 2000);
+      setSuccess(`Saved ${addedCount} draft${addedCount > 1 ? 's' : ''} to pillars.`);
+      onScheduled?.();
+      setTimeout(() => onClose(), 1800);
     } else {
-      setError('Failed to add content. Please try again.');
+      setError('Failed to save drafts.');
     }
   };
 
@@ -162,7 +275,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
     <div className="schedule-overlay">
       <div className="schedule-modal">
         <div className="schedule-modal-header">
-          <h3>Add to Pillars</h3>
+          <h3>Schedule Posts</h3>
           <button className="schedule-modal-close" onClick={onClose}>&times;</button>
         </div>
 
@@ -184,7 +297,14 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
                       checked={selected.has(item.id)}
                       onChange={() => toggleSelect(item.id)}
                     />
-                    <span className="schedule-item-label">{item.label}</span>
+                    <span className="schedule-item-label">
+                      {item.label}
+                      {!item.schedulable && (
+                        <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+                          (draft only — long-form content can't auto-post)
+                        </span>
+                      )}
+                    </span>
                   </label>
                   <div className="schedule-item-actions">
                     {editing === item.id ? (
@@ -210,21 +330,37 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
             ))}
           </div>
 
-          {pillars.length > 0 && (
-            <div className="schedule-datetime">
+          {/* Schedule date/time — the real point of this modal */}
+          <div className="schedule-datetime">
+            <div className="schedule-field" style={{ flex: 1 }}>
+              <label>Send at</label>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={e => setScheduledAt(e.target.value)}
+                className="brand-input"
+              />
+            </div>
+            {pillars.length > 0 && (
               <div className="schedule-field" style={{ flex: 1 }}>
-                <label>Add to Pillar</label>
+                <label>Also tag with content type (optional)</label>
                 <select
                   value={selectedPillar}
                   onChange={e => setSelectedPillar(e.target.value)}
                   className="brand-input"
                 >
-                  <option value="">No pillar (uncategorized)</option>
+                  <option value="">No content type</option>
                   {pillars.map(p => (
                     <option key={p.id} value={p.id}>{p.label}</option>
                   ))}
                 </select>
               </div>
+            )}
+          </div>
+
+          {missingConnections.length > 0 && schedulableSelected.length > 0 && (
+            <div className="admin-error">
+              Connect these accounts in Settings before scheduling: {missingConnections.join(', ')}
             </div>
           )}
 
@@ -235,11 +371,21 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
         <div className="schedule-modal-footer">
           <button className="admin-btn" onClick={onClose}>Cancel</button>
           <button
-            className="btn btn-primary"
+            className="admin-btn"
             onClick={handleAddToPillars}
-            disabled={saving || selected.size === 0}
+            disabled={busy || selected.size === 0}
+            title="Save as drafts in your Content Types planner instead of scheduling now"
           >
-            {saving ? 'Adding...' : `Add ${selected.size} Post${selected.size !== 1 ? 's' : ''} to Pillars`}
+            {busy ? '…' : 'Save as Drafts'}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSchedule}
+            disabled={busy || schedulableSelected.length === 0 || !scheduledAt || missingConnections.length > 0}
+          >
+            {busy
+              ? 'Scheduling…'
+              : `Schedule ${schedulableSelected.length} Post${schedulableSelected.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

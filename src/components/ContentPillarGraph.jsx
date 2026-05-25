@@ -436,7 +436,7 @@ export default function ContentPillarGraph() {
 
   const renderPillarSidebar = () => (
     <div className="pillar-wheel-sidebar">
-      <h4>Your Pillars</h4>
+      <h4>Your Content Types</h4>
       <div className="pillar-list">
         {pillars.map(p => (
           <div key={p.id} className={'pillar-list-item' + (selectedPillar === p.id ? ' active' : '')}
@@ -480,7 +480,7 @@ export default function ContentPillarGraph() {
         <h3>Content Pieces</h3>
         <div className="pillar-content-section-actions">
           <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-            <option value="all">All Pillars</option>
+            <option value="all">All Content Types</option>
             {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
           <input type="text" className="pillar-input" placeholder="Search..." value={contentSearch} onChange={e => setContentSearch(e.target.value)} style={{ maxWidth: '200px' }} />
@@ -528,7 +528,7 @@ export default function ContentPillarGraph() {
       <div className="pillar-graph-header">
         <div>
           <h2>Content Planner</h2>
-          <p className="pillar-graph-subtitle">Create pillars, add your content, and visualize your strategy</p>
+          <p className="pillar-graph-subtitle">Create content types, add your content, and visualize your strategy</p>
         </div>
         <div className="pillar-graph-actions">
           <label className="admin-btn-sm pillar-import-btn" title="Import">
@@ -554,7 +554,7 @@ export default function ContentPillarGraph() {
               )}
             </div>
           )}
-          <button className="admin-btn" onClick={() => setShowAddPillar(true)}>+ Add Pillar</button>
+          <button className="admin-btn" onClick={() => setShowAddPillar(true)}>+ Add Content Type</button>
           {pillars.length > 0 && (
             <button className="admin-btn" onClick={() => { setShowAddContent(true); setNewContent(prev => ({ ...prev, pillarId: selectedPillar || pillars[0]?.id || '' })); }}>+ Add Content</button>
           )}
@@ -568,22 +568,22 @@ export default function ContentPillarGraph() {
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>
           </div>
           <h3>Build Your Content Strategy</h3>
-          <p>Start by creating content pillars — the core themes that define your content. Then add your own pieces to each pillar.</p>
+          <p>Start by creating content types — the core themes that define your content. Then add your own pieces to each content type.</p>
           <div className="pillar-empty-steps">
             <div className="pillar-empty-step">
               <span className="pillar-empty-step-num">1</span>
-              <div><strong>Create Pillars</strong><span>Define your content themes (e.g., &ldquo;Thought Leadership&rdquo;, &ldquo;Product Updates&rdquo;)</span></div>
+              <div><strong>Create Content Types</strong><span>Define your content themes (e.g., &ldquo;Thought Leadership&rdquo;, &ldquo;Product Updates&rdquo;)</span></div>
             </div>
             <div className="pillar-empty-step">
               <span className="pillar-empty-step-num">2</span>
-              <div><strong>Add Your Content</strong><span>Upload ideas, drafts, links, or full posts and assign them to pillars</span></div>
+              <div><strong>Add Your Content</strong><span>Upload ideas, drafts, links, or full posts and assign them to a content type</span></div>
             </div>
             <div className="pillar-empty-step">
               <span className="pillar-empty-step-num">3</span>
               <div><strong>Visualize &amp; Plan</strong><span>Switch between 6 views to see your content mix, progress, and gaps</span></div>
             </div>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowAddPillar(true)}>Create Your First Pillar</button>
+          <button className="btn btn-primary" onClick={() => setShowAddPillar(true)}>Create Your First Content Type</button>
           <p className="pillar-empty-import">Or <label className="pillar-empty-import-link">import an existing plan<input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} /></label></p>
         </div>
       )}
@@ -759,7 +759,7 @@ export default function ContentPillarGraph() {
                     </div>
                   ))}
                   {contentPieces.filter(c => c.pillarId === selectedPillarData.id).length === 0 && (
-                    <p className="pillar-detail-desc">No content yet in this pillar.</p>
+                    <p className="pillar-detail-desc">No content yet in this content type.</p>
                   )}
                 </div>
               </div>
@@ -774,7 +774,7 @@ export default function ContentPillarGraph() {
         <div className="pillar-timeline-view">
           <div className="pillar-timeline-header">
             <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-              <option value="all">All Pillars</option>
+              <option value="all">All Content Types</option>
               {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
             <button className="admin-btn" onClick={() => { setShowAddContent(true); setNewContent(prev => ({ ...prev, pillarId: contentFilter !== 'all' ? contentFilter : (pillars[0]?.id || '') })); }}>+ Add Content</button>
@@ -832,7 +832,7 @@ export default function ContentPillarGraph() {
         <div className="pillar-board-view">
           <div className="pillar-board-filters">
             <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-              <option value="all">All Pillars</option>
+              <option value="all">All Content Types</option>
               {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
             <input type="text" className="pillar-input" placeholder="Search content..." value={contentSearch} onChange={e => setContentSearch(e.target.value)} style={{ maxWidth: '220px' }} />
@@ -884,7 +884,7 @@ export default function ContentPillarGraph() {
                             onChange={e => setQuickAddBoardPillar(e.target.value)}
                             className="pillar-board-quick-select"
                           >
-                            <option value="">No pillar</option>
+                            <option value="">No content type</option>
                             {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                           </select>
                           <select
@@ -952,9 +952,9 @@ export default function ContentPillarGraph() {
       {showAddPillar && (
         <div className="pillar-modal-overlay" onClick={() => setShowAddPillar(false)}>
           <div className="pillar-modal" onClick={e => e.stopPropagation()}>
-            <div className="pillar-modal-header"><h4>Create Content Pillar</h4><button className="pillar-modal-close" onClick={() => setShowAddPillar(false)}>&times;</button></div>
+            <div className="pillar-modal-header"><h4>Create Content Type</h4><button className="pillar-modal-close" onClick={() => setShowAddPillar(false)}>&times;</button></div>
             <div className="pillar-modal-body">
-              <label>Pillar Name *</label>
+              <label>Content Type Name *</label>
               <input type="text" value={newPillar.label} onChange={e => setNewPillar(p => ({ ...p, label: e.target.value }))} placeholder='e.g., Thought Leadership, Product Updates' className="pillar-input" autoFocus />
               <label>Description</label>
               <textarea value={newPillar.description} onChange={e => setNewPillar(p => ({ ...p, description: e.target.value }))} placeholder="What kind of content goes here?" className="pillar-input" rows={2} />
@@ -979,7 +979,7 @@ export default function ContentPillarGraph() {
               </div>
             </div>
             <div className="pillar-modal-footer">
-              <button className="admin-btn" onClick={handleAddPillar} disabled={!newPillar.label.trim()}>Create Pillar</button>
+              <button className="admin-btn" onClick={handleAddPillar} disabled={!newPillar.label.trim()}>Create Content Type</button>
               <button className="admin-btn secondary" onClick={() => setShowAddPillar(false)}>Cancel</button>
             </div>
           </div>
@@ -990,9 +990,9 @@ export default function ContentPillarGraph() {
       {editingPillar && (
         <div className="pillar-modal-overlay" onClick={() => setEditingPillar(null)}>
           <div className="pillar-modal" onClick={e => e.stopPropagation()}>
-            <div className="pillar-modal-header"><h4>Edit Pillar</h4><button className="pillar-modal-close" onClick={() => setEditingPillar(null)}>&times;</button></div>
+            <div className="pillar-modal-header"><h4>Edit Content Type</h4><button className="pillar-modal-close" onClick={() => setEditingPillar(null)}>&times;</button></div>
             <div className="pillar-modal-body">
-              <label>Pillar Name</label>
+              <label>Content Type Name</label>
               <input type="text" value={editingPillar.label} onChange={e => setEditingPillar(p => ({ ...p, label: e.target.value }))} className="pillar-input" />
               <label>Description</label>
               <textarea value={editingPillar.description || ''} onChange={e => setEditingPillar(p => ({ ...p, description: e.target.value }))} className="pillar-input" rows={2} />
@@ -1018,7 +1018,7 @@ export default function ContentPillarGraph() {
             </div>
             <div className="pillar-modal-footer">
               <button className="admin-btn" onClick={handleUpdatePillar}>Save Changes</button>
-              <button className="admin-btn secondary danger" onClick={() => setConfirmDelete({ type: 'pillar', id: editingPillar.id })}>Delete Pillar</button>
+              <button className="admin-btn secondary danger" onClick={() => setConfirmDelete({ type: 'pillar', id: editingPillar.id })}>Delete Content Type</button>
               <button className="admin-btn secondary" onClick={() => setEditingPillar(null)}>Cancel</button>
             </div>
           </div>
@@ -1039,7 +1039,7 @@ export default function ContentPillarGraph() {
               <input type="text" value={newContent.link} onChange={e => setNewContent(p => ({ ...p, link: e.target.value }))} placeholder="URL to doc, sheet, post, video..." className="pillar-input" />
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
-                  <label>Pillar</label>
+                  <label>Content Type</label>
                   <select value={newContent.pillarId} onChange={e => setNewContent(p => ({ ...p, pillarId: e.target.value }))} className="pillar-input">
                     <option value="">No pillar</option>
                     {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -1093,7 +1093,7 @@ export default function ContentPillarGraph() {
               <input type="text" value={editingContent.link || ''} onChange={e => setEditingContent(p => ({ ...p, link: e.target.value }))} className="pillar-input" />
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
-                  <label>Pillar</label>
+                  <label>Content Type</label>
                   <select value={editingContent.pillarId} onChange={e => setEditingContent(p => ({ ...p, pillarId: e.target.value }))} className="pillar-input">
                     <option value="">Unassigned</option>
                     {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}

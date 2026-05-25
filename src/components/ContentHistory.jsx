@@ -17,7 +17,7 @@ const CONTENT_TYPES = [
 ];
 
 const PILLARS = [
-  { value: '', label: 'All Pillars' },
+  { value: '', label: 'All Content Types' },
   { value: 'thought_leadership', label: 'Thought Leadership' },
   { value: 'product', label: 'Product / Feature' },
   { value: 'culture', label: 'Culture' },
@@ -392,7 +392,7 @@ export default function ContentHistory() {
   const pillarOptions = useMemo(() => {
     const known = Object.fromEntries(PILLARS.filter(p => p.value).map(p => [p.value, p.label]));
     return [
-      { value: '', label: 'All Pillars' },
+      { value: '', label: 'All Content Types' },
       ...facets.pillars.map(v => ({ value: v, label: known[v] || humanize(v) })),
     ];
   }, [facets.pillars]);
@@ -597,7 +597,7 @@ export default function ContentHistory() {
           options={CONTENT_TYPES}
         />
         <FilterChip
-          label="Pillar"
+          label="Content Type"
           value={pillarFilter ? pillarLabelFor(pillarFilter) : ''}
           onChange={(v) => { setPillarFilter(v); setOffset(0); }}
           options={pillarOptions}
@@ -836,7 +836,7 @@ export default function ContentHistory() {
               <div className="space-y-3">
                 {stats.topPillar && (
                   <div>
-                    <div className="text-[10px] font-semibold uppercase text-[var(--text-secondary)]">Top Pillar</div>
+                    <div className="text-[10px] font-semibold uppercase text-[var(--text-secondary)]">Top Content Type</div>
                     <div className="text-[13px] font-semibold text-[var(--text)]">
                       {pillarLabel(stats.topPillar.key)}
                     </div>
@@ -1026,7 +1026,7 @@ export default function ContentHistory() {
               {/* Modal footer — actions */}
               <div className="border-t border-[var(--border)] px-6 py-3 flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <label className="text-[12px] font-medium text-[var(--text-secondary)]">Pillar:</label>
+                  <label className="text-[12px] font-medium text-[var(--text-secondary)]">Content Type:</label>
                   <select
                     className="text-[12px] px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text)]"
                     value={item.pillar || ''}

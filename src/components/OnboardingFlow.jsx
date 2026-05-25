@@ -358,7 +358,7 @@ export default function OnboardingFlow({ onComplete }) {
             <div className="wizard-context-block" style={{ marginTop: '1.5rem' }}>
               <label className="wizard-context-label">Company name</label>
               <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
-                This is your tenant. Brands, pillars and content all live under it.
+                This is your tenant. Brands, content types and content all live under it.
               </p>
               <input
                 className="wizard-context-input"
@@ -684,7 +684,7 @@ export default function OnboardingFlow({ onComplete }) {
           <>
             <h1>You're set up.</h1>
             <p className="onboarding-sub">
-              Brand voice, pillars, and {anySocialConnected ? 'social accounts' : 'next steps'} are saved. Time to make something.
+              Brand voice, content types, and {anySocialConnected ? 'social accounts' : 'next steps'} are saved. Time to make something.
             </p>
             <div className="onboarding-tips">
               <div className="onboarding-tip">

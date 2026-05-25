@@ -35,8 +35,8 @@ const NAV_VIEW_STEPS = [
   },
   {
     target: '[data-tour="nav-planner"]',
-    title: 'Pillars',
-    content: 'A bird\'s-eye view of your content themes. See which pillars are getting attention — and which are quiet.',
+    title: 'Content Types',
+    content: 'A bird\'s-eye view of your content themes. See which content types are getting attention — and which are quiet.',
     view: 'planner',
   },
   {
@@ -209,18 +209,18 @@ export const viewTours = {
   planner: [
     {
       target: 'body',
-      title: 'Content pillars',
+      title: 'Content Types',
       content: 'See which themes your content lives in. Helps you spot what\'s over-represented and what\'s missing in your mix.',
     },
     {
       target: '[data-tour="pillar-view-modes"]',
       title: 'Seven views, one set of data',
-      content: 'Donut, breakdown, bar, tree, timeline, radar, board — same pillars rendered seven ways. Find the one your brain prefers.',
+      content: 'Donut, breakdown, bar, tree, timeline, radar, board — same content types rendered seven ways. Find the one your brain prefers.',
     },
     {
       target: '[data-tour="pillar-chart"]',
-      title: 'Your pillar mix',
-      content: 'Each slice/branch is a pillar. Click into one to see every piece of content tagged to it.',
+      title: 'Your content-type mix',
+      content: 'Each slice/branch is a content type. Click into one to see every piece of content tagged to it.',
     },
   ],
 

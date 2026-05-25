@@ -244,6 +244,7 @@ export default function ResultsPanel({
         content={content[platform]}
         onContentUpdate={onContentUpdate}
         brand={brand}
+        suiteImages={images}
       />
     </div>
   );
