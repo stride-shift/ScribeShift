@@ -8804,6 +8804,16 @@ textarea.pillar-input { resize: vertical; }
 
 .spm-btn--secondary:hover { background: var(--bg-card-hover); }
 
+.spm-btn--danger {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.spm-btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
 @media (max-width: 640px) {
   .spm-modal { max-width: 100%; margin: 0.5rem; }
   .spm-platforms { grid-template-columns: 1fr; }

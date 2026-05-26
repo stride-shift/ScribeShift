@@ -225,6 +225,33 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     }
   };
 
+  // Delete the post being edited. window.confirm guards against accidental
+  // clicks — this hits /api/schedule/:id DELETE which also cleans up the
+  // linked calendar event server-side.
+  const handleDelete = async () => {
+    if (!editingPost) return;
+    if (!window.confirm(`Delete this scheduled ${editingPost.platform} post? This can't be undone.`)) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/schedule/${editingPost.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to delete');
+        setSubmitting(false);
+        return;
+      }
+      onCreated?.();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to delete');
+      setSubmitting(false);
+    }
+  };
+
   const activePlatform =
     PLATFORMS.find(p => p.key === previewPlatform) ||
     PLATFORMS.find(p => p.key === [...selectedPlatforms][0]) ||
@@ -499,6 +526,20 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
 
         {/* Footer */}
         <div className="spm-footer">
+          {/* Delete sits at the far left when editing — destructive action,
+              kept visually distant from the primary "Save" / "Preview" CTA. */}
+          {editingPost && (
+            <button
+              type="button"
+              className="spm-btn spm-btn--danger"
+              onClick={handleDelete}
+              disabled={submitting}
+              style={{ marginRight: 'auto' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+              Delete
+            </button>
+          )}
           {step === 'compose' ? (
             <>
               <button className="spm-btn spm-btn--secondary" onClick={onClose}>Cancel</button>
