@@ -73,6 +73,12 @@ export default function ResultsPanel({
   const [showSchedule, setShowSchedule] = useState(false);
   const [isExpandingPlatforms, setIsExpandingPlatforms] = useState(false);
 
+  // Per-post images lifted to ResultsPanel so the schedule modal can read
+  // them when attaching media to scheduled posts. Shape:
+  //   postImages = { [platform]: { [postIndex]: { base64, mimeType } } }
+  const [postImages, setPostImages] = useState({});
+  const [taggedImages, setTaggedImages] = useState({});
+
   useEffect(() => {
     if (allTabs.length && !allTabs.includes(activeTab)) {
       setActiveTab(allTabs[0]);
@@ -245,6 +251,10 @@ export default function ResultsPanel({
         onContentUpdate={onContentUpdate}
         brand={brand}
         suiteImages={images}
+        postImages={postImages}
+        setPostImages={setPostImages}
+        taggedImages={taggedImages}
+        setTaggedImages={setTaggedImages}
       />
     </div>
   );
@@ -307,6 +317,8 @@ export default function ResultsPanel({
       {showSchedule && (
         <ScheduleFromResults
           content={content}
+          postImages={postImages}
+          taggedImages={taggedImages}
           onClose={() => setShowSchedule(false)}
           onScheduled={() => setShowSchedule(false)}
         />

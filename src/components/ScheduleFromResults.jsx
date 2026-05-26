@@ -49,7 +49,29 @@ function defaultScheduledAt() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function ScheduleFromResults({ content, onClose, onScheduled }) {
+// Best-guess image for a post: bottom-button generated → first [IMAGE:] tag → null.
+// Mirrors the lookup SocialPreview uses for the native preview.
+function imageForPost(postImages, taggedImages, platform, idx) {
+  const direct = postImages?.[platform]?.[idx];
+  if (direct) return direct;
+  const tags = taggedImages?.[platform]?.[idx];
+  if (tags) {
+    const firstKey = Object.keys(tags)[0];
+    if (firstKey !== undefined) return tags[firstKey];
+  }
+  return null;
+}
+
+// Convert a base64 string back into a Blob so we can re-upload it as a File
+// to /api/media/upload — same path the single-post modal uses.
+function base64ToBlob(base64, mimeType = 'image/png') {
+  const byteChars = atob(base64);
+  const byteArray = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+  return new Blob([byteArray], { type: mimeType });
+}
+
+export default function ScheduleFromResults({ content, postImages, taggedImages, onClose, onScheduled }) {
   const { getAuthHeaders } = useAuth();
 
   // Parse all available posts up-front so we can pre-select which platforms
@@ -103,6 +125,77 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Per-post media. Two layers on top of the auto-attached image from generation:
+  //   mediaOverrides[itemId] = { mediaUrl, mediaType, mediaFilename } — user uploaded their own
+  //   mediaRemoved.has(itemId)                                       — user explicitly removed
+  // Effective lookup precedence: override → removed-flag → auto-attached generated image → none.
+  const [mediaOverrides, setMediaOverrides] = useState({});
+  const [mediaRemoved, setMediaRemoved] = useState(() => new Set());
+  const [uploadingItem, setUploadingItem] = useState(null);
+
+  // What media (if any) does this item end up scheduling with?
+  const effectiveMedia = (item) => {
+    if (mediaOverrides[item.id]) return mediaOverrides[item.id];
+    if (mediaRemoved.has(item.id)) return null;
+    const img = imageForPost(postImages, taggedImages, item.platform, parseInt(item.id.split('-')[1], 10));
+    if (img) {
+      return {
+        kind: 'base64',
+        base64: img.base64,
+        mimeType: img.mimeType || 'image/png',
+      };
+    }
+    return null;
+  };
+
+  const removeMedia = (itemId) => {
+    setMediaOverrides(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+    setMediaRemoved(prev => {
+      const next = new Set(prev);
+      next.add(itemId);
+      return next;
+    });
+  };
+
+  const uploadReplacement = async (itemId, file) => {
+    if (!file) return;
+    setUploadingItem(itemId);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      setMediaOverrides(prev => ({
+        ...prev,
+        [itemId]: {
+          kind: 'url',
+          mediaUrl: data.url,
+          mediaType: data.type,
+          mediaFilename: data.original_filename || file.name,
+        },
+      }));
+      setMediaRemoved(prev => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    } catch (err) {
+      setError(`Upload failed: ${err.message}`);
+    } finally {
+      setUploadingItem(null);
+    }
+  };
 
   useEffect(() => {
     const headers = getAuthHeaders();
@@ -191,9 +284,42 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
     let savedCount = 0;
     let lastErr = '';
 
-    // 1. Schedule social posts
+    // 1. Schedule social posts. Per-post: resolve media → if it's base64 from
+    // a generated image, upload it now so we can pass a persistent URL to /api/schedule.
     for (const item of schedulableSelected) {
       try {
+        const media = effectiveMedia(item);
+        let mediaPayload = { post_image_url: null, post_media_url: null, post_media_type: null, post_media_filename: null };
+
+        if (media?.kind === 'url') {
+          mediaPayload = {
+            post_media_url: media.mediaUrl,
+            post_media_type: media.mediaType,
+            post_media_filename: media.mediaFilename,
+            post_image_url: media.mediaType === 'image' ? media.mediaUrl : null,
+          };
+        } else if (media?.kind === 'base64') {
+          // Wrap base64 in a Blob/File and upload to /api/media/upload, same path as the single-post modal.
+          const blob = base64ToBlob(media.base64, media.mimeType);
+          const file = new File([blob], `${item.id}-image.png`, { type: media.mimeType });
+          const fd = new FormData();
+          fd.append('file', file);
+          const upRes = await fetch('/api/media/upload', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: fd,
+          });
+          const upData = await upRes.json();
+          if (upRes.ok && upData.url) {
+            mediaPayload = {
+              post_media_url: upData.url,
+              post_media_type: upData.type || 'image',
+              post_media_filename: upData.original_filename || file.name,
+              post_image_url: (upData.type || 'image') === 'image' ? upData.url : null,
+            };
+          }
+        }
+
         const res = await fetch('/api/schedule', {
           method: 'POST',
           headers,
@@ -202,6 +328,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
             platform: item.platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
             is_boosted: false,
+            ...mediaPayload,
           }),
         });
         if (res.ok) scheduledCount++;
@@ -341,13 +468,18 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
               {allItems.map(item => {
                 const platformMeta = PLATFORMS.find(p => p.key === item.platform);
                 const isSelected = selected.has(item.id);
+                const media = effectiveMedia(item);
+                const mediaSrc = media?.kind === 'base64'
+                  ? `data:${media.mimeType};base64,${media.base64}`
+                  : media?.kind === 'url' && media.mediaType === 'image'
+                    ? media.mediaUrl
+                    : null;
+                const isUploading = uploadingItem === item.id;
                 return (
-                  <label
+                  <div
                     key={item.id}
                     className="schedule-item"
                     style={{
-                      display: 'block',
-                      cursor: 'pointer',
                       borderColor: isSelected ? (platformMeta?.color || 'var(--primary)') : 'var(--border)',
                       background: isSelected ? `${platformMeta?.color || '#3b82f6'}0d` : 'transparent',
                     }}
@@ -378,7 +510,59 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, paddingLeft: 26 }}>
                       {item.text.length > 180 ? item.text.slice(0, 180) + '…' : item.text}
                     </div>
-                  </label>
+
+                    {/* Media row — only for social posts, not blogs/newsletters */}
+                    {item.schedulable && (
+                      <div style={{ marginTop: 10, paddingLeft: 26, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        {mediaSrc ? (
+                          <>
+                            <img
+                              src={mediaSrc}
+                              alt=""
+                              style={{
+                                width: 64, height: 64, objectFit: 'cover', borderRadius: 6,
+                                border: '1px solid var(--border)',
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => removeMedia(item.id)}
+                                className="admin-btn-sm"
+                                disabled={isUploading}
+                              >
+                                Remove
+                              </button>
+                              <label className="admin-btn-sm" style={{ cursor: 'pointer' }}>
+                                {isUploading ? 'Uploading…' : 'Replace'}
+                                <input
+                                  type="file"
+                                  accept="image/*,video/*"
+                                  style={{ display: 'none' }}
+                                  onChange={e => uploadReplacement(item.id, e.target.files?.[0])}
+                                />
+                              </label>
+                            </div>
+                          </>
+                        ) : (
+                          <label className="admin-btn-sm" style={{ cursor: 'pointer', opacity: isUploading ? 0.6 : 1 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: '-2px' }}>
+                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                              <circle cx="8.5" cy="8.5" r="1.5" />
+                              <polyline points="21 15 16 10 5 21" />
+                            </svg>
+                            {isUploading ? 'Uploading…' : 'Add media'}
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              style={{ display: 'none' }}
+                              onChange={e => uploadReplacement(item.id, e.target.files?.[0])}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

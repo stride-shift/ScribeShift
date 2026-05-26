@@ -373,7 +373,10 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders, postImage
   );
 }
 
-export default function SocialPreview({ platform, content, onContentUpdate, brand, suiteImages }) {
+export default function SocialPreview({
+  platform, content, onContentUpdate, brand, suiteImages,
+  postImages, setPostImages, taggedImages, setTaggedImages,
+}) {
   const { getAuthHeaders } = useAuth();
   const posts = parsePosts(content);
   const authHeaders = getAuthHeaders();
@@ -390,15 +393,10 @@ export default function SocialPreview({ platform, content, onContentUpdate, bran
   // 'native' = the same way the post would actually render on the platform.
   const [viewMode, setViewMode] = useState('edit');
 
-  // Per-post image state lives here (lifted out of PostCard) so the native
-  // preview branch can render the same images the edit cards show.
-  // Keyed BY PLATFORM as well as postIndex — otherwise switching tabs would
-  // make a LinkedIn-generated image show up on Facebook/Twitter/Instagram.
-  // Shape:
+  // Per-post image state is now owned by ResultsPanel and passed in as props
+  // — so the schedule-from-results modal can read it. Shape:
   //   postImages   = { [platform]: { [postIndex]: { base64, mimeType } } }
   //   taggedImages = { [platform]: { [postIndex]: { [tagIndex]: { base64, mimeType } } } }
-  const [postImages, setPostImages] = useState({});
-  const [taggedImages, setTaggedImages] = useState({});
 
   const currentPostImages = postImages[platform] || {};
   const currentTaggedImages = taggedImages[platform] || {};
