@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from './AuthProvider';
 
 const TYPE_LABELS = {
@@ -66,6 +67,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
 
   const parseContent = () => {
     const items = [];
+    if (!content || typeof content !== 'object') return items;
     for (const [type, text] of Object.entries(content)) {
       if (!text) continue;
 
@@ -271,7 +273,10 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
     }
   };
 
-  return (
+  // Portal'd into <body> so the modal isn't trapped inside .results-panel's
+  // containing block — the parent has a transform-using fadeUp animation that
+  // would otherwise confine position:fixed to the panel's bounding box.
+  return createPortal(
     <div className="schedule-overlay">
       <div className="schedule-modal">
         <div className="schedule-modal-header">
@@ -389,6 +394,7 @@ export default function ScheduleFromResults({ content, onClose, onScheduled }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
