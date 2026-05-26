@@ -526,23 +526,20 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
 
         {/* Footer */}
         <div className="spm-footer">
-          {/* Delete sits at the far left when editing — destructive action,
-              kept visually distant from the primary "Save" / "Preview" CTA. */}
-          {editingPost && (
-            <button
-              type="button"
-              className="spm-btn spm-btn--danger"
-              onClick={handleDelete}
-              disabled={submitting}
-              style={{ marginRight: 'auto' }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-              Delete
-            </button>
-          )}
           {step === 'compose' ? (
             <>
               <button className="spm-btn spm-btn--secondary" onClick={onClose}>Cancel</button>
+              {editingPost && (
+                <button
+                  type="button"
+                  className="spm-btn spm-btn--danger"
+                  onClick={handleDelete}
+                  disabled={submitting}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                  Delete
+                </button>
+              )}
               <button className="spm-btn spm-btn--primary" onClick={() => setStep('preview')} disabled={!canProceed}>
                 Preview Post
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -554,6 +551,17 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
                 Back to Edit
               </button>
+              {editingPost && (
+                <button
+                  type="button"
+                  className="spm-btn spm-btn--danger"
+                  onClick={handleDelete}
+                  disabled={submitting}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                  Delete
+                </button>
+              )}
               <button className="spm-btn spm-btn--primary" onClick={handleSubmit} disabled={submitting || isOverLimit}>
                 {submitting ? (
                   <>
