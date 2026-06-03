@@ -714,10 +714,13 @@ router.post('/:id/ci-doc', async (req, res) => {
           // Use the multimodal text endpoint to ask Gemini to summarise the
           // document into brand context — caps at ~6000 chars so it fits
           // alongside ICP/guidelines.
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
           const r = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY,
+            },
             body: JSON.stringify({
               contents: [{
                 parts: [

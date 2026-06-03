@@ -26,13 +26,16 @@ router.post('/', verifyToken, async (req, res) => {
     console.log(`[TTS] Generating audio (${text.length} chars, style: ${voiceStyle})...`);
 
     // Use Gemini with audio response modality
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
 
     const systemPrompt = `You are a professional voice-over artist. Read the following text aloud in a ${voiceStyle} tone. Speak clearly, with natural pacing and appropriate emphasis.`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_KEY,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${systemPrompt}\n\n${text}` }] }],
         generationConfig: {

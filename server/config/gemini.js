@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '../..');
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-export const TEXT_MODEL = 'gemini-2.0-flash';
+export const TEXT_MODEL = 'gemini-2.5-flash';
 export const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 // ── Clean AI response (strip code fences, error patterns) ──────────
@@ -38,12 +38,16 @@ export async function geminiText(prompt, maxRetries = 3, opts = {}) {
   const temperature = typeof opts.temperature === 'number' ? opts.temperature : 0.7;
   const responseMimeType = opts.responseMimeType;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_KEY}`;
+    // Header auth supports both legacy AIzaSy* keys and the newer AQ.* keys
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent`;
     const generationConfig = { temperature };
     if (responseMimeType) generationConfig.responseMimeType = responseMimeType;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_KEY,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig,
@@ -82,10 +86,13 @@ export async function geminiImageWithParts(parts, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[IMAGE] Generating (attempt ${attempt}/${maxRetries})...`);
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${GEMINI_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent`;
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_KEY,
+        },
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: {
@@ -169,11 +176,12 @@ export const MEDIA_TYPES = new Set([
 export async function uploadToGemini(filePath, mimeType, displayName) {
   const fileData = await fs.readFile(filePath);
   const initRes = await fetch(
-    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_KEY}`,
+    `https://generativelanguage.googleapis.com/upload/v1beta/files`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_KEY,
         'X-Goog-Upload-Protocol': 'resumable',
         'X-Goog-Upload-Command': 'start',
         'X-Goog-Upload-Header-Content-Type': mimeType,
@@ -202,7 +210,8 @@ export async function waitForFileProcessing(fileName, maxWaitMs = 120_000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_KEY}`
+      `https://generativelanguage.googleapis.com/v1beta/${fileName}`,
+      { headers: { 'x-goog-api-key': GEMINI_KEY } }
     );
     const file = await res.json();
     if (file.state === 'ACTIVE') return file;
@@ -215,10 +224,13 @@ export async function waitForFileProcessing(fileName, maxWaitMs = 120_000) {
 
 // ── Transcribe video/audio using Gemini multimodal ───────────────────
 export async function transcribeWithGemini(fileUri, mimeType) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': GEMINI_KEY,
+    },
     body: JSON.stringify({
       contents: [{
         parts: [
