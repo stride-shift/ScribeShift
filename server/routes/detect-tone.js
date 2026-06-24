@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs/promises';
-import { YoutubeTranscript } from 'youtube-transcript';
 import {
   geminiText, MEDIA_TYPES,
   uploadToGemini, waitForFileProcessing, transcribeWithGemini,
 } from '../config/gemini.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
+import { extractYouTubeTranscript } from '../services/input-sources.js';
 
 const router = Router();
 const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads/';
@@ -71,13 +71,8 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     for (const url of videoUrls) {
       const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
       if (isYouTube) {
-        try {
-          const items = await YoutubeTranscript.fetchTranscript(url);
-          const text = items.map(item => item.text).join(' ');
-          if (text) urlContents.push(text);
-        } catch (err) {
-          console.error(`[TONE] YouTube transcript failed: ${err.message}`);
-        }
+        const text = await extractYouTubeTranscript(url);
+        if (text) urlContents.push(text);
       }
     }
 

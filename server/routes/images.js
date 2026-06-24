@@ -1,33 +1,9 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { geminiImageWithParts, buildImageParts } from '../config/gemini.js';
-import { IMAGE_STYLE_MAP, injectBrand } from '../config/skills.js';
+import { IMAGE_STYLE_MAP, IMAGE_STYLE_BRAND_ALIGNED, injectBrand } from '../config/skills.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
-
-// Used when the user selects images but doesn't pick a visual style AND the
-// brand has guidelines / a CI document. The brand identity IS the style:
-// no preset aesthetic competing with what the user has spent time defining.
-const BRAND_ALIGNED_TEMPLATE = `Generate a standalone social media graphic about the following topic, styled entirely from the brand's own identity guidelines.
-
-STYLE: Match what the brand identity tells you. Read the BRAND GUIDELINES and BRAND IDENTITY DOCUMENT sections below and treat them as the design brief. Use the brand colours as the dominant palette.
-
-COLORS:
-- Primary: {{PRIMARY_COLOR}}
-- Secondary: {{SECONDARY_COLOR}}
-
-BRAND: {{BRAND_NAME}}
-
-CONTENT TOPIC: {{TOPIC_SUMMARY}}
-
-REQUIREMENTS:
-- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
-- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
-- Include the brand name tastefully
-- One clear headline (5-8 words max)
-- Composition + mood should feel like it belongs to this brand specifically
-- 16:9 aspect ratio
-- All text must be clearly legible`;
 
 const router = Router();
 
@@ -178,7 +154,7 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       // Brand-aligned fallback: no preset style, but we have brand guidelines
       // or a CI document. Generate three variations using ONLY the brand voice
       // as the style guide — no preset aesthetic interfering.
-      styleEntries.push({ key: 'brand-aligned', promptTemplate: BRAND_ALIGNED_TEMPLATE });
+      styleEntries.push({ key: 'brand-aligned', promptTemplate: IMAGE_STYLE_BRAND_ALIGNED });
     } else {
       // No preset, no brand context — fall back to the generic trio.
       for (const key of ['minimal', 'vibrant', 'editorial']) {

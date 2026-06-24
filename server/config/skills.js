@@ -632,6 +632,30 @@ REQUIREMENTS:
 - 16:9 aspect ratio
 - All text must be clearly legible`;
 
+// Used when the user selects images but doesn't pick a visual style AND the
+// brand has guidelines / a CI document. The brand identity IS the style:
+// no preset aesthetic competing with what the user has spent time defining.
+export const IMAGE_STYLE_BRAND_ALIGNED = `Generate a standalone social media graphic about the following topic, styled entirely from the brand's own identity guidelines.
+
+STYLE: Match what the brand identity tells you. Read the BRAND GUIDELINES and BRAND IDENTITY DOCUMENT sections below and treat them as the design brief. Use the brand colours as the dominant palette.
+
+COLORS:
+- Primary: {{PRIMARY_COLOR}}
+- Secondary: {{SECONDARY_COLOR}}
+
+BRAND: {{BRAND_NAME}}
+
+CONTENT TOPIC: {{TOPIC_SUMMARY}}
+
+REQUIREMENTS:
+- This is a standalone social media graphic — NOT a webpage, article, screenshot, or UI mockup
+- Do NOT include browser chrome, navigation bars, scroll bars, cards, containers, or any web interface elements
+- Include the brand name tastefully
+- One clear headline (5-8 words max)
+- Composition + mood should feel like it belongs to this brand specifically
+- 16:9 aspect ratio
+- All text must be clearly legible`;
+
 // ── MAPS ────────────────────────────────────────────────────────────
 
 export const SKILL_MAP = {
@@ -654,3 +678,56 @@ export const IMAGE_STYLE_MAP = {
   futuristic: IMAGE_STYLE_FUTURISTIC,
   cinematic: IMAGE_STYLE_CINEMATIC,
 };
+
+// ── PLANNING / STRATEGY PROMPTS ─────────────────────────────────────
+
+// AI-generated content campaign / story arc plan. Interpolates the campaign
+// brief fields assembled by the /api/campaign/plan route.
+export function CAMPAIGN_PLAN_PROMPT({ topic, campaignGoal, platformList, timeframe, brandName, context }) {
+  return `You are a content strategist planning a content campaign.
+
+## Campaign Brief
+- Topic / Theme: ${topic}
+- Primary Goal: ${campaignGoal}
+- Platforms: ${platformList}
+- Duration: ${timeframe}
+${brandName ? `- Brand: ${brandName}` : ''}
+${context ? `- Additional Context: ${context}` : ''}
+
+## Your Task
+Create a content campaign plan that maps out a story arc across the timeframe. This isn't just a list of posts — it's a narrative sequence where each piece builds on the last.
+
+## Story Arc Structure
+Design the campaign as a narrative:
+1. **Opening** (first 20% of posts): Introduce the theme, establish why it matters, create curiosity
+2. **Rising Action** (next 40%): Deepen the exploration, introduce specifics, share real examples and data
+3. **Climax** (next 20%): The most provocative/valuable/surprising content — the pieces that make people stop and share
+4. **Resolution** (final 20%): Synthesize insights, call to action, what's next
+
+## Output Format
+Return a JSON array of content plan items. Each item should have:
+- "day": number (day of campaign, starting from 1)
+- "platform": which platform this post is for
+- "type": "contrarian" | "story" | "framework" | "data" | "question" | "behind_the_scenes" | "case_study" | "cta"
+- "pillar": "thought_leadership" | "product" | "culture" | "education" | "social_proof" | "engagement" | "news"
+- "arc_phase": "opening" | "rising" | "climax" | "resolution"
+- "hook": the first line / hook for the post (specific, not generic)
+- "brief": 2-3 sentence description of what this post should cover
+- "goal": specific goal for this post (e.g., "spark debate about X", "drive saves by providing framework for Y")
+
+Create ${timeframe === '1 week' ? '5-7' : timeframe === '2 weeks' ? '8-12' : '15-25'} posts spread across the timeframe.
+
+IMPORTANT: Each post hook must be SPECIFIC to the topic — not generic. If the topic is about AI in hiring, don't write "Here's what I learned about AI." Write "We ran 200 interviews with an AI screener last quarter. The results surprised us."
+
+Return ONLY the JSON array. No markdown code fences, no preamble.`;
+}
+
+// AI-generated post ideas, grounded in the team's brand + recent topics.
+// Interpolates the assembled context block built by the /api/planner/ideas route.
+export function PLANNER_IDEAS_PROMPT(ctx) {
+  return `You are a senior social media strategist. Generate 4 fresh, specific social post ideas.
+${ctx}
+
+Each idea needs a "tag" (one of: Hot Take, Educational, Question, Contrarian, Story) and a punchy "title" (max ~90 chars) the user can turn into a post. Vary the tags.
+Return ONLY a JSON array like: [{"tag":"Hot Take","title":"..."}]`;
+}
