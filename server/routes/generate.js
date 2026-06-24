@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs/promises';
-import { YoutubeTranscript } from 'youtube-transcript';
 import {
   geminiText, cleanResponse, MEDIA_TYPES,
   uploadToGemini, waitForFileProcessing, transcribeWithGemini,
@@ -14,84 +13,11 @@ import {
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
+import { extractYouTubeTranscript, fetchUrlText, processFiles } from '../services/input-sources.js';
 
 const router = Router();
 const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads/';
 const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
-
-const MAX_INPUT_CHARS = 800_000;
-
-// ── Helper: extract YouTube transcript ──────────────────────────────
-async function extractYouTubeTranscript(url) {
-  try {
-    const items = await YoutubeTranscript.fetchTranscript(url);
-    const text = items.map(item => item.text).join(' ');
-    console.log(`[YT] Extracted ${text.length.toLocaleString()} chars from ${url}`);
-    return text;
-  } catch (err) {
-    console.error(`[YT] Failed to extract transcript: ${err.message}`);
-    return null;
-  }
-}
-
-// ── Helper: process multiple uploaded files ─────────────────────────
-async function processFiles(files) {
-  const contents = [];
-  let totalChars = 0;
-
-  for (const file of files) {
-    try {
-      const isMedia = MEDIA_TYPES.has(file.mimetype);
-
-      if (isMedia) {
-        console.log(`[FILES] Processing media: ${file.originalname} (${file.mimetype})`);
-        const uploaded = await uploadToGemini(file.path, file.mimetype, file.originalname);
-        console.log(`[FILES] Uploaded ${file.originalname}, waiting for processing...`);
-        const processed = await waitForFileProcessing(uploaded.name);
-        console.log(`[FILES] ${file.originalname} ready, transcribing with Gemini...`);
-        const transcript = await transcribeWithGemini(processed.uri, file.mimetype);
-
-        if (transcript) {
-          const remaining = MAX_INPUT_CHARS - totalChars;
-          let text = transcript;
-          if (remaining <= 0) {
-            contents.push(`--- Media: ${file.originalname} (skipped — input cap reached) ---`);
-          } else {
-            if (text.length > remaining) {
-              text = text.slice(0, remaining) + '\n\n[... truncated ...]';
-            }
-            contents.push(`--- Media Transcript: ${file.originalname} ---\n${text}`);
-            totalChars += text.length;
-            console.log(`[FILES] Transcribed ${file.originalname}: ${text.length.toLocaleString()} chars`);
-          }
-        } else {
-          contents.push(`--- Media: ${file.originalname} (transcription returned empty) ---`);
-        }
-      } else {
-        let text = await fs.readFile(file.path, 'utf-8');
-        const remaining = MAX_INPUT_CHARS - totalChars;
-        if (remaining <= 0) {
-          console.log(`[FILES] Skipping ${file.originalname} — input cap reached`);
-          contents.push(`--- File: ${file.originalname} (skipped — input too large) ---`);
-        } else {
-          if (text.length > remaining) {
-            console.log(`[FILES] Truncating ${file.originalname} from ${text.length} to ${remaining} chars`);
-            text = text.slice(0, remaining) + '\n\n[... truncated — file too large ...]';
-          }
-          contents.push(`--- File: ${file.originalname} ---\n${text}`);
-          totalChars += text.length;
-        }
-      }
-    } catch (err) {
-      console.error(`[FILES] Error processing ${file.originalname}:`, err.message);
-      contents.push(`--- File: ${file.originalname} (could not process) ---`);
-    }
-    await fs.unlink(file.path).catch(() => {});
-  }
-
-  console.log(`[FILES] Total input: ${totalChars.toLocaleString()} chars from ${files.length} file(s)`);
-  return contents.join('\n\n');
-}
 
 // ── Helper: build style directives from options ─────────────────────
 function buildStyleDirectives(options) {
@@ -156,7 +82,13 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
           urlContents.push(`--- YouTube Video (transcript unavailable): ${url} ---`);
         }
       } else {
-        urlContents.push(`--- Reference URL: ${url} ---`);
+        console.log(`[GEN] Fetching reference URL content: ${url}`);
+        const pageText = await fetchUrlText(url);
+        if (pageText) {
+          urlContents.push(`--- Reference URL Content: ${url} ---\n${pageText}`);
+        } else {
+          urlContents.push(`--- Reference URL (content unavailable): ${url} ---`);
+        }
       }
     }
 
@@ -228,9 +160,17 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
       results[type] = result;
     }
 
-    // Deduct credits
-    await deductCredits(req.user.id, req.user.company_id, 'generate_text', creditCheck.cost, {
-      content_types: textTypes,
+    // Deduct credits only for content types that actually produced real content.
+    // generateOne() never throws — it returns an "Error generating …"/"Unknown
+    // type …" string on failure — so without this filter we'd bill the user the
+    // full cost even when every Gemini call failed.
+    const isReal = (body) => body && !body.startsWith('Error generating') && !body.startsWith('Unknown type');
+    const succeededTypes = textTypes.filter(t => isReal(results[t]));
+    const creditsToCharge = creditCheck.cost === 0
+      ? 0
+      : Math.round(creditCheck.cost * (succeededTypes.length / textTypes.length));
+    await deductCredits(req.user.id, req.user.company_id, 'generate_text', creditsToCharge, {
+      content_types: succeededTypes,
       options,
     });
 
@@ -282,6 +222,36 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     if (req.files) {
       for (const f of req.files) await fs.unlink(f.path).catch(() => {});
     }
+  }
+});
+
+// ── POST /api/generate/enqueue ──────────────────────────────────────
+// Queue a background generation job for the Cloud Run worker to pick up.
+// Returns { jobId } immediately; the browser polls generation_jobs (see
+// src/hooks/useGenerationJob.js) and can navigate away. Handles typed prompts +
+// reference/YouTube URLs (file uploads still use the synchronous route above).
+router.post('/enqueue', verifyToken, async (req, res) => {
+  try {
+    const { contentTypes = [], options = {}, brandData = {}, textPrompt = '', videoUrls = [] } = req.body || {};
+    if (!Array.isArray(contentTypes) || contentTypes.length === 0) {
+      return res.status(400).json({ error: 'No content types selected' });
+    }
+    const { data: job, error } = await supabase
+      .from('generation_jobs')
+      .insert({
+        user_id: req.user.id,
+        company_id: req.user.company_id || null,
+        status: 'pending',
+        content_types: contentTypes,
+        input: { contentTypes, options, brandData, textPrompt, videoUrls },
+      })
+      .select('id')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ jobId: job.id });
+  } catch (err) {
+    console.error('[GEN] enqueue error:', err.message);
+    res.status(500).json({ error: 'Failed to enqueue generation' });
   }
 });
 
