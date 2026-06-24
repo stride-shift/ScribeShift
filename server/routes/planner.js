@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
+import { geminiText } from '../config/gemini.js';
+import { PLANNER_IDEAS_PROMPT } from '../config/skills.js';
 
 // Pillars and the content pieces inside them are a COMPANY-shared resource —
 // the team agrees on themes once and everyone publishes against them. Same
@@ -37,6 +39,56 @@ const pieceSchema = z.object({
 
 const router = Router();
 router.use(verifyToken);
+
+// ── POST /api/planner/ideas ─────────────────────────────────────────
+// AI-generated post ideas, grounded in the team's brand + recent topics.
+// Returns { ideas: [{ tag, title }] }. Powered by Gemini (uses GEMINI_API_KEY).
+router.post('/ideas', async (req, res) => {
+  try {
+    // Brand context (first brand in scope) — read defensively, columns vary.
+    let brandQuery = supabase.from('brands').select('*').limit(1);
+    brandQuery = scopePlanner(req, brandQuery);
+    const { data: brands } = await brandQuery;
+    const brand = brands?.[0] || {};
+
+    // Recent titles so the model doesn't repeat what's already been covered.
+    let recentQuery = supabase.from('generated_content').select('title').order('created_at', { ascending: false }).limit(12);
+    recentQuery = scopePlanner(req, recentQuery);
+    const { data: recent } = await recentQuery;
+    const recentTitles = (recent || []).map(r => r.title).filter(Boolean);
+    const exclude = Array.isArray(req.body?.exclude) ? req.body.exclude.slice(0, 12) : [];
+
+    const ctx = [
+      brand.name && `Brand: ${brand.name}.`,
+      brand.industry && `Industry: ${brand.industry}.`,
+      (brand.target_audience || brand.default_audience) && `Audience: ${brand.target_audience || brand.default_audience}.`,
+      brand.brand_voice && `Brand voice: ${String(brand.brand_voice).slice(0, 600)}.`,
+      recentTitles.length && `Recently covered (do NOT repeat): ${recentTitles.join('; ')}.`,
+      exclude.length && `Also avoid: ${exclude.join('; ')}.`,
+    ].filter(Boolean).join('\n');
+
+    const prompt = PLANNER_IDEAS_PROMPT(ctx);
+
+    const raw = await geminiText(prompt, 3, { temperature: 0.9, responseMimeType: 'application/json' });
+
+    let ideas = [];
+    try {
+      const parsed = JSON.parse(raw);
+      ideas = Array.isArray(parsed) ? parsed : (parsed.ideas || []);
+    } catch { ideas = []; }
+
+    const allowedTags = ['Hot Take', 'Educational', 'Question', 'Contrarian', 'Story'];
+    ideas = ideas
+      .filter(i => i && i.title)
+      .slice(0, 4)
+      .map(i => ({ tag: allowedTags.includes(i.tag) ? i.tag : 'Educational', title: String(i.title).slice(0, 140) }));
+
+    res.json({ ideas });
+  } catch (err) {
+    console.error('[PLANNER] ideas error:', err.message);
+    res.status(500).json({ error: 'Failed to generate ideas' });
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════
 //  PILLARS
