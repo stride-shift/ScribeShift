@@ -8,7 +8,7 @@
 // processes uploads into the `allInput` string before calling runGeneration,
 // so this module stays file-less.
 
-import { geminiText } from '../config/gemini.js';
+import { geminiText } from './gemini-client.js';
 import {
   SKILL_MAP, SKILL_TRANSCRIPT_TO_BLOG, injectBrand,
   TONE_DIRECTIVES, POLISH_DIRECTIVES, GOAL_DIRECTIVES, buildVoiceContext,

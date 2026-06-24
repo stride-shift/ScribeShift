@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { uploadBase64 } from './storage.js';
+import { uploadBase64 } from '../config/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,6 +11,7 @@ const ROOT_DIR = path.resolve(__dirname, '../..');
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 export const TEXT_MODEL = 'gemini-2.5-flash';
 export const IMAGE_MODEL = 'gemini-2.5-flash-image';
+export const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 // ── Clean AI response (strip code fences, error patterns) ──────────
 export function cleanResponse(text) {
@@ -248,4 +249,78 @@ export async function transcribeWithGemini(fileUri, mimeType) {
   return cleanResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
 }
 
-export { GEMINI_KEY, ROOT_DIR };
+// ── Extract text from an uploaded file (PDF/doc) using Gemini multimodal ─
+// Mirrors transcribeWithGemini but takes a custom extraction instruction.
+// Returns the RAW model text (no cleanResponse) so callers control truncation,
+// matching the previous inline implementation in routes/brands.js.
+export async function geminiExtractFromFile(fileUri, mimeType, instruction) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': GEMINI_KEY,
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { file_data: { file_uri: fileUri, mime_type: mimeType } },
+          { text: instruction },
+        ],
+      }],
+    }),
+  });
+  if (!r.ok) return null;
+  const data = await r.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ── Gemini Text-to-Speech (AUDIO response modality) ──────────────────
+// Returns the raw audio data + mime type, or null if no audio was produced.
+// Throws on a non-OK response so the caller can map it to a 500 the same way
+// the previous inline route did.
+export async function geminiTts(text, voiceStyle = 'professional') {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
+
+  const systemPrompt = `You are a professional voice-over artist. Read the following text aloud in a ${voiceStyle} tone. Speak clearly, with natural pacing and appropriate emphasis.`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': GEMINI_KEY,
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `${systemPrompt}\n\n${text}` }] }],
+      generationConfig: {
+        temperature: 0.3,
+        response_modalities: ['AUDIO'],
+        speech_config: {
+          voice_config: {
+            prebuilt_voice_config: {
+              voice_name: voiceStyle === 'casual' ? 'Kore' : 'Puck',
+            },
+          },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    const error = new Error(`TTS generation failed: ${response.status}`);
+    error.status = response.status;
+    error.detail = err.substring(0, 300);
+    throw error;
+  }
+
+  const data = await response.json();
+  const audioPart = data.candidates?.[0]?.content?.parts?.find(
+    p => p.inlineData || p.inline_data
+  );
+
+  const audioBase64 = audioPart?.inlineData?.data || audioPart?.inline_data?.data;
+  const audioMimeType = audioPart?.inlineData?.mimeType || audioPart?.inline_data?.mime_type || 'audio/wav';
+
+  return { audioBase64, audioMimeType };
+}

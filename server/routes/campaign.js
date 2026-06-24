@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { geminiText } from '../config/gemini.js';
+import { geminiText } from '../services/gemini-client.js';
 import { CAMPAIGN_PLAN_PROMPT } from '../config/skills.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';

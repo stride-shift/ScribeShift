@@ -39,7 +39,7 @@ import plannerRoutes from './routes/planner.js';
 import cronRoutes from './routes/cron.js';
 import onboardingRoutes from './routes/onboarding.js';
 import { errorHandler } from './middleware/error-handler.js';
-import { TEXT_MODEL, IMAGE_MODEL } from './config/gemini.js';
+import { TEXT_MODEL, IMAGE_MODEL } from './services/gemini-client.js';
 import { checkDuePosts } from './services/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);

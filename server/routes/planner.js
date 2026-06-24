@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
-import { geminiText } from '../config/gemini.js';
+import { geminiText } from '../services/gemini-client.js';
 import { PLANNER_IDEAS_PROMPT } from '../config/skills.js';
 
 // Pillars and the content pieces inside them are a COMPANY-shared resource —

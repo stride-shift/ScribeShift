@@ -2,11 +2,9 @@ import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 import { supabase } from '../config/supabase.js';
+import { geminiTts } from '../services/gemini-client.js';
 
 const router = Router();
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 // ── POST /api/generate-tts ──────────────────────────────────────────
 router.post('/', verifyToken, async (req, res) => {
@@ -26,45 +24,13 @@ router.post('/', verifyToken, async (req, res) => {
     console.log(`[TTS] Generating audio (${text.length} chars, style: ${voiceStyle})...`);
 
     // Use Gemini with audio response modality
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
-
-    const systemPrompt = `You are a professional voice-over artist. Read the following text aloud in a ${voiceStyle} tone. Speak clearly, with natural pacing and appropriate emphasis.`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_KEY,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n${text}` }] }],
-        generationConfig: {
-          temperature: 0.3,
-          response_modalities: ['AUDIO'],
-          speech_config: {
-            voice_config: {
-              prebuilt_voice_config: {
-                voice_name: voiceStyle === 'casual' ? 'Kore' : 'Puck',
-              },
-            },
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('[TTS] API error:', err.substring(0, 300));
-      return res.status(500).json({ error: `TTS generation failed: ${response.status}` });
+    let audioBase64, audioMimeType;
+    try {
+      ({ audioBase64, audioMimeType } = await geminiTts(text, voiceStyle));
+    } catch (apiErr) {
+      console.error('[TTS] API error:', (apiErr.detail || apiErr.message || '').substring(0, 300));
+      return res.status(500).json({ error: apiErr.message });
     }
-
-    const data = await response.json();
-    const audioPart = data.candidates?.[0]?.content?.parts?.find(
-      p => p.inlineData || p.inline_data
-    );
-
-    const audioBase64 = audioPart?.inlineData?.data || audioPart?.inline_data?.data;
-    const audioMimeType = audioPart?.inlineData?.mimeType || audioPart?.inline_data?.mime_type || 'audio/wav';
 
     if (!audioBase64) {
       console.error('[TTS] No audio data returned');

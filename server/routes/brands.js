@@ -3,7 +3,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
 import { verifyToken } from '../middleware/auth.js';
-import { geminiText } from '../config/gemini.js';
+import { geminiText } from '../services/gemini-client.js';
 
 // Node's built-in fetch can hang on TCP connect when DNS returns an IPv6
 // address that times out (common on dev machines without working v6
@@ -39,6 +39,13 @@ function scopeBrands(req, query) {
   if (req.user.company_id) return query.eq('company_id', req.user.company_id);
   // Edge case: user without a company → show only their personal brands.
   return query.eq('user_id', req.user.id);
+}
+
+// Confirm a brand id is visible to the caller before mutating it or kicking off
+// expensive work (storage uploads, Gemini extraction). Returns the row or null.
+async function findOwnedBrand(req, id) {
+  const { data } = await scopeBrands(req, supabase.from('brands').select('id').eq('id', id)).single();
+  return data || null;
 }
 
 // Default brand-count limit per plan. A company row can override with `max_brands`.
@@ -655,15 +662,20 @@ router.post('/:id/logo', async (req, res) => {
     const { base64, mimeType } = req.body;
     if (!base64) return res.status(400).json({ error: 'No image data provided' });
 
+    // Verify the brand belongs to the caller before uploading or mutating it.
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+
     const ext = (mimeType || 'image/png').split('/')[1] || 'png';
     const filePath = `${req.user.id}/${req.params.id}.${ext}`;
     const publicUrl = await uploadBase64('brand-logos', filePath, base64, mimeType || 'image/png');
 
-    // Save URL to brand record
-    await supabase
+    // Save URL to brand record (scoped — defence in depth)
+    await scopeBrands(req, supabase
       .from('brands')
       .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
-      .eq('id', req.params.id);
+      .eq('id', req.params.id));
 
     res.json({ success: true, logo_url: publicUrl });
   } catch (err) {
@@ -684,6 +696,12 @@ router.post('/:id/ci-doc', async (req, res) => {
     const { base64, mimeType, filename } = req.body;
     if (!base64) return res.status(400).json({ error: 'No file data provided' });
 
+    // Verify ownership BEFORE the storage upload + (expensive) Gemini extraction,
+    // so an attacker can't trigger that work against an arbitrary brand id.
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+
     const safeName = (filename || 'brand-ci-document')
       .replace(/[^A-Za-z0-9._-]/g, '_')
       .slice(0, 80);
@@ -700,7 +718,7 @@ router.post('/:id/ci-doc', async (req, res) => {
       if (mimeType === 'text/plain' || mimeType === 'text/markdown') {
         extractedText = Buffer.from(base64, 'base64').toString('utf-8').slice(0, 50_000);
       } else if (mimeType === 'application/pdf') {
-        const { uploadToGemini, waitForFileProcessing, geminiText } = await import('../config/gemini.js');
+        const { uploadToGemini, waitForFileProcessing, geminiExtractFromFile } = await import('../services/gemini-client.js');
         // uploadToGemini wants a file path on disk. Write the base64 to a
         // temp file first.
         const fs = await import('fs/promises');
@@ -714,25 +732,13 @@ router.post('/:id/ci-doc', async (req, res) => {
           // Use the multimodal text endpoint to ask Gemini to summarise the
           // document into brand context — caps at ~6000 chars so it fits
           // alongside ICP/guidelines.
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
-          const r = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': process.env.GEMINI_API_KEY,
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { file_data: { file_uri: processed.uri, mime_type: mimeType } },
-                  { text: 'Extract the brand identity context from this document. Output ONLY a clean plain-text summary covering: brand positioning, tone/voice rules, visual guidelines (colours, fonts, imagery rules), target audience, words/phrases to use, words/phrases to avoid. No headings shouted in caps; no preamble; no markdown.' },
-                ],
-              }],
-            }),
-          });
-          if (r.ok) {
-            const data = await r.json();
-            extractedText = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').slice(0, 12_000);
+          const text = await geminiExtractFromFile(
+            processed.uri,
+            mimeType,
+            'Extract the brand identity context from this document. Output ONLY a clean plain-text summary covering: brand positioning, tone/voice rules, visual guidelines (colours, fonts, imagery rules), target audience, words/phrases to use, words/phrases to avoid. No headings shouted in caps; no preamble; no markdown.'
+          );
+          if (text !== null) {
+            extractedText = (text || '').slice(0, 12_000);
           }
         } finally {
           try { await fs.unlink(tmpFile); } catch {}
@@ -742,7 +748,7 @@ router.post('/:id/ci-doc', async (req, res) => {
       console.warn('[BRANDS] CI text extraction failed:', err.message);
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await scopeBrands(req, supabase
       .from('brands')
       .update({
         ci_document_url: publicUrl,
@@ -750,7 +756,7 @@ router.post('/:id/ci-doc', async (req, res) => {
         ci_document_text: extractedText,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', req.params.id);
+      .eq('id', req.params.id));
     if (updateError) return res.status(400).json({ error: updateError.message });
 
     res.json({
@@ -769,7 +775,7 @@ router.post('/:id/ci-doc', async (req, res) => {
 // ── DELETE /api/brands/:id/ci-doc ───────────────────────────────────
 router.delete('/:id/ci-doc', async (req, res) => {
   try {
-    await supabase
+    await scopeBrands(req, supabase
       .from('brands')
       .update({
         ci_document_url: null,
@@ -777,7 +783,7 @@ router.delete('/:id/ci-doc', async (req, res) => {
         ci_document_text: null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', req.params.id);
+      .eq('id', req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to remove CI document' });

@@ -9,7 +9,7 @@ import fs from 'fs/promises';
 import { YoutubeTranscript } from 'youtube-transcript';
 import {
   MEDIA_TYPES, uploadToGemini, waitForFileProcessing, transcribeWithGemini,
-} from '../config/gemini.js';
+} from './gemini-client.js';
 
 // Cap on total characters pulled in from uploaded files (matches the previous
 // routes/generate.js limit). Per-file truncation accounts for what prior files

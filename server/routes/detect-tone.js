@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import {
   geminiText, MEDIA_TYPES,
   uploadToGemini, waitForFileProcessing, transcribeWithGemini,
-} from '../config/gemini.js';
+} from '../services/gemini-client.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 import { extractYouTubeTranscript } from '../services/input-sources.js';
