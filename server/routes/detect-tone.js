@@ -8,25 +8,13 @@ import {
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 import { extractYouTubeTranscript } from '../services/input-sources.js';
+import { TONE_ANALYSIS_PROMPT } from '../config/skills.js';
 
 const router = Router();
 const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads/';
 const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
 
 const MAX_ANALYSIS_CHARS = 50_000;
-
-const TONE_ANALYSIS_PROMPT = `Analyze the tone, voice, and style of the following content. Describe in 2-4 concise sentences:
-- The overall tone (e.g., casual, authoritative, playful, urgent)
-- The sentence structure and rhythm (short punchy sentences, long flowing ones, mix)
-- The level of formality
-- Any distinctive voice characteristics (humor, directness, use of jargon, storytelling, etc.)
-
-Be specific and actionable — your description will be used as a writing directive for an AI to match this style. Do NOT be generic. Focus on what makes this voice distinctive.
-
-Output ONLY the tone description. No preambles, no labels, no bullet points — just a cohesive paragraph that could be used as a writing instruction.
-
-Content to analyze:
-`;
 
 router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
   try {

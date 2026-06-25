@@ -722,6 +722,62 @@ IMPORTANT: Each post hook must be SPECIFIC to the topic — not generic. If the 
 Return ONLY the JSON array. No markdown code fences, no preamble.`;
 }
 
+// Tone / voice analysis. Static prompt; the content to analyze is appended at
+// the call site (geminiText(TONE_ANALYSIS_PROMPT + truncated)).
+export const TONE_ANALYSIS_PROMPT = `Analyze the tone, voice, and style of the following content. Describe in 2-4 concise sentences:
+- The overall tone (e.g., casual, authoritative, playful, urgent)
+- The sentence structure and rhythm (short punchy sentences, long flowing ones, mix)
+- The level of formality
+- Any distinctive voice characteristics (humor, directness, use of jargon, storytelling, etc.)
+
+Be specific and actionable — your description will be used as a writing directive for an AI to match this style. Do NOT be generic. Focus on what makes this voice distinctive.
+
+Output ONLY the tone description. No preambles, no labels, no bullet points — just a cohesive paragraph that could be used as a writing instruction.
+
+Content to analyze:
+`;
+
+// Brand extraction from a website. Interpolates the structured signals + cleaned
+// page body assembled by the /api/brands/extract-from-url route.
+export function BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTitle, ogDescription, ldName, ldDescription, ldSlogan, themeColor, tileColor, bodyText }) {
+  return `You are a brand strategist analysing a company's website. Read the structured signals and page content below, then produce a single JSON object describing the brand.
+
+# Structured signals (trust these — they came directly from the page)
+URL: ${finalUrl}
+Page title: ${pageTitle || '(none)'}
+Open Graph site name: ${ogSiteName || '(none)'}
+Open Graph title: ${ogTitle || '(none)'}
+Open Graph description: ${ogDescription || '(none)'}
+JSON-LD organisation name: ${ldName || '(none)'}
+JSON-LD organisation description: ${ldDescription || '(none)'}
+JSON-LD slogan: ${ldSlogan || '(none)'}
+theme-color meta: ${themeColor || '(none)'}
+msapplication-TileColor: ${tileColor || '(none)'}
+
+# Cleaned page body (truncated)
+${bodyText}
+
+# Output schema — return EXACTLY this shape, no extras, no comments
+{
+  "brand_name": "human-friendly brand name (prefer ogSiteName > JSON-LD name > a cleaned page title without 'Home -' or '| Description' suffixes)",
+  "tagline": "one short sentence — the brand's positioning line, ≤12 words. If none on page, distil one from hero copy. Empty string if impossible.",
+  "industry": "one of: general | tech | marketing | healthcare | finance | education | other",
+  "primary_color": "#rrggbb — use theme-color or msapplication-TileColor if either is present, otherwise pick the dominant brand colour you can infer from copy or default to #3b82f6",
+  "secondary_color": "#rrggbb — complementary accent. Default #475569 if you can't tell.",
+  "icp_description": "2-3 sentences. WHO is the target customer? Role/title, company stage or size, the problem they need solved. Be specific — 'mid-market revenue leaders' beats 'businesses'.",
+  "brand_guidelines": "2-4 sentences capturing the brand voice: tone, formality, vocabulary preferences, things they avoid. E.g. 'Direct, plain-spoken, founder-voice. Skips buzzwords like leverage and synergy. Confident but not arrogant. Numbers over adjectives.'",
+  "tone_descriptors": ["3-6 short adjectives describing the voice (e.g. 'direct', 'witty', 'technical', 'warm')"],
+  "suggested_pillars": ["3-5 content pillar names the brand could publish under, derived from what the site already talks about. 1-3 words each."],
+  "writing_samples": ["3 ACTUAL passages copied VERBATIM from the page that best represent the brand voice — hero copy, value props, about-page paragraphs. 1-4 sentences each. Must be exact quotes."]
+}
+
+Rules:
+- Strict JSON only. No markdown, no comments, no trailing prose.
+- writing_samples MUST be verbatim from the body content above. Do not paraphrase, summarise, or invent.
+- If a field truly can't be inferred, return a sensible default ("" for strings, [] for arrays, "general" for industry).
+- Never wrap in \`\`\` fences.`;
+}
+
 // AI-generated post ideas, grounded in the team's brand + recent topics.
 // Interpolates the assembled context block built by the /api/planner/ideas route.
 export function PLANNER_IDEAS_PROMPT(ctx) {

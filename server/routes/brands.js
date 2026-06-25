@@ -4,6 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
 import { verifyToken } from '../middleware/auth.js';
 import { geminiText } from '../services/gemini-client.js';
+import { BRAND_EXTRACTION_PROMPT } from '../config/skills.js';
 
 // Node's built-in fetch can hang on TCP connect when DNS returns an IPv6
 // address that times out (common on dev machines without working v6
@@ -451,42 +452,7 @@ router.post('/extract-from-url', async (req, res) => {
     // Low temperature (0.2) and JSON response mode keep the output reliable.
     // The prompt gives the model every structured signal we already have so
     // it doesn't second-guess things we know for sure.
-    const aiPrompt = `You are a brand strategist analysing a company's website. Read the structured signals and page content below, then produce a single JSON object describing the brand.
-
-# Structured signals (trust these — they came directly from the page)
-URL: ${finalUrl}
-Page title: ${pageTitle || '(none)'}
-Open Graph site name: ${ogSiteName || '(none)'}
-Open Graph title: ${ogTitle || '(none)'}
-Open Graph description: ${ogDescription || '(none)'}
-JSON-LD organisation name: ${ldName || '(none)'}
-JSON-LD organisation description: ${ldDescription || '(none)'}
-JSON-LD slogan: ${ldSlogan || '(none)'}
-theme-color meta: ${themeColor || '(none)'}
-msapplication-TileColor: ${tileColor || '(none)'}
-
-# Cleaned page body (truncated)
-${bodyText}
-
-# Output schema — return EXACTLY this shape, no extras, no comments
-{
-  "brand_name": "human-friendly brand name (prefer ogSiteName > JSON-LD name > a cleaned page title without 'Home -' or '| Description' suffixes)",
-  "tagline": "one short sentence — the brand's positioning line, ≤12 words. If none on page, distil one from hero copy. Empty string if impossible.",
-  "industry": "one of: general | tech | marketing | healthcare | finance | education | other",
-  "primary_color": "#rrggbb — use theme-color or msapplication-TileColor if either is present, otherwise pick the dominant brand colour you can infer from copy or default to #3b82f6",
-  "secondary_color": "#rrggbb — complementary accent. Default #475569 if you can't tell.",
-  "icp_description": "2-3 sentences. WHO is the target customer? Role/title, company stage or size, the problem they need solved. Be specific — 'mid-market revenue leaders' beats 'businesses'.",
-  "brand_guidelines": "2-4 sentences capturing the brand voice: tone, formality, vocabulary preferences, things they avoid. E.g. 'Direct, plain-spoken, founder-voice. Skips buzzwords like leverage and synergy. Confident but not arrogant. Numbers over adjectives.'",
-  "tone_descriptors": ["3-6 short adjectives describing the voice (e.g. 'direct', 'witty', 'technical', 'warm')"],
-  "suggested_pillars": ["3-5 content pillar names the brand could publish under, derived from what the site already talks about. 1-3 words each."],
-  "writing_samples": ["3 ACTUAL passages copied VERBATIM from the page that best represent the brand voice — hero copy, value props, about-page paragraphs. 1-4 sentences each. Must be exact quotes."]
-}
-
-Rules:
-- Strict JSON only. No markdown, no comments, no trailing prose.
-- writing_samples MUST be verbatim from the body content above. Do not paraphrase, summarise, or invent.
-- If a field truly can't be inferred, return a sensible default ("" for strings, [] for arrays, "general" for industry).
-- Never wrap in \`\`\` fences.`;
+    const aiPrompt = BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTitle, ogDescription, ldName, ldDescription, ldSlogan, themeColor, tileColor, bodyText });
 
     let extracted = {};
     try {
