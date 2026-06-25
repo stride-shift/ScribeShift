@@ -12,14 +12,22 @@ concre/
 ├── src/            Vite + React frontend (components, hooks, lib, styles)
 ├── server/         Express backend (routes, services, config, middleware, templates)
 ├── api/            Vercel serverless entry + cron jobs (check-posts, daily-reminder, refresh-metrics)
-├── supabase/       Postgres migrations
+├── supabase/       Postgres migrations, config.toml, RUNBOOK.org
 ├── public/         Static assets
 └── dist/           Vite build output (generated)
 #+END_EXAMPLE
 
 * Quick Start
 1. =npm install=
-2. Copy secrets into =.env= at the repo root (never commit it — see CLAUDE.md).
+2. *Environment variables:* copy =.env.example= → =.env= at the repo root and fill in
+   each value (the template is annotated per-variable). Never commit =.env= (gitignored;
+   see CLAUDE.md). Key groups: Supabase (=SUPABASE_URL=, =SUPABASE_SERVICE_KEY=,
+   =VITE_SUPABASE_ANON_KEY=, =SUPABASE_DB_URL=), AI (=GEMINI_API_KEY=), Email
+   (=RESEND_API_KEY=), Cron (=CRON_SECRET= — must match the Supabase Vault =cron_secret=;
+   see =supabase/RUNBOOK.org=), Social OAuth (LinkedIn / Twitter / Facebook + Instagram /
+   Google Calendar), Security (=CREDENTIAL_ENCRYPTION_KEY=, =OAUTH_STATE_SECRET=). In
+   production, set these in Vercel → Settings → Environment Variables, then redeploy;
+   OAuth redirect URIs must use the live domain.
 3. Frontend dev server: =npm run dev= (Vite).
 4. Backend: =node server/index.js= (Express API).
 5. Background worker: =node server/worker.js= (scheduled posts / metrics).
@@ -32,6 +40,7 @@ concre/
 | DEFERRED.org | dormant + deferred features and reactivation paths |
 | DOCUMENTATION.org | the doc standard + procedure |
 | SETUP.org | doc-system bootstrap + portability |
+| supabase/RUNBOOK.org | DB extensions, Vault secrets, pg_cron + fresh-deploy runbook |
 | SUBAGENT_PLAYBOOK.org | sub-agent dispatch + wave planning |
 | AGENT_AUDIT_WORKFLOW.org | audit choreography |
 | CLAUDE.md (root) | secret-scanning rules + repo conventions |

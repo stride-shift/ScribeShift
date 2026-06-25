@@ -144,7 +144,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     model: TEXT_MODEL,
     imageModel: IMAGE_MODEL,
-    supabase: !!process.env.SUPABASE_URL,
+    supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_KEY,
   });
 });
 

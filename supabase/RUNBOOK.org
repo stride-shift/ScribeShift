@@ -1,0 +1,101 @@
+#+TITLE: Supabase Runbook — Extensions, Vault, pg_cron
+#+DATE: 2026-06-25
+
+* Purpose
+Operational runbook for the Supabase Postgres backend: the database extensions,
+Vault secrets, and pg_cron jobs that the migrations depend on, plus the ordered
+steps to stand the project up on a fresh Supabase project. Co-located with the
+=migrations/= it documents. Migrations alone are NOT enough — the steps below must
+happen in order or the cron jobs silently fail.
+
+*No secret VALUES live here* — only secret NAMES and where to source them. See
+=.env.example= (repo root) for the full env-var template, and CLAUDE.md for the
+secret-handling rules.
+
+* Extensions
+Two Postgres extensions are required, both installed into the =extensions= schema.
+The migrations declare them idempotently:
+#+begin_src sql
+create extension if not exists pg_cron with schema extensions;
+create extension if not exists pg_net  with schema extensions;
+#+end_src
+Declared in =migrations/20260413_pg_cron_scheduled_posts.sql=,
+=migrations/20260608_combined_session_setup.sql=, =migrations/20260608_metrics_cron.sql=.
+
+NOTE: On a fresh project, enable =pg_cron= and =pg_net= in the Supabase Dashboard
+(Database → Extensions) BEFORE applying the migrations. Depending on the project
+tier, the managed =postgres= role may not be able to =CREATE EXTENSION= via SQL on
+its own — the dashboard step is the safe default regardless. =pg_cron= runs the
+scheduler; =pg_net= provides =net.http_post= for the jobs to call the app.
+
+* Vault secrets
+Two Supabase Vault secrets, read at runtime by the cron jobs via
+=vault.decrypted_secrets=:
+
+| Secret | Source of the value | Consumed by |
+|--------|---------------------|-------------|
+| =cron_secret= | the =CRON_SECRET= env var (Vercel dashboard / .env) | all 3 cron jobs (Bearer auth) |
+| =cron_base_url= | the deployed app URL (e.g. https://scribe-shift.strideshift.ai) | all 3 cron jobs (target host) |
+
+Seed once, in the Supabase SQL editor (canonical syntax —
+=migrations/20260608_combined_session_setup.sql=):
+#+begin_src sql
+select vault.create_secret('https://your-deployed-domain', 'cron_base_url');
+select vault.create_secret('<value of CRON_SECRET>',       'cron_secret');
+#+end_src
+
+Rotate (=migrations/20260413_pg_cron_scheduled_posts.sql=):
+#+begin_src sql
+update vault.secrets set secret = '<new>' where name = 'cron_secret';
+update vault.secrets set secret = '<new>' where name = 'cron_base_url';
+#+end_src
+=cron_secret= MUST match the =CRON_SECRET= the deployed app validates, or every
+cron call returns 401.
+
+* pg_cron jobs
+All three call ={cron_base_url}/api/cron/<name>= via =net.http_post= with an
+=Authorization: Bearer <cron_secret>= header and a 55s timeout.
+
+| Job | Schedule | Endpoint |
+|-----|----------|----------|
+| =scribeshift-check-posts= | =*/5 * * * *= (every 5 min) | /api/cron/check-posts |
+| =scribeshift-daily-reminder= | =0 7 * * *= (07:00 UTC) | /api/cron/daily-reminder |
+| =scribeshift-refresh-metrics= | =0 */6 * * *= (every 6 h) | /api/cron/refresh-metrics |
+
+(=scribeshift-refresh-metrics= is declared in both =metrics_cron.sql= and
+=combined_session_setup.sql= — idempotent re-declaration; canonical-source cleanup
+is a deferred hygiene item.)
+
+* Fresh-project re-deploy — ordered steps
+Each step depends on the previous one. Do them IN ORDER:
+
+1. *Enable extensions* — Dashboard → Database → Extensions → enable =pg_cron= +
+   =pg_net=. (Verify the tier; the migrations' =CREATE EXTENSION IF NOT EXISTS= is a
+   safety net, not a substitute for the dashboard toggle.)
+2. *Seed Vault secrets* — run the two =vault.create_secret(...)= calls above in the
+   SQL editor. =cron_secret= = the =CRON_SECRET= env value; =cron_base_url= = the
+   deployed domain. Must precede the cron migrations (their =cron.schedule= reads them).
+3. *Apply migrations* in date order via =node bin/run-migration.mjs <file>= (needs
+   =SUPABASE_DB_URL=; see =.env.example=). =bin/run-migration.mjs --list= shows order.
+4. *Verify cron jobs active*:
+   #+begin_src sql
+   select jobname, schedule, active from cron.job;
+   #+end_src
+   Expect all three jobs with =active = true=.
+5. *Verify Vault secrets present* (names only, no values):
+   #+begin_src sql
+   select name from vault.secrets;
+   #+end_src
+   Expect =cron_base_url= and =cron_secret=.
+6. *Deploy the app* (Vercel) with =CRON_SECRET= set to the same value seeded in step
+   2, then redeploy. Test-hit a cron endpoint with the bearer token to confirm it's
+   accepted.
+
+* Related
+- =.env.example= — full env-var template (incl. =SUPABASE_DB_URL= for the runner).
+- =bin/run-migration.mjs= — env-driven migration runner.
+- =supabase/config.toml= — project_id / CLI config.
+- CLAUDE.md — migration conventions + secret-scanning rules.
+
+---
+/Last Updated/: 2026-06-25

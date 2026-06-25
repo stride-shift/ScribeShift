@@ -13,6 +13,16 @@ import { assembleInput, runGeneration } from './services/generation.js';
 
 const POLL_MS = Number(process.env.WORKER_POLL_MS || 4000);
 
+// Fail fast BEFORE the health server starts. Without DB credentials the worker
+// would answer Cloud Run's health check with 200 while silently processing zero
+// jobs — exactly the "healthy-but-dead" failure to avoid. Exit non-zero so Cloud
+// Run flags the container. (The ./config/supabase.js import above also throws on
+// missing creds; this is an explicit, worker-branded guard against regressions.)
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  console.error('[WORKER] FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing — aborting');
+  process.exit(1);
+}
+
 // Cloud Run requires the container to listen on $PORT or it's killed at startup.
 // This tiny server just answers health checks; the real work is the poll loop.
 // Deploy with --no-cpu-throttling so the loop keeps running between requests.

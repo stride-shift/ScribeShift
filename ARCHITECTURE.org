@@ -46,7 +46,7 @@ worker (=server/worker.js=) and Vercel cron functions (=api/cron/=).
 | Gemini model | =gemini-2.5-flash= via =x-goog-api-key= header | Latest flash tier; header auth over query param |
 | Scheduled work off the request path | Background worker + Vercel cron | Posting/metrics must run without an open HTTP request |
 | Generation execution path | Two paths: sync (file uploads + fallback) + async worker (canonical for typed/URL jobs) | One shared prompt core; see /Generation Execution Path/ below |
-| Secrets | Env vars only (=.env= local, Vercel dashboard prod) | Repo is private; see CLAUDE.md secret-scanning checklist |
+| Secrets | Env vars only (=.env= local, Vercel dashboard prod) — template in =.env.example=; Supabase Vault holds =cron_secret=/=cron_base_url= for the pg_cron jobs | Repo is private; see CLAUDE.md secret-scanning checklist + =supabase/RUNBOOK.org= |
 | Social OAuth token storage | Encrypted at rest (AES-256-GCM) | services/encryption.js — used by the LinkedIn/Facebook/Instagram/Twitter token tables. =google_calendar_tokens= is the exception (plaintext); google-calendar.js does not import encryption.js |
 | "Content Types" naming | UI label only; backend/API + =planner= routes use =pillar= | Display-only rename — see PRODUCT_CONTEXT.org → Intentional Decisions |
 
