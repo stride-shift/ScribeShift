@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
+import { supabase } from '../lib/supabase';
 
 const GenerationContext = createContext(null);
 
@@ -200,11 +201,7 @@ export function GenerationProvider({ children }) {
       if (textTypes.length > 0) {
         setProgress({ current: 0, total: totalSteps, label: 'Generating text content...' });
 
-        const formData = new FormData();
-        files.forEach(f => formData.append('files', f));
-        formData.append('contentTypes', JSON.stringify(textTypes));
-        formData.append('options', JSON.stringify(options));
-        formData.append('brandData', JSON.stringify({
+        const brandPayload = {
           brandName: brand.brandName,
           primaryColor: brand.primaryColor,
           secondaryColor: brand.secondaryColor,
@@ -212,29 +209,71 @@ export function GenerationProvider({ children }) {
           brandGuidelines: brand.brandGuidelines,
           writingSamples: brand.writingSamples,
           ciDocumentText: brand.ciDocumentText,
-        }));
-        formData.append('videoUrls', JSON.stringify(videoUrls));
-        if (textPrompt.trim()) {
-          formData.append('textPrompt', textPrompt.trim());
+        };
+
+        let content = null;
+        // Background path (Cloud Run worker): no-file jobs run server-side so
+        // they never time out and the user can navigate away. We only fall back
+        // to the instant path when the job was NEVER queued (so we never
+        // double-generate / double-charge). Files always use the instant path.
+        let useSync = files.length > 0;
+
+        if (!useSync) {
+          let jobId = null;
+          try {
+            const enqRes = await fetch('/api/generate/enqueue', {
+              method: 'POST',
+              headers: { ...authHeaders, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contentTypes: textTypes, options, brandData: brandPayload, textPrompt: textPrompt.trim(), videoUrls }),
+            });
+            if (enqRes.ok) { jobId = (await enqRes.json()).jobId || null; }
+          } catch { /* enqueue unreachable */ }
+
+          if (!jobId) {
+            useSync = true; // never queued → safe to run the instant path
+          } else {
+            const deadline = Date.now() + 6 * 60 * 1000; // 6-min cap
+            let done = false;
+            while (Date.now() < deadline) {
+              await new Promise(r => setTimeout(r, 2500));
+              const { data: job } = await supabase
+                .from('generation_jobs')
+                .select('status, progress, result, error')
+                .eq('id', jobId)
+                .single();
+              if (job?.progress) {
+                setProgress({ current: job.progress.current ?? 0, total: totalSteps, label: job.progress.label || 'Generating…' });
+              }
+              if (job?.status === 'done') { content = job.result || {}; done = true; break; }
+              if (job?.status === 'error') { setError(job.error || 'Text generation failed'); setIsGenerating(false); return; }
+            }
+            if (!done) { setError('Generation is taking longer than expected — check back shortly.'); setIsGenerating(false); return; }
+          }
         }
 
-        const res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: authHeaders,
-          body: formData,
-        });
-        if (!res.ok && res.headers.get('content-type')?.indexOf('application/json') === -1) {
-          throw new Error(`Server error (${res.status}). The request may have timed out.`);
-        }
-        const data = await res.json();
+        if (useSync) {
+          const formData = new FormData();
+          files.forEach(f => formData.append('files', f));
+          formData.append('contentTypes', JSON.stringify(textTypes));
+          formData.append('options', JSON.stringify(options));
+          formData.append('brandData', JSON.stringify(brandPayload));
+          formData.append('videoUrls', JSON.stringify(videoUrls));
+          if (textPrompt.trim()) formData.append('textPrompt', textPrompt.trim());
 
-        if (!data.success) {
-          setError(data.error || 'Text generation failed');
-          setIsGenerating(false);
-          return;
+          const res = await fetch('/api/generate', { method: 'POST', headers: authHeaders, body: formData });
+          if (!res.ok && res.headers.get('content-type')?.indexOf('application/json') === -1) {
+            throw new Error(`Server error (${res.status}). The request may have timed out.`);
+          }
+          const data = await res.json();
+          if (!data.success) {
+            setError(data.error || 'Text generation failed');
+            setIsGenerating(false);
+            return;
+          }
+          content = data.content;
         }
 
-        setContent(data.content);
+        setContent(content);
         setProgress({ current: textTypes.length, total: totalSteps, label: wantImages ? 'Text done, generating images...' : 'Done!' });
       }
 
@@ -324,7 +363,13 @@ export function GenerationProvider({ children }) {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, logoBase64: brand.logoBase64 }),
+        body: JSON.stringify({
+          prompt,
+          logoBase64: brand.logoBase64,
+          // Keep the reference-image style on regeneration (was being dropped).
+          referenceImageBase64: imageConfig.referenceImageBase64,
+          referenceImageMimeType: imageConfig.referenceImageMimeType,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -386,7 +431,13 @@ export function GenerationProvider({ children }) {
           const res = await fetch('/api/generate-image', {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: variationPrompts[i], logoBase64: brand.logoBase64 }),
+            body: JSON.stringify({
+              prompt: variationPrompts[i],
+              logoBase64: brand.logoBase64,
+              // Keep the reference-image style across variations too.
+              referenceImageBase64: imageConfig.referenceImageBase64,
+              referenceImageMimeType: imageConfig.referenceImageMimeType,
+            }),
           });
           const data = await res.json();
           if (data.success) {
