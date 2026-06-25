@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
+import { useBrandState } from '../hooks/useBrandState';
 
 const GenerationContext = createContext(null);
 
@@ -13,130 +14,8 @@ export function useGeneration() {
 export function GenerationProvider({ children }) {
   const { getAuthHeaders, isAuthenticated } = useAuth();
 
-  // Brand identity (in-memory copy used by Create — synced from active brand on load)
-  const [brand, setBrand] = useState({
-    brandName: '',
-    primaryColor: '#3b82f6',
-    secondaryColor: '#475569',
-    logoBase64: null,
-    logoPreviewUrl: null,
-    icpDescription: '',
-    brandGuidelines: '',
-    writingSamples: ['', '', ''],
-  });
-
-  // List of saved brands and the currently-active brand id (persisted)
-  const [savedBrands, setSavedBrands] = useState([]);
-  const [brandsMeta, setBrandsMeta] = useState({ limit: 1, used: 0 });
-  const [activeBrandId, setActiveBrandIdRaw] = useState(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('scribeshift-active-brand') || null;
-  });
-
-  const setActiveBrandId = useCallback((id) => {
-    setActiveBrandIdRaw(id);
-    if (typeof window !== 'undefined') {
-      if (id) localStorage.setItem('scribeshift-active-brand', id);
-      else localStorage.removeItem('scribeshift-active-brand');
-    }
-  }, []);
-
-  const loadBrands = useCallback(async () => {
-    if (!isAuthenticated) return;
-    try {
-      const res = await fetch('/api/brands', { headers: getAuthHeaders() });
-      if (!res.ok) return;
-      const data = await res.json();
-      const list = data.brands || [];
-      setSavedBrands(list);
-      setBrandsMeta({ limit: data.limit ?? 1, used: data.used ?? list.length });
-
-      // Pick an active brand: stored id if still valid, else first available
-      let activeId = activeBrandId;
-      if (activeId && !list.some(b => b.id === activeId)) activeId = null;
-      if (!activeId && list.length > 0) activeId = list[0].id;
-      if (activeId !== activeBrandId) setActiveBrandId(activeId);
-
-      // Hydrate the in-memory brand from the active record
-      const active = list.find(b => b.id === activeId);
-      if (active) {
-        setBrand((prev) => ({
-          ...prev,
-          brandName: active.brand_name || '',
-          primaryColor: active.primary_color || '#3b82f6',
-          secondaryColor: active.secondary_color || '#475569',
-          icpDescription: active.icp_description || '',
-          brandGuidelines: active.brand_guidelines || '',
-          writingSamples: (active.writing_samples && active.writing_samples.length > 0)
-            ? active.writing_samples
-            : ['', '', ''],
-          ciDocumentText: active.ci_document_text || '',
-          // Keep logo_url so image gen can fetch it on demand.
-          logoUrl: active.logo_url || null,
-        }));
-
-        // If the active brand has a logo URL but no base64 yet, fetch the
-        // image and convert to base64 so image generation can inline it.
-        // Without this step the image-gen prompt has nothing to attach.
-        if (active.logo_url) {
-          (async () => {
-            try {
-              const r = await fetch(active.logo_url, { mode: 'cors' });
-              if (!r.ok) return;
-              const blob = await r.blob();
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                const dataUrl = String(reader.result || '');
-                const base64 = dataUrl.split(',')[1] || null;
-                if (base64) {
-                  setBrand((p) => ({
-                    ...p,
-                    logoBase64: base64,
-                    logoPreviewUrl: dataUrl,
-                  }));
-                }
-              };
-              reader.readAsDataURL(blob);
-            } catch (err) {
-              console.warn('[BRANDS] Could not load logo for image gen:', err.message);
-            }
-          })();
-        } else {
-          // Brand has no logo — clear any stale base64 from a previous brand.
-          setBrand((p) => ({ ...p, logoBase64: null, logoPreviewUrl: null }));
-        }
-
-        // Brand-level defaults for audience + visual style: only apply when
-        // the user hasn't actively changed them this session (i.e. still at
-        // the generic 'general' / starter style set).
-        if (active.default_audience) {
-          setOptions((prev) => (
-            prev.audience && prev.audience !== 'general'
-              ? prev
-              : { ...prev, audience: active.default_audience }
-          ));
-        }
-        if (Array.isArray(active.default_image_styles) && active.default_image_styles.length > 0) {
-          setImageConfig((prev) => {
-            const currentKeys = [...prev.selectedStyles].sort().join(',');
-            const starterKeys = ['editorial', 'minimal', 'vibrant'].sort().join(',');
-            // Only overwrite when the user is still on the starter selection
-            // so we don't clobber an active editing session.
-            if (currentKeys !== starterKeys) return prev;
-            return { ...prev, selectedStyles: new Set(active.default_image_styles) };
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[BRANDS] load failed:', err.message);
-    }
-  }, [getAuthHeaders, isAuthenticated, activeBrandId, setActiveBrandId]);
-
-  // Load brands on auth + when active brand changes
-  useEffect(() => {
-    if (isAuthenticated) loadBrands();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, activeBrandId]);
+  // Brand cluster — owned by useBrandState
+  const { brand, setBrand, savedBrands, brandsMeta, activeBrandId, setActiveBrandId, loadBrands } = useBrandState();
 
   // File uploads & inputs
   const [files, setFiles] = useState([]);
@@ -166,6 +45,34 @@ export function GenerationProvider({ children }) {
     referenceImageMimeType: null,
     referenceImagePreview: null,  // data URL for the UI preview only
   });
+  // H1 hoist: seed audience + image-style defaults from the active brand.
+  // Only applies when the user is still on the generic defaults — we must not
+  // clobber edits they've already made this session.
+  // Runs whenever the loaded brand changes (covers initial load + brand switch).
+  useEffect(() => {
+    if (!brand || !brand.brandName) return;
+    // Seed audience default: only when still at 'general' (the initial value).
+    if (brand.default_audience) {
+      setOptions((prev) => (
+        prev.audience && prev.audience !== 'general'
+          ? prev
+          : { ...prev, audience: brand.default_audience }
+      ));
+    }
+    // Seed image-style defaults: only when the user is still on the starter set.
+    if (Array.isArray(brand.default_image_styles) && brand.default_image_styles.length > 0) {
+      setImageConfig((prev) => {
+        const currentKeys = [...prev.selectedStyles].sort().join(',');
+        const starterKeys = ['editorial', 'minimal', 'vibrant'].sort().join(',');
+        // Only overwrite when the user is still on the starter selection
+        // so we don't clobber an active editing session.
+        if (currentKeys !== starterKeys) return prev;
+        return { ...prev, selectedStyles: new Set(brand.default_image_styles) };
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand.brandName, brand.default_audience, brand.default_image_styles, activeBrandId]);
+
   const [content, setContent] = useState({});
   const [images, setImages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
