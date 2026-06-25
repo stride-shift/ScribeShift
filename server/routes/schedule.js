@@ -215,10 +215,10 @@ router.put('/:id', async (req, res) => {
       if (mediaError) return res.status(400).json({ error: mediaError });
     }
 
-    let query = supabase.from('scheduled_posts').update(updates).eq('id', req.params.id).select().single();
+    let query = supabase.from('scheduled_posts').update(updates).eq('id', req.params.id);
     query = scopeByRole(req)(query);
 
-    const { data: updated, error } = await query;
+    const { data: updated, error } = await query.select().single();
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
 

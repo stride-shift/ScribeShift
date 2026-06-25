@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../config/supabase.js';
-import { verifyToken, requireRole } from '../middleware/auth.js';
+import { verifyToken, requireRole, invalidateUserCache } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -128,6 +128,7 @@ router.put('/users/:id/role', requireRole('admin', 'super_admin'), async (req, r
       .eq('id', targetId);
 
     if (error) return res.status(400).json({ error: error.message });
+    invalidateUserCache(targetId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update role' });
@@ -143,6 +144,19 @@ router.put('/users/:id/active', requireRole('admin', 'super_admin'), async (req,
     // Don't allow deactivating yourself
     if (targetId === req.user.id) {
       return res.status(400).json({ error: 'Cannot deactivate yourself' });
+    }
+
+    // Admins can only manage users in their company
+    if (req.user.role === 'admin') {
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', targetId)
+        .single();
+
+      if (!targetUser || targetUser.company_id !== req.user.company_id) {
+        return res.status(403).json({ error: 'Cannot manage users outside your company' });
+      }
     }
 
     const { error } = await supabase
@@ -186,9 +200,13 @@ router.put('/users/:id', requireRole('super_admin'), async (req, res) => {
 
     // If email changed, update auth user too
     if (email !== undefined) {
-      await supabase.auth.admin.updateUserById(targetId, { email });
+      const { error: authUpdateError } = await supabase.auth.admin.updateUserById(targetId, { email });
+      if (authUpdateError) {
+        return res.status(500).json({ error: `Failed to update auth email: ${authUpdateError.message}` });
+      }
     }
 
+    invalidateUserCache(targetId);
     res.json({ user: data });
   } catch (err) {
     console.error('[ADMIN] Update user error:', err);

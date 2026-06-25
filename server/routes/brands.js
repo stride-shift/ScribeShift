@@ -547,10 +547,12 @@ router.post('/', async (req, res) => {
 
     // Enforce per-plan brand count before insert
     const { limit } = await getBrandLimit(req.user.company_id);
-    const { count } = await supabase
+    const countQuery = supabase
       .from('brands')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', req.user.company_id);
+      .select('id', { count: 'exact', head: true });
+    const { count } = await (req.user.company_id
+      ? countQuery.eq('company_id', req.user.company_id)
+      : countQuery.eq('user_id', req.user.id));
     if ((count ?? 0) >= limit) {
       return res.status(403).json({
         error: `Brand limit reached (${count}/${limit}). Contact your admin to upgrade your plan.`,
