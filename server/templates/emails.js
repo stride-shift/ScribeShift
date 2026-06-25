@@ -176,6 +176,21 @@ function infoCallout(text) {
   `;
 }
 
+// Secondary/ghost CTA button (grey outline — visually distinct from the primary).
+function buttonSecondary(href, label) {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">
+      <tr>
+        <td style="background:#ffffff;border:2px solid #cbd5e1;border-radius:12px;">
+          <a href="${esc(href)}" target="_blank" style="display:inline-block;padding:12px 26px;color:${TEXT_SECONDARY};text-decoration:none;font-weight:600;font-size:15px;letter-spacing:-0.005em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            ${esc(label)}
+          </a>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
 // ── Password reset ──────────────────────────────────────────────────
 export function passwordResetEmail({ resetUrl, expiresMinutes = 60 }) {
   const body = `
@@ -238,6 +253,54 @@ export function scheduleConfirmationEmail({ platform, scheduledAt, preview, time
   return {
     subject: `Post scheduled for ${when}`,
     html: frame({ preheader: `Your ${platformLabel} post is queued for ${when}`, heroTitle: 'Scheduled', bodyHtml: body }),
+    attachments: logoAttachment(),
+  };
+}
+
+// ── Approval request ────────────────────────────────────────────────
+/**
+ * Email sent to company users when a post enters pending_review.
+ *
+ * @param {{ postText: string, approveUrl: string, requestChangesUrl: string,
+ *           companyName?: string, expiresLabel?: string }} opts
+ */
+export function approvalRequestEmail({ postText, approveUrl, requestChangesUrl, companyName, expiresLabel = '7 days' }) {
+  const snippet = (postText || '').slice(0, 280);
+  const forWhom = companyName
+    ? ` for <strong style="color:${TEXT_PRIMARY};">${esc(companyName)}</strong>`
+    : '';
+  const body = `
+    <h1 style="margin:0 0 10px;font-size:24px;font-weight:700;color:${TEXT_PRIMARY};letter-spacing:-0.015em;line-height:1.25;">
+      Post ready for your review
+    </h1>
+    <p style="margin:0 0 22px;font-size:15px;color:${TEXT_SECONDARY};line-height:1.65;">
+      A new post${forWhom} is waiting for your approval before it goes live.
+      Please review the content below and click <strong style="color:${TEXT_PRIMARY};">Approve</strong> to
+      publish it as scheduled, or <strong style="color:${TEXT_PRIMARY};">Request changes</strong> if you'd like edits.
+    </p>
+
+    <div style="margin:0 0 24px;padding:18px 20px;background:#f8fafc;border-left:3px solid ${BRAND_COLOR};border-radius:8px;font-size:14px;color:${TEXT_SECONDARY};white-space:pre-wrap;line-height:1.55;">${esc(snippet)}${postText && postText.length > 280 ? '…' : ''}</div>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+      <tr>
+        <td style="padding-right:12px;">${button(approveUrl, 'Approve')}</td>
+        <td>${buttonSecondary(requestChangesUrl, 'Request changes')}</td>
+      </tr>
+    </table>
+
+    ${infoCallout(`<strong style="color:${TEXT_PRIMARY};font-weight:600;">Link expires in ${esc(expiresLabel)}.</strong> After that, ask your team to resend the review link.`)}
+
+    <p style="margin:16px 0 6px;font-size:12px;color:${TEXT_MUTED};">Trouble with the buttons? Paste one of these URLs into your browser:</p>
+    <p style="margin:0 0 4px;font-size:12px;color:${BRAND_DARK};word-break:break-all;line-height:1.5;">
+      <a href="${esc(approveUrl)}" style="color:${BRAND_DARK};text-decoration:underline;">Approve: ${esc(approveUrl)}</a>
+    </p>
+    <p style="margin:0;font-size:12px;color:${TEXT_SECONDARY};word-break:break-all;line-height:1.5;">
+      <a href="${esc(requestChangesUrl)}" style="color:${TEXT_SECONDARY};text-decoration:underline;">Request changes: ${esc(requestChangesUrl)}</a>
+    </p>
+  `;
+  return {
+    subject: `Action required: post awaiting your approval${companyName ? ` — ${companyName}` : ''}`,
+    html: frame({ preheader: 'A post is waiting for your approval', heroTitle: 'Review', bodyHtml: body }),
     attachments: logoAttachment(),
   };
 }

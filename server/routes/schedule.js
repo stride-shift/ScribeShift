@@ -4,7 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { verifyToken, scopeByRole } from '../middleware/auth.js';
 import { processPost } from '../services/scheduler.js';
 import { sendEmail } from '../services/email.js';
-import { scheduleConfirmationEmail } from '../templates/emails.js';
+import { scheduleConfirmationEmail, approvalRequestEmail } from '../templates/emails.js';
 import { icsAttachment } from '../services/calendar.js';
 import {
   createEvent as gcalCreateEvent,
@@ -12,6 +12,9 @@ import {
   deleteEvent as gcalDeleteEvent,
   getConnectionStatus as gcalStatus,
 } from '../services/google-calendar.js';
+import { createApprovalToken } from '../services/approval-token.js';
+
+const FRONTEND_URL = process.env.FRONTEND_URL?.split(',')[0]?.trim() || 'https://scribe-shift.vercel.app';
 
 const MEDIA_TYPES = ['image', 'video', 'document', 'audio'];
 
@@ -103,6 +106,90 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
+
+    // ── Approval workflow hook ───────────────────────────────────────────────
+    // Check if this company has the approval workflow enabled. If so:
+    //   1. Flip the just-created post back to status='draft', review_status='pending_review'
+    //      so the cron cannot see it until it's explicitly approved.
+    //   2. Mint a signed approval token and email all active company users.
+    // If not enabled, the post stays status='scheduled' (existing behaviour).
+    let approvalEnabled = false;
+    try {
+      if (req.user.company_id) {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('approval_workflow_enabled')
+          .eq('id', req.user.company_id)
+          .single();
+        approvalEnabled = !!company?.approval_workflow_enabled;
+      }
+    } catch (approvalCheckErr) {
+      console.warn('[SCHEDULE] Approval workflow check failed (skipping):', approvalCheckErr.message);
+    }
+
+    if (approvalEnabled) {
+      try {
+        const now = new Date().toISOString();
+        // GATE: keep status='draft' until approved; cron predicate unchanged
+        await supabase
+          .from('scheduled_posts')
+          .update({
+            status: 'draft',
+            review_status: 'pending_review',
+            review_requested_at: now,
+            updated_at: now,
+          })
+          .eq('id', data.id);
+
+        // Update the in-memory post object so res.json reflects the real state
+        data.status = 'draft';
+        data.review_status = 'pending_review';
+        data.review_requested_at = now;
+
+        // Mint token and build action URLs
+        const approvalToken = createApprovalToken({ postId: data.id, companyId: req.user.company_id });
+        const approveUrl = `${FRONTEND_URL}/review/act?token=${encodeURIComponent(approvalToken)}&action=approve`;
+        const requestChangesUrl = `${FRONTEND_URL}/review/act?token=${encodeURIComponent(approvalToken)}&action=request_changes`;
+
+        // Email all active company users (best-effort; failure must not block response)
+        try {
+          const { data: recipients } = await supabase
+            .from('users')
+            .select('email, full_name')
+            .eq('company_id', req.user.company_id)
+            .eq('is_active', true);
+
+          const companyName = req.user.company?.name || null;
+          const emailsToNotify = (recipients || [])
+            .filter(u => u.email && u.email !== req.user.email); // exclude the post creator
+
+          for (const recipient of emailsToNotify) {
+            try {
+              const { subject, html, attachments: emailAttachments } = approvalRequestEmail({
+                postText: data.post_text,
+                approveUrl,
+                requestChangesUrl,
+                companyName,
+                expiresLabel: '7 days',
+              });
+              await sendEmail({ to: recipient.email, subject, html, attachments: emailAttachments });
+            } catch (recipErr) {
+              console.warn(`[SCHEDULE] Approval email failed for ${recipient.email}:`, recipErr.message);
+            }
+          }
+        } catch (emailsErr) {
+          console.warn('[SCHEDULE] Approval email send failed (post still created as draft):', emailsErr.message);
+        }
+      } catch (approvalUpdateErr) {
+        console.error('[SCHEDULE] Approval workflow update failed:', approvalUpdateErr.message);
+        // Non-fatal: post was created as 'scheduled'; log and continue
+      }
+    }
+
+    // ── Skip calendar/confirmation email for posts under review ─────────────
+    if (approvalEnabled) {
+      return res.json({ post: data });
+    }
 
     // Side effects — run BEFORE responding so they actually complete on
     // serverless (a detached promise can be frozen the instant we respond,

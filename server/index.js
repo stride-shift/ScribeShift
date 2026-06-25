@@ -38,6 +38,7 @@ import detectToneRoutes from './routes/detect-tone.js';
 import plannerRoutes from './routes/planner.js';
 import cronRoutes from './routes/cron.js';
 import onboardingRoutes from './routes/onboarding.js';
+import reviewRoutes from './routes/review.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { TEXT_MODEL, IMAGE_MODEL } from './services/gemini-client.js';
 import { checkDuePosts } from './services/scheduler.js';
@@ -137,6 +138,7 @@ app.use('/api/detect-tone', generateLimiter, detectToneRoutes);
 app.use('/api/planner', apiLimiter, plannerRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/review', apiLimiter, reviewRoutes);
 
 // ── Health check ────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
