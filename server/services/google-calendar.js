@@ -1,3 +1,4 @@
+import { encrypt, decrypt } from './encryption.js';
 import { supabase } from '../config/supabase.js';
 
 const CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID;
@@ -79,16 +80,52 @@ export async function fetchGoogleEmail(accessToken) {
   return data.email || null;
 }
 
+// ── Encryption helpers ───────────────────────────────────────────────
+/**
+ * Decrypt a field from a DB row using the encrypted_* / *_iv / *_tag column
+ * triple.  Falls back to the plaintext column (e.g. row.access_token) when the
+ * encrypted column is absent — supports rows that have not yet been migrated by
+ * bin/encrypt-gcal-tokens.mjs.
+ *
+ * @param {object} row       - DB row from google_calendar_tokens
+ * @param {'access_token'|'refresh_token'} name - logical token name
+ * @returns {string|null}
+ */
+function decryptField(row, name) {
+  const encCol = `encrypted_${name}`;
+  const ivCol  = `${name}_iv`;
+  const tagCol = `${name}_tag`;
+
+  if (row[encCol]) {
+    return decrypt(row[encCol], row[ivCol], row[tagCol]);
+  }
+  // Transition-safe fallback: row not yet migrated, use plaintext column.
+  return row[name] || null;
+}
+
 // ── Token storage: save (upsert) ────────────────────────────────────
 export async function saveTokens(userId, tokens, googleEmail) {
   const expiresAt = new Date(Date.now() + (tokens.expires_in - 60) * 1000).toISOString();
+
+  const encAccess  = encrypt(tokens.access_token);
+  const encRefresh = tokens.refresh_token ? encrypt(tokens.refresh_token) : null;
+
   const { error } = await supabase
     .from('google_calendar_tokens')
     .upsert({
       user_id: userId,
       google_email: googleEmail,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      // Encrypted columns — the canonical storage going forward.
+      encrypted_access_token:  encAccess.encrypted,
+      access_token_iv:         encAccess.iv,
+      access_token_tag:        encAccess.tag,
+      encrypted_refresh_token: encRefresh?.encrypted || null,
+      refresh_token_iv:        encRefresh?.iv        || null,
+      refresh_token_tag:       encRefresh?.tag       || null,
+      // Plaintext columns intentionally left null for new rows.
+      // (NOT NULL was dropped in 20260625_gcal_token_encryption.sql)
+      access_token:  null,
+      refresh_token: null,
       scope: tokens.scope || SCOPES.join(' '),
       token_type: tokens.token_type || 'Bearer',
       expires_at: expiresAt,
@@ -109,18 +146,28 @@ export async function getValidAccessToken(userId) {
 
   const msUntilExpiry = new Date(row.expires_at).getTime() - Date.now();
   if (msUntilExpiry > 30_000) {
-    return { accessToken: row.access_token, calendarId: row.calendar_id || 'primary' };
+    // Decrypt with transition-safe fallback (see decryptField).
+    const accessToken = decryptField(row, 'access_token');
+    return { accessToken, calendarId: row.calendar_id || 'primary' };
   }
 
-  // Refresh
-  const refreshed = await refreshAccessToken(row.refresh_token);
+  // Refresh — decrypt refresh token with fallback, then re-encrypt new access token.
+  const storedRefreshToken = decryptField(row, 'refresh_token');
+  const refreshed = await refreshAccessToken(storedRefreshToken);
   const newExpiresAt = new Date(Date.now() + (refreshed.expires_in - 60) * 1000).toISOString();
+
+  const encAccess = encrypt(refreshed.access_token);
   await supabase
     .from('google_calendar_tokens')
     .update({
-      access_token: refreshed.access_token,
-      expires_at: newExpiresAt,
-      updated_at: new Date().toISOString(),
+      encrypted_access_token: encAccess.encrypted,
+      access_token_iv:        encAccess.iv,
+      access_token_tag:       encAccess.tag,
+      // Null out the plaintext column on every refresh — gradually cleans up
+      // rows that were written before this code was deployed.
+      access_token: null,
+      expires_at:   newExpiresAt,
+      updated_at:   new Date().toISOString(),
     })
     .eq('user_id', userId);
 
@@ -143,20 +190,24 @@ export async function getConnectionStatus(userId) {
 }
 
 export async function disconnect(userId) {
-  // Best effort: revoke refresh token with Google
+  // Best effort: revoke refresh token with Google.
+  // Select both encrypted and plaintext columns to support the transition period.
   const { data: row } = await supabase
     .from('google_calendar_tokens')
-    .select('refresh_token')
+    .select('refresh_token, encrypted_refresh_token, refresh_token_iv, refresh_token_tag')
     .eq('user_id', userId)
     .maybeSingle();
-  if (row?.refresh_token) {
-    try {
-      await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(row.refresh_token)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-    } catch (err) {
-      console.warn('[GCAL] Token revoke failed (non-fatal):', err.message);
+  if (row) {
+    const refreshToken = decryptField(row, 'refresh_token');
+    if (refreshToken) {
+      try {
+        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refreshToken)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+      } catch (err) {
+        console.warn('[GCAL] Token revoke failed (non-fatal):', err.message);
+      }
     }
   }
   await supabase.from('google_calendar_tokens').delete().eq('user_id', userId);
