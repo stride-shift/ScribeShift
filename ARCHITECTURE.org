@@ -25,8 +25,8 @@ worker (=server/worker.js=) and Vercel cron functions (=api/cron/=).
 | Dir | Role |
 |-----|------|
 | routes/ | HTTP endpoints (auth, generate, schedule, brands, metrics, planner, admin, per-network OAuth) |
-| services/ | Business logic (generation, social-network APIs, calendar, credits, metrics-sync, encryption, invitations) |
-| config/ | External clients (supabase, gemini, storage, skills) |
+| services/ | Business logic (generation, gemini-client, social-network APIs, calendar, credits, metrics-sync, encryption, invitations) |
+| config/ | External clients (supabase, storage, skills) |
 | middleware/ | auth, error-handler |
 | templates/ | email templates |
 

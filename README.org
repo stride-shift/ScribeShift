@@ -1,0 +1,40 @@
+#+TITLE: ScribeShift — Documentation Hub
+#+DATE: 2026-06-23
+
+* Read First
+This is the navigation hub. New to the repo? Read this, then ARCHITECTURE.org.
+ScribeShift (repo codename =concre=) is an AI content-generation and
+social-scheduling platform.
+
+* Project Structure
+#+BEGIN_EXAMPLE
+concre/
+├── src/            Vite + React frontend (components, hooks, lib, styles)
+├── server/         Express backend (routes, services, config, middleware, templates)
+├── api/            Vercel serverless entry + cron jobs (check-posts, daily-reminder, refresh-metrics)
+├── supabase/       Postgres migrations
+├── public/         Static assets
+└── dist/           Vite build output (generated)
+#+END_EXAMPLE
+
+* Quick Start
+1. =npm install=
+2. Copy secrets into =.env= at the repo root (never commit it — see CLAUDE.md).
+3. Frontend dev server: =npm run dev= (Vite).
+4. Backend: =node server/index.js= (Express API).
+5. Background worker: =node server/worker.js= (scheduled posts / metrics).
+
+* Documentation Map
+| Doc | Scope |
+|-----|-------|
+| ARCHITECTURE.org | system design, tech stack, cross-cutting decisions |
+| PRODUCT_CONTEXT.org | present-state product, users, roles, intentional decisions |
+| DEFERRED.org | dormant + deferred features and reactivation paths |
+| DOCUMENTATION.org | the doc standard + procedure |
+| SETUP.org | doc-system bootstrap + portability |
+| SUBAGENT_PLAYBOOK.org | sub-agent dispatch + wave planning |
+| AGENT_AUDIT_WORKFLOW.org | audit choreography |
+| CLAUDE.md (root) | secret-scanning rules + repo conventions |
+
+---
+/Last Updated/: 2026-06-23
