@@ -1,0 +1,13 @@
+# Supabase project configuration (audit T3-D).
+#
+# project_id ties this repo to the cloud Supabase project. It is NOT a secret —
+# it appears in the project URL (https://<project_id>.supabase.co) and is encoded
+# in the public anon key. The repo is private, so committing it is safe and makes
+# the project link reproducible.
+#
+# This project applies migrations with bin/run-migration.mjs against the cloud
+# database (see CLAUDE.md), not the Supabase CLI local dev stack. Auth, storage,
+# and extension settings are managed in the Supabase dashboard. This file is also
+# valid for the Supabase CLI if that workflow is ever adopted
+# (`supabase link --project-ref <project_id>`).
+project_id = "fhamdnjrjsoczqnleirf"

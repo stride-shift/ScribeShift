@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.*
+!.env.example
 .claude/
 generated/
 uploads/
@@ -16,3 +17,8 @@ debug-*.mjs
 
 # Vercel
 .vercel/
+
+# Supabase CLI scratch state (project ref, pooler URL, versions) — never commit
+supabase/.temp/
+
+
