@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
 import { useBrandState } from '../hooks/useBrandState';
+import { useImageGeneration } from '../hooks/useImageGeneration';
 
 const GenerationContext = createContext(null);
 
@@ -16,6 +17,22 @@ export function GenerationProvider({ children }) {
 
   // Brand cluster — owned by useBrandState
   const { brand, setBrand, savedBrands, brandsMeta, activeBrandId, setActiveBrandId, loadBrands } = useBrandState();
+
+  // Shared error state — declared before useImageGeneration so that hook can
+  // receive setError as a stable constructor param (for regenerate/edit/variations).
+  const [error, setError] = useState('');
+
+  // Image cluster — owned by useImageGeneration
+  const {
+    imageConfig, setImageConfig,
+    images, setImages,
+    isImageGenerating, setIsImageGenerating,
+    isImageRegenerating,
+    handleRegenerateImage,
+    handleEditImage,
+    handleGenerateVariations,
+    generateImages,
+  } = useImageGeneration({ brand, setError });
 
   // File uploads & inputs
   const [files, setFiles] = useState([]);
@@ -36,15 +53,7 @@ export function GenerationProvider({ children }) {
     goal: 'none',
   });
   const [isDetectingTone, setIsDetectingTone] = useState(false);
-  const [imageConfig, setImageConfig] = useState({
-    selectedStyles: new Set(['minimal', 'vibrant', 'editorial']),
-    customGuidelines: '',
-    customStylePrompt: '',
-    avoidList: '',
-    referenceImageBase64: null,
-    referenceImageMimeType: null,
-    referenceImagePreview: null,  // data URL for the UI preview only
-  });
+
   // H1 hoist: seed audience + image-style defaults from the active brand.
   // Only applies when the user is still on the generic defaults — we must not
   // clobber edits they've already made this session.
@@ -74,12 +83,8 @@ export function GenerationProvider({ children }) {
   }, [brand.brandName, brand.default_audience, brand.default_image_styles, activeBrandId]);
 
   const [content, setContent] = useState({});
-  const [images, setImages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isImageGenerating, setIsImageGenerating] = useState(false);
-  const [isImageRegenerating, setIsImageRegenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, label: '' });
-  const [error, setError] = useState('');
   const resultRef = useRef(null);
 
   const canGenerate = (files.length > 0 || videoUrls.length > 0 || textPrompt.trim().length > 0) && selectedTypes.size > 0 && !isGenerating;
@@ -90,7 +95,7 @@ export function GenerationProvider({ children }) {
     setIsGenerating(true);
     setError('');
     setContent({});
-    setImages([]);
+    setImages([]);  // reset image results (setImages comes from useImageGeneration)
 
     const types = [...selectedTypes];
     const textTypes = types.filter(t => t !== 'images');
@@ -185,67 +190,11 @@ export function GenerationProvider({ children }) {
       }
 
       if (wantImages) {
-        setIsImageGenerating(true);
-        // Prefer the user's own topic description over a generic brand-name placeholder —
-        // weak topic summaries make the model invent dramatic, off-brand scenes.
-        const topicFromPrompt = textPrompt && textPrompt.trim() ? textPrompt.trim().slice(0, 500) : '';
-        const topicSummary = topicFromPrompt
-          || (brand.brandName ? `Professional content for ${brand.brandName}` : 'Content based on uploaded materials');
-
-        const promptRes = await fetch('/api/build-image-prompts', {
-          method: 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topicSummary,
-            brandData: {
-              brandName: brand.brandName,
-              primaryColor: brand.primaryColor,
-              secondaryColor: brand.secondaryColor,
-              logoBase64: brand.logoBase64,
-              // Pass full brand voice context so image prompts can honour
-              // guidelines + CI document without overriding visual style.
-              brandGuidelines: brand.brandGuidelines,
-              ciDocumentText: brand.ciDocumentText,
-            },
-            selectedStyles: [...imageConfig.selectedStyles],
-            customGuidelines: imageConfig.customGuidelines,
-            customStylePrompt: imageConfig.customStylePrompt,
-            avoidList: imageConfig.avoidList,
-            hasReferenceImage: !!imageConfig.referenceImageBase64,
-          }),
-        });
-        const promptData = await promptRes.json();
-        if (!promptData.success) {
-          setError(prev => prev ? `${prev}\n${promptData.error}` : promptData.error);
-          setIsImageGenerating(false);
-        } else {
-          const totalImages = promptData.prompts.length;
-          const imageResults = [];
-          let completed = 0;
-
-          for (const { style, variant, prompt } of promptData.prompts) {
-            setProgress(prev => ({ ...prev, label: `Generating image ${completed + 1} of ${totalImages} (${style})...` }));
-            try {
-              const res = await fetch('/api/generate-image', {
-                method: 'POST',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  prompt,
-                  logoBase64: brand.logoBase64,
-                  referenceImageBase64: imageConfig.referenceImageBase64,
-                  referenceImageMimeType: imageConfig.referenceImageMimeType,
-                }),
-              });
-              const data = await res.json();
-              imageResults.push({ style, variant, prompt, ...data });
-            } catch (imgErr) {
-              imageResults.push({ style, variant, prompt, success: false, error: imgErr.message });
-            }
-            completed++;
-            setImages([...imageResults]);
-          }
-          setIsImageGenerating(false);
-        }
+        // Delegate to the image hook's orchestration function.
+        // setError is a constructor param to the hook (closure) — not passed here.
+        // We pass only: the shared progress setter, the user's text prompt (for
+        // topic inference), and the pre-derived authHeaders for this run.
+        await generateImages({ setProgress, textPrompt, authHeaders });
       }
 
       setProgress({ current: totalSteps, total: totalSteps, label: 'Done!' });
@@ -256,121 +205,13 @@ export function GenerationProvider({ children }) {
       setError(err.message || 'Network error');
     } finally {
       setIsGenerating(false);
-      setIsImageGenerating(false);
+      // isImageGenerating is managed by useImageGeneration; generateImages
+      // clears it in its own finally block, so no action needed here.
     }
   };
 
   const handleContentUpdate = (platform, newContent) => {
     setContent(prev => ({ ...prev, [platform]: newContent }));
-  };
-
-  const handleRegenerateImage = async (imageIndex, prompt) => {
-    setIsImageRegenerating(true);
-    try {
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          logoBase64: brand.logoBase64,
-          // Keep the reference-image style on regeneration (was being dropped).
-          referenceImageBase64: imageConfig.referenceImageBase64,
-          referenceImageMimeType: imageConfig.referenceImageMimeType,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setImages(prev => prev.map((img, i) =>
-          i === imageIndex ? { ...img, base64: data.base64, mimeType: data.mimeType, prompt, success: true } : img
-        ));
-      } else {
-        setError(`Image regeneration failed: ${data.error}`);
-      }
-    } catch (err) {
-      setError(`Image regeneration error: ${err.message}`);
-    } finally {
-      setIsImageRegenerating(false);
-    }
-  };
-
-  const handleEditImage = async (imageIndex, editInstruction) => {
-    setIsImageRegenerating(true);
-    try {
-      const img = images[imageIndex];
-      const res = await fetch('/api/edit-image', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          originalBase64: img.base64,
-          originalMimeType: img.mimeType,
-          editInstruction,
-          logoBase64: brand.logoBase64,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setImages(prev => prev.map((im, i) =>
-          i === imageIndex ? { ...im, base64: data.base64, mimeType: data.mimeType, success: true } : im
-        ));
-      } else {
-        setError(`Image edit failed: ${data.error}`);
-      }
-    } catch (err) {
-      setError(`Image edit error: ${err.message}`);
-    } finally {
-      setIsImageRegenerating(false);
-    }
-  };
-
-  const handleGenerateVariations = async (imageIndex, basePrompt) => {
-    setIsImageRegenerating(true);
-    try {
-      const sourceImg = images[imageIndex];
-      const variationPrompts = [
-        `${basePrompt}\n\nCreate variation 1: Keep the same overall theme and brand elements but adjust the composition, color balance, and visual details for a fresh take.`,
-        `${basePrompt}\n\nCreate variation 2: Same topic and brand but explore a different visual approach — different layout, different emphasis, different mood within the same style family.`,
-        `${basePrompt}\n\nCreate variation 3: A complementary piece that could sit alongside the original in a series. Same visual language but distinct enough to stand on its own.`,
-      ];
-
-      const newImages = [];
-      for (let i = 0; i < variationPrompts.length; i++) {
-        try {
-          const res = await fetch('/api/generate-image', {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: variationPrompts[i],
-              logoBase64: brand.logoBase64,
-              // Keep the reference-image style across variations too.
-              referenceImageBase64: imageConfig.referenceImageBase64,
-              referenceImageMimeType: imageConfig.referenceImageMimeType,
-            }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            newImages.push({
-              base64: data.base64,
-              mimeType: data.mimeType,
-              prompt: variationPrompts[i],
-              style: sourceImg.style,
-              variant: (images.filter(img => img.style === sourceImg.style).length + i),
-              success: true,
-            });
-          }
-        } catch { /* continue on individual failures */ }
-        if (i < variationPrompts.length - 1) {
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
-
-      if (newImages.length > 0) {
-        setImages(prev => [...prev, ...newImages]);
-      }
-    } catch (err) {
-      setError(`Variation generation error: ${err.message}`);
-    } finally {
-      setIsImageRegenerating(false);
-    }
   };
 
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
