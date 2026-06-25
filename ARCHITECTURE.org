@@ -1,0 +1,71 @@
+#+TITLE: Architecture — ScribeShift
+#+DATE: 2026-06-23
+
+* System Overview
+ScribeShift is a single-repo web app: a Vite + React SPA (=src/=) talking to an
+Express API (=server/=), backed by Supabase (Postgres, Auth, Storage). AI
+content generation runs through Google Gemini. Social publishing and metrics run
+against per-network APIs (Facebook, Instagram, LinkedIn, Twitter) plus Google
+Calendar. Scheduled posting and metric refresh run out-of-band in a background
+worker (=server/worker.js=) and Vercel cron functions (=api/cron/=).
+
+* Tech Stack
+| Layer | Choice | Note |
+|-------|--------|------|
+| Frontend | Vite, React (JSX), Tailwind | =src/=; PostCSS + tailwind.config.js |
+| Backend | Express (Node) | =server/index.js= entry |
+| Background worker | Node | =server/worker.js=; Docker → Cloud Run (DEPLOY-WORKER.md) |
+| Data / Auth / Storage | Supabase (Postgres) | client in =server/config/supabase.js=, =src/lib/supabase.js= |
+| AI generation | Google Gemini (=gemini-2.5-flash=) | =server/services/gemini-client.js=; =x-goog-api-key= header auth |
+| Email | Resend | verified =strideshift.ai= domain; =server/services/email.js= |
+| Serverless / cron | Vercel functions | =api/index.js=, =api/cron/*= |
+| Hosting | Vercel (private repo) | =scribe-shift.vercel.app= / =scribe-shift.strideshift.ai= |
+
+* Backend Layout (=server/=)
+| Dir | Role |
+|-----|------|
+| routes/ | HTTP endpoints (auth, generate, schedule, brands, metrics, planner, admin, per-network OAuth) |
+| services/ | Business logic (generation, social-network APIs, calendar, credits, metrics-sync, encryption, invitations) |
+| config/ | External clients (supabase, gemini, storage, skills) |
+| middleware/ | auth, error-handler |
+| templates/ | email templates |
+
+* External Integrations
+| Integration | Used for | Code |
+|-------------|----------|------|
+| Google Gemini | Content generation, tone detection | server/services/gemini-client.js, services/generation.js |
+| Facebook / Instagram | OAuth + publishing + metrics | routes/*-oauth.js, services/facebook-api.js, instagram-api.js |
+| LinkedIn | OAuth + publishing + metrics | routes/linkedin-oauth.js, services/linkedin-api.js |
+| Twitter/X | OAuth + publishing + metrics | routes/twitter-oauth.js, services/twitter-api.js |
+| Google Calendar | Schedule sync | routes/google-calendar.js, services/google-calendar.js |
+| Resend | Transactional email, invitations | services/email.js, templates/emails.js |
+
+* Cross-Cutting Decisions
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Gemini model | =gemini-2.5-flash= via =x-goog-api-key= header | Latest flash tier; header auth over query param |
+| Scheduled work off the request path | Background worker + Vercel cron | Posting/metrics must run without an open HTTP request |
+| Generation execution path | Two paths: sync (file uploads + fallback) + async worker (canonical for typed/URL jobs) | One shared prompt core; see /Generation Execution Path/ below |
+| Secrets | Env vars only (=.env= local, Vercel dashboard prod) | Repo is private; see CLAUDE.md secret-scanning checklist |
+| Social OAuth token storage | Encrypted at rest (AES-256-GCM) | services/encryption.js — used by the LinkedIn/Facebook/Instagram/Twitter token tables. =google_calendar_tokens= is the exception (plaintext); google-calendar.js does not import encryption.js |
+| "Content Types" naming | UI label only; backend/API + =planner= routes use =pillar= | Display-only rename — see PRODUCT_CONTEXT.org → Intentional Decisions |
+
+* Generation Execution Path
+Generation runs through *two retained paths* that share a single prompt/skill
+core. The dead Supabase edge function (=supabase/functions/generate-content=) and
+the unused =src/hooks/useGenerationJob.js= hook were removed in the T3-A
+consolidation. The remaining open item — flipping all typed/URL jobs onto the
+worker and giving it file ingest — is tracked in DEFERRED.org.
+
+| Path | Entry | Role |
+|------|-------|------|
+| Synchronous | =POST /api/generate= → =server/routes/generate.js= | Retained for *file uploads* and as the *fallback* when enqueue is unreachable |
+| Async worker | =POST /api/generate/enqueue= → =generation_jobs= table → =server/worker.js= (Cloud Run) | Canonical for typed-prompt / URL jobs; =GenerationContext.jsx= enqueues + polls the job row. Long-running jobs avoid the 60s Vercel cap |
+
+Both paths run through ONE shared prompt/generation core:
+=server/config/skills.js= (prompt definitions) → =server/services/generation.js=
+(sole orchestrator) → =server/services/gemini-client.js= (Gemini calls). A prompt
+change is now made in one place.
+
+---
+/Last Updated/: 2026-06-25

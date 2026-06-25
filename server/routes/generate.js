@@ -98,7 +98,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
 // ── POST /api/generate/enqueue ──────────────────────────────────────
 // Queue a background generation job for the Cloud Run worker to pick up.
 // Returns { jobId } immediately; the browser polls generation_jobs (see
-// src/hooks/useGenerationJob.js) and can navigate away. Handles typed prompts +
+// src/components/GenerationContext.jsx) and can navigate away. Handles typed prompts +
 // reference/YouTube URLs (file uploads still use the synchronous route above).
 router.post('/enqueue', verifyToken, async (req, res) => {
   try {
