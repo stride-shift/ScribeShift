@@ -3,6 +3,8 @@ import { useAuth } from './components/AuthProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import LoginPage from './components/LoginPage';
 import ResetPasswordPage from './components/ResetPasswordPage';
+import ReviewActPage from './components/ReviewActPage';
+import ReviewQueue from './components/ReviewQueue';
 import { GenerationProvider, useGeneration } from './components/GenerationContext';
 import CreateView, { SIDEBAR_STEPS } from './components/CreateView';
 import AdminDashboard from './components/AdminDashboard';
@@ -39,6 +41,7 @@ const NAV_VIEWS = [
   { id: 'create', label: 'Create', icon: 'M12 5v14M5 12h14', roles: ['user', 'admin', 'super_admin'] },
   { id: 'history', label: 'History', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'review', label: 'Review', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'planner', label: 'Content Types', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['user', 'admin', 'super_admin'] },
   { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'brands', label: 'Brands', icon: 'M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01', roles: ['user', 'admin', 'super_admin'] },
@@ -300,6 +303,7 @@ function AppShell() {
 
   const renderView = () => {
     switch (activeView) {
+      case 'review': return <ErrorBoundary label="Review"><ReviewQueue /></ErrorBoundary>;
       case 'planner': return <ErrorBoundary label="Content Types"><ContentPillarGraph /></ErrorBoundary>;
       case 'schedule': return <ErrorBoundary label="Schedule"><ScheduleView /></ErrorBoundary>;
       case 'analytics': return <ErrorBoundary label="Analytics"><AnalyticsDashboard /></ErrorBoundary>;
@@ -391,6 +395,10 @@ export default function App() {
         <p>Loading ScribeShift...</p>
       </div>
     );
+  }
+
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/review/act')) {
+    return <ReviewActPage />;
   }
 
   if (!isAuthenticated) {
