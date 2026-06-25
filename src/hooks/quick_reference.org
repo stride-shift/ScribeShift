@@ -1,0 +1,110 @@
+#+TITLE: src/hooks — Quick Reference
+#+DATE: 2026-06-25
+
+* Overview
+Four custom hooks that implement the generation subsystem. =GenerationContext.jsx=
+composes them into a single thin provider and re-exports everything as
+=useGeneration()=. Consumers never import these hooks directly.
+
+* Components
+| Hook | File | Purpose |
+|------|------|---------|
+| =useBrandState= | =useBrandState.js= | Brand identity state, API load/hydration, =localStorage= active-brand |
+| =useTextGeneration= | =useTextGeneration.js= | Text inputs, options, content state, =generateText= phase fn |
+| =useImageGeneration= | =useImageGeneration.js= | Image config/state, interactive image handlers, =generateImages= phase fn |
+| =useGenerationJob= | =useGenerationJob.js= | Async enqueue + Supabase poll lifecycle; =runJob= returns status union |
+
+* Key Patterns
+
+** useGeneration() facade invariant
+The public contract is the =value= object assembled in =GenerationContext.jsx= and
+returned by =useGeneration()=. Its shape is consumed by =App.jsx=,
+=CreateView.jsx=, =OnboardingFlow.jsx=, and =BrandsView.jsx=. Adding, renaming, or
+removing any key from that object requires updating all four consumers. The hooks
+themselves are private implementation detail — only the provider's assembled value
+object is public.
+
+** H1 hoist — brand-level defaults seeded by the provider
+Brand defaults for =audience= and =imageStyles= are applied in a =useEffect= in
+=GenerationContext.jsx= (not inside =useBrandState=). The effect runs when
+=brand.brandName=, =brand.default_audience=, =brand.default_image_styles=, or
+=activeBrandId= changes (covers initial load and brand switch). It reads two
+fields that =useBrandState= must carry through hydration:
+
+| Field | Source | Used for |
+|-------|--------|----------|
+| =brand.default_audience= | =active.default_audience= from =/api/brands= response | Seeds =options.audience= |
+| =brand.default_image_styles= | =active.default_image_styles= from =/api/brands= response | Seeds =imageConfig.selectedStyles= |
+
+Seeding is guarded so user edits are never clobbered:
+- =audience= is only seeded when the current value is still ='general'= (the initial state).
+- =selectedStyles= is only seeded when the user is still on the starter set (=editorial=, =minimal=, =vibrant=). Any other selection is left untouched.
+
+** Phase functions — params threaded from the orchestrator
+=generateText= and =generateImages= are called by =handleGenerate= in the
+provider. Several params they need live in provider scope, not the hooks, so the
+orchestrator threads them in per-call:
+
+| Param | Owner | Passed to |
+|-------|-------|-----------|
+| =setProgress= | Provider state | Both =generateText= and =generateImages= |
+| =authHeaders= | =getAuthHeaders()= (derived once per =handleGenerate= call) | Both |
+| =textTypes= | Derived in =handleGenerate= | =generateText= only |
+| =totalSteps= | Derived in =handleGenerate= | =generateText= only |
+| =textPrompt= | =useTextGeneration= state (but read from provider scope) | =generateImages= only (topic inference) |
+
+=setError= is NOT a per-call param. It is passed as a constructor argument to both
+=useTextGeneration= and =useImageGeneration= at hook initialisation time. The
+hooks close over it for all their internal error paths.
+
+** Early-abort on text failure
+=generateText= returns ={ ok: true }= on success and ={ ok: false }= on any
+failure or timeout. On ={ ok: false }= it has already called =setError= with a
+user-facing message. The provider's =handleGenerate= does:
+
+#+BEGIN_EXAMPLE
+const textResult = await generateText({ ... });
+if (!textResult.ok) return;   // images are skipped
+#+END_EXAMPLE
+
+=isGenerating= is reset to =false= in the provider's =finally= block (not by
+=generateText=). This means even on an early return the finally block fires and
+the UI unblocks correctly.
+
+** useGenerationJob — sole Supabase importer in hooks
+=useGenerationJob= is the only hook that imports from =src/lib/supabase.js=. It
+is called exclusively by =useTextGeneration= (which calls =runJob= for no-file
+jobs). The hook owns NO React state — it exposes a single async function.
+
+=runJob= returns a discriminated union; it never calls =setError= or
+=setIsGenerating= directly. All control flow propagates via the return value so
+the caller (=generateText=) owns those side effects:
+
+| Status | Meaning | Caller action |
+|--------|---------|---------------|
+| ='done'= | Job completed; =content= key holds result | Sets content, continues |
+| ='error'= | Worker reported an error; =error= key holds message | Calls =setError=, returns ={ ok: false }= |
+| ='timeout'= | 6-minute deadline exceeded | Calls =setError=, returns ={ ok: false }= |
+| ='unreachable'= | Enqueue never succeeded (network/server) | Falls back to sync =/api/generate= path |
+
+The 6-minute deadline is a hard-coded constant inside =useGenerationJob=; it is
+not configurable at call time.
+
+* Constraints & Gotchas
+- =useGenerationJob= has no React state (no =useState=). It is a plain function
+  wrapper — safe to call inside an async callback without stale-closure risk.
+- File jobs always bypass the async path. =useTextGeneration= checks =files.length > 0=
+  and skips =runJob= entirely, going straight to =POST /api/generate=.
+- The =useGenerationJob= file was previously absent (a dead no-op was removed in
+  T3-A). The current live file was introduced in T3-C with a different purpose
+  (enqueue + poll). If this file appears missing in the tree, that is a regression.
+- =brand.default_audience= and =brand.default_image_styles= must be present in the
+  hydrated brand object returned by =useBrandState=. If hydration omits them the H1
+  seeding effect silently no-ops (fields are null-guarded), but brand defaults will
+  not apply. Verify the =/api/brands= response includes both fields.
+- =isImageGenerating= is managed entirely inside =useImageGeneration=; the provider
+  does not reset it in its =finally= block. =generateImages= clears it in its own
+  =finally=. Do not add a reset in the provider's finally — it would create a race.
+
+---
+/Last Updated/: 2026-06-25

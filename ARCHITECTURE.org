@@ -53,19 +53,46 @@ worker (=server/worker.js=) and Vercel cron functions (=api/cron/=).
 * Generation Execution Path
 Generation runs through *two retained paths* that share a single prompt/skill
 core. The dead Supabase edge function (=supabase/functions/generate-content=) and
-the unused =src/hooks/useGenerationJob.js= hook were removed in the T3-A
-consolidation. The remaining open item — flipping all typed/URL jobs onto the
+a dead duplicate =src/hooks/useGenerationJob.js= (no-op stub) were removed in the
+T3-A consolidation. T3-C later introduced a new, live =src/hooks/useGenerationJob.js=
+with a different purpose: the async enqueue + poll lifecycle (sole =supabase= importer
+in the hooks layer). The remaining open item — flipping all typed/URL jobs onto the
 worker and giving it file ingest — is tracked in DEFERRED.org.
 
 | Path | Entry | Role |
 |------|-------|------|
 | Synchronous | =POST /api/generate= → =server/routes/generate.js= | Retained for *file uploads* and as the *fallback* when enqueue is unreachable |
-| Async worker | =POST /api/generate/enqueue= → =generation_jobs= table → =server/worker.js= (Cloud Run) | Canonical for typed-prompt / URL jobs; =GenerationContext.jsx= enqueues + polls the job row. Long-running jobs avoid the 60s Vercel cap |
+| Async worker | =POST /api/generate/enqueue= → =generation_jobs= table → =server/worker.js= (Cloud Run) | Canonical for typed-prompt / URL jobs; enqueue + poll driven by =src/hooks/useGenerationJob.js= (via =useTextGeneration=). Long-running jobs avoid the 60s Vercel cap |
 
 Both paths run through ONE shared prompt/generation core:
 =server/config/skills.js= (prompt definitions) → =server/services/generation.js=
 (sole orchestrator) → =server/services/gemini-client.js= (Gemini calls). A prompt
 change is now made in one place.
+
+** Frontend Generation Layer
+
+=src/components/GenerationContext.jsx= is a thin (~167 lines) composition
+provider. It exposes two stable exports consumed by =App.jsx=,
+=CreateView.jsx=, =OnboardingFlow.jsx=, and =BrandsView.jsx=:
+
+| Export | Role |
+|--------|------|
+| =GenerationProvider= | React context provider; wraps the app subtree |
+| =useGeneration()= | Consumer hook — the sole public facade; shape must never change without updating all four consumers |
+
+The provider composes four hooks from =src/hooks/=:
+
+| Hook | File | Responsibility |
+|------|------|----------------|
+| =useBrandState= | =useBrandState.js= | Brand identity state, load/hydration from =/api/brands=, =localStorage= active-brand persistence |
+| =useTextGeneration= | =useTextGeneration.js= | Text inputs, options, content state, =handleContentUpdate=, =generateText(...)= phase fn (returns ={ ok }= for early-abort) |
+| =useImageGeneration= | =useImageGeneration.js= | Image config/state, =handleRegenerateImage=, =handleEditImage=, =handleGenerateVariations=, =generateImages(...)= phase fn |
+| =useGenerationJob= | =useGenerationJob.js= | Async enqueue + poll lifecycle; sole =supabase= importer in the hooks layer; exposes =runJob(...)= returning a status union |
+
+The provider retains: shared run-state (=isGenerating= / =progress= / =error= /
+=resultRef=), the H1 brand-defaulting effect, derived values (=canGenerate= /
+=hasResults= / =pct=), and the =handleGenerate= orchestrator.
+See =src/hooks/quick_reference.org= for non-obvious patterns and invariants.
 
 ---
 /Last Updated/: 2026-06-25

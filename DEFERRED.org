@@ -13,7 +13,7 @@ deferred features and their reactivation paths.
 * Deferred (built but not cut over)
 | Item | Reason for deferral | Trigger to revisit |
 |------|---------------------|--------------------|
-| Full worker-path generation cutover | T3-A landed the two-path end state: prompts are centralized in =server/config/skills.js= → =services/generation.js= → =services/gemini-client.js= (no longer duplicated), and the dead edge function + =useGenerationJob.js= hook are removed. The async path (=POST /api/generate/enqueue= → =generation_jobs= → =server/worker.js= on Cloud Run) is canonical for typed/URL jobs; the synchronous =/api/generate= route is retained for file uploads + as the enqueue-unreachable fallback. *Open preconditions before full cutover:* (a) a worker-health signal so the silent sync fallback can't mask a dead worker; (b) worker file-ingest, since file-upload jobs still hit the synchronous 60s cap (the worker has no file ingest). | Both preconditions met — add worker-health detection and worker-side file ingest; then route file jobs through the worker too. |
+| Full worker-path generation cutover | T3-A landed the two-path end state: prompts are centralized in =server/config/skills.js= → =services/generation.js= → =services/gemini-client.js= (no longer duplicated), and the dead edge function + the old dead-duplicate =useGenerationJob.js= hook are removed (T3-C later added a *new, live* =useGenerationJob.js= for the client enqueue/poll lifecycle — see ARCHITECTURE.org § Frontend Generation Layer). The async path (=POST /api/generate/enqueue= → =generation_jobs= → =server/worker.js= on Cloud Run) is canonical for typed/URL jobs; the synchronous =/api/generate= route is retained for file uploads + as the enqueue-unreachable fallback. *Open preconditions before full cutover:* (a) a worker-health signal so the silent sync fallback can't mask a dead worker; (b) worker file-ingest, since file-upload jobs still hit the synchronous 60s cap (the worker has no file ingest). | Both preconditions met — add worker-health detection and worker-side file ingest; then route file jobs through the worker too. |
 
 * Scheduled for Removal
 | Item | Status | Note |
@@ -24,8 +24,9 @@ deferred features and their reactivation paths.
 - /Resolved (T3-A)./ Which generation path is canonical? The async worker
   (=POST /api/generate/enqueue= → =server/worker.js=) is canonical for typed/URL
   jobs; the synchronous =/api/generate= route is retained for file uploads + as
-  the enqueue-unreachable fallback. The edge function and =useGenerationJob.js=
-  were removed. Remaining work is tracked under /Deferred/ above.
+  the enqueue-unreachable fallback. The edge function and the old dead-duplicate
+  =useGenerationJob.js= were removed (T3-C reintroduced a new, live hook of that
+  name — see ARCHITECTURE.org). Remaining work is tracked under /Deferred/ above.
 
 ---
 /Last Updated/: 2026-06-25
