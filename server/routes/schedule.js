@@ -27,6 +27,9 @@ const scheduleSchema = z.object({
   scheduled_at: z.string().datetime({ message: 'scheduled_at must be a valid ISO datetime' }),
   is_boosted: z.boolean().optional().default(false),
   boost_spend: z.number().positive().optional().nullable(),
+  // IANA timezone (e.g. "Africa/Johannesburg") from the client, so the
+  // confirmation email shows the time in the user's local zone instead of UTC.
+  timezone: z.string().max(64).optional().nullable(),
 });
 
 // Per-platform support for non-image media. Images are universally OK.
@@ -59,7 +62,7 @@ router.post('/', async (req, res) => {
     const {
       content_id, brand_id, platform, post_text,
       post_image_url, post_media_url, post_media_type, post_media_filename,
-      scheduled_at, is_boosted, boost_spend,
+      scheduled_at, is_boosted, boost_spend, timezone,
     } = parsed.data;
 
     // Per-platform media validation
@@ -100,37 +103,42 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ post: data });
 
-    // Side effects (fire-and-forget): create Google Calendar event if user has
-    // it connected, and send a confirmation email. If connected, skip the .ics
-    // attachment since the event is already in their calendar automatically.
-    (async () => {
-      let gcalConnected = false;
-      try {
-        const status = await gcalStatus(req.user.id);
-        if (status?.connected) {
-          gcalConnected = true;
-          const eventId = await gcalCreateEvent(req.user.id, data);
-          if (eventId) {
-            await supabase
-              .from('scheduled_posts')
-              .update({ google_event_id: eventId })
-              .eq('id', data.id);
-            console.log(`[SCHEDULE] Created Google Calendar event ${eventId} for post ${data.id}`);
-          }
+    // Side effects — run BEFORE responding so they actually complete on
+    // serverless (a detached promise can be frozen the instant we respond,
+    // which is why the email/calendar were unreliable). Each is guarded, so a
+    // failure here never stops the post from being scheduled.
+    //   • Google Calendar connected → add the event straight to their calendar
+    //   • not connected → attach an .ics invite to the email instead
+    // Either way the user gets a confirmation email AND a calendar entry for
+    // exactly when the post goes out.
+    let gcalConnected = false;
+    try {
+      const status = await gcalStatus(req.user.id);
+      if (status?.connected) {
+        gcalConnected = true;
+        const eventId = await gcalCreateEvent(req.user.id, data);
+        if (eventId) {
+          await supabase
+            .from('scheduled_posts')
+            .update({ google_event_id: eventId })
+            .eq('id', data.id);
+          console.log(`[SCHEDULE] Created Google Calendar event ${eventId} for post ${data.id}`);
         }
-      } catch (gcalErr) {
-        console.error('[SCHEDULE] Google Calendar event creation failed:', gcalErr.message);
       }
+    } catch (gcalErr) {
+      console.error('[SCHEDULE] Google Calendar event creation failed:', gcalErr.message);
+    }
 
-      try {
-        const toEmail = req.user?.email;
-        if (!toEmail) return;
+    try {
+      const toEmail = req.user?.email;
+      if (toEmail) {
         const { subject, html, attachments: logoAttachments } = scheduleConfirmationEmail({
           platform: data.platform,
           scheduledAt: data.scheduled_at,
           preview: data.post_text,
+          timezone,
+          calendarAttached: !gcalConnected, // .ics attached only when not on Google Calendar
         });
         const allAttachments = [
           ...(logoAttachments || []),
@@ -142,10 +150,12 @@ router.post('/', async (req, res) => {
           html,
           attachments: allAttachments.length ? allAttachments : undefined,
         });
-      } catch (emailErr) {
-        console.error('[SCHEDULE] Confirmation email failed:', emailErr.message);
       }
-    })();
+    } catch (emailErr) {
+      console.error('[SCHEDULE] Confirmation email failed:', emailErr.message);
+    }
+
+    res.json({ post: data });
   } catch (err) {
     res.status(500).json({ error: 'Failed to schedule post' });
   }
@@ -282,11 +292,25 @@ router.post('/:id/post-now', async (req, res) => {
       return res.status(400).json({ error: `Cannot post now: status is '${post.status}'` });
     }
 
-    // Respond immediately, process in background (Playwright takes 10-30s)
-    res.json({ success: true, message: 'Post queued for immediate publishing' });
+    // Publish synchronously: a detached promise can be frozen the instant we
+    // respond on serverless (which is why posts silently never went out), and
+    // awaiting lets us return the real success/failure to the user.
+    await processPost(post);
 
-    processPost(post).catch(err => {
-      console.error(`[POST-NOW] Error processing post ${post.id}:`, err.message);
+    let statusQuery = supabase
+      .from('scheduled_posts')
+      .select('status, error_message, external_post_url')
+      .eq('id', post.id);
+    statusQuery = scopeByRole(req)(statusQuery);
+    const { data: updated } = await statusQuery.single();
+
+    if (updated?.status === 'posted') {
+      return res.json({ success: true, status: 'posted', url: updated.external_post_url || null });
+    }
+    return res.status(502).json({
+      success: false,
+      status: updated?.status || 'unknown',
+      error: updated?.error_message || 'Publishing failed',
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger post' });
@@ -327,12 +351,25 @@ router.post('/:id/retry', async (req, res) => {
       return res.status(500).json({ error: 'Failed to reset post' });
     }
 
-    // Respond immediately, process in background
-    res.json({ success: true, message: 'Post queued for retry' });
-
+    // Publish synchronously (see post-now) so the work finishes before the
+    // serverless function can freeze, and the user gets a real result.
     const refreshedPost = { ...post, status: 'scheduled', error_message: null };
-    processPost(refreshedPost).catch(err => {
-      console.error(`[RETRY] Error processing post ${post.id}:`, err.message);
+    await processPost(refreshedPost);
+
+    let statusQuery = supabase
+      .from('scheduled_posts')
+      .select('status, error_message, external_post_url')
+      .eq('id', post.id);
+    statusQuery = scopeByRole(req)(statusQuery);
+    const { data: updated } = await statusQuery.single();
+
+    if (updated?.status === 'posted') {
+      return res.json({ success: true, status: 'posted', url: updated.external_post_url || null });
+    }
+    return res.status(502).json({
+      success: false,
+      status: updated?.status || 'unknown',
+      error: updated?.error_message || 'Retry failed',
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retry post' });

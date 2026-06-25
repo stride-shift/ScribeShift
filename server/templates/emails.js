@@ -203,25 +203,41 @@ export function passwordResetEmail({ resetUrl, expiresMinutes = 60 }) {
 }
 
 // ── Schedule confirmation ───────────────────────────────────────────
-export function scheduleConfirmationEmail({ platform, scheduledAt, preview }) {
-  const when = new Date(scheduledAt).toLocaleString(undefined, {
+export function scheduleConfirmationEmail({ platform, scheduledAt, preview, timezone, calendarAttached = true }) {
+  // Friendly platform name — works for every platform, not just LinkedIn.
+  const PLATFORM_LABELS = { linkedin: 'LinkedIn', twitter: 'Twitter / X', facebook: 'Facebook', instagram: 'Instagram' };
+  const platformLabel = PLATFORM_LABELS[platform] || platform;
+
+  // Format in the user's timezone if the client sent one — otherwise this runs
+  // on the server (UTC on Vercel) and shows the wrong time (the bug Shanne hit:
+  // 12:35 SAST scheduled, email said 10:35 UTC).
+  const fmtOpts = {
     weekday: 'long', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
-  });
+  };
+  let when;
+  try {
+    when = new Date(scheduledAt).toLocaleString('en-US', { ...fmtOpts, timeZone: timezone || 'UTC' });
+    if (timezone) when += ` (${timezone.split('/').pop().replace(/_/g, ' ')})`;
+  } catch {
+    when = new Date(scheduledAt).toLocaleString('en-US', { ...fmtOpts, timeZone: 'UTC' }) + ' (UTC)';
+  }
   const snippet = (preview || '').slice(0, 280);
   const body = `
     <h1 style="margin:0 0 10px;font-size:24px;font-weight:700;color:${TEXT_PRIMARY};letter-spacing:-0.015em;line-height:1.25;">
       Post scheduled
     </h1>
     <p style="margin:0 0 22px;font-size:15px;color:${TEXT_SECONDARY};">
-      Your <strong style="color:${TEXT_PRIMARY};">${esc(platform)}</strong> post is queued for <strong style="color:${TEXT_PRIMARY};">${esc(when)}</strong>.
+      Your <strong style="color:${TEXT_PRIMARY};">${esc(platformLabel)}</strong> post is queued for <strong style="color:${TEXT_PRIMARY};">${esc(when)}</strong>.
     </p>
     <div style="margin:0 0 22px;padding:18px 20px;background:#f8fafc;border-left:3px solid ${BRAND_COLOR};border-radius:8px;font-size:14px;color:${TEXT_SECONDARY};white-space:pre-wrap;line-height:1.55;">${esc(snippet)}${preview && preview.length > 280 ? '…' : ''}</div>
-    ${infoCallout('A calendar invite is attached — open it to add this post to your calendar.')}
+    ${infoCallout(calendarAttached
+      ? 'A calendar invite is attached — open it to add this post to your calendar.'
+      : 'This post has been added to your Google Calendar.')}
   `;
   return {
     subject: `Post scheduled for ${when}`,
-    html: frame({ preheader: `Your ${platform} post is queued for ${when}`, heroTitle: 'Scheduled', bodyHtml: body }),
+    html: frame({ preheader: `Your ${platformLabel} post is queued for ${when}`, heroTitle: 'Scheduled', bodyHtml: body }),
     attachments: logoAttachment(),
   };
 }
