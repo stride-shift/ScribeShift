@@ -13,7 +13,7 @@ export function useGeneration() {
 }
 
 export function GenerationProvider({ children }) {
-  const { getAuthHeaders, isAuthenticated } = useAuth();
+  const { getAuthHeaders } = useAuth();
 
   // Brand cluster — owned by useBrandState
   const { brand, setBrand, savedBrands, brandsMeta, activeBrandId, setActiveBrandId, loadBrands } = useBrandState();
@@ -26,7 +26,7 @@ export function GenerationProvider({ children }) {
   const {
     imageConfig, setImageConfig,
     images, setImages,
-    isImageGenerating, setIsImageGenerating,
+    isImageGenerating,
     isImageRegenerating,
     handleRegenerateImage,
     handleEditImage,
