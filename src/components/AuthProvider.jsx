@@ -38,6 +38,7 @@ export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [authError, setAuthError] = useState(''); // e.g. invite-only rejection
 
   // Install the 401 interceptor once. On 401, clear session and show message.
   useEffect(() => {
@@ -64,15 +65,22 @@ export default function AuthProvider({ children }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-      } else {
-        // Fallback: basic user info from auth
-        setUser({
-          id: authUser.id,
-          email: authUser.email,
-          role: 'user',
-          full_name: '',
-        });
+        return;
       }
+      if (res.status === 403) {
+        // Invite-only gate: this account isn't provisioned. Sign out and surface
+        // a clear message rather than dropping them into a broken app shell.
+        let msg = "Your account hasn't been invited to ScribeShift. Ask your admin for an invite.";
+        try { const d = await res.json(); if (d?.message) msg = d.message; } catch {}
+        setAuthError(msg);
+        setUser(null);
+        try { await supabase.auth.signOut(); } catch {}
+        setSession(null);
+        return;
+      }
+      // Other failures: fall back to basic info so a transient /me error doesn't
+      // lock a valid session out.
+      setUser({ id: authUser.id, email: authUser.email, role: 'user', full_name: '' });
     } catch {
       setUser({
         id: authUser.id,
@@ -201,6 +209,7 @@ export default function AuthProvider({ children }) {
   };
 
   const clearSessionExpired = () => setSessionExpired(false);
+  const clearAuthError = () => setAuthError('');
 
   const value = {
     session,
@@ -208,6 +217,8 @@ export default function AuthProvider({ children }) {
     loading,
     sessionExpired,
     clearSessionExpired,
+    authError,
+    clearAuthError,
     login,
     signup,
     logout,

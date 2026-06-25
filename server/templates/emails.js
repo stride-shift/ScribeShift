@@ -242,30 +242,27 @@ export function scheduleConfirmationEmail({ platform, scheduledAt, preview, time
   };
 }
 
-// ── Per-post reminder (one email per scheduled post, morning-of) ────
-export function postReminderEmail({ userName, post }) {
-  const firstName = userName ? userName.split(' ')[0] : null;
-  const greeting = firstName ? `Morning, ${esc(firstName)}` : 'Morning';
-  const time = new Date(post.scheduled_at).toLocaleTimeString(undefined, {
-    hour: '2-digit', minute: '2-digit',
-  });
-  const snippet = esc((post.post_text || '').slice(0, 400));
-  const truncated = post.post_text && post.post_text.length > 400;
-
+// ── Invitation ──────────────────────────────────────────────────────
+export function inviteEmail({ inviterName, companyName } = {}) {
+  const who = inviterName ? esc(inviterName) : 'Your team';
+  const where = companyName
+    ? ` to join <strong style="color:${TEXT_PRIMARY};">${esc(companyName)}</strong> on ScribeShift`
+    : ' to ScribeShift';
   const body = `
     <h1 style="margin:0 0 10px;font-size:24px;font-weight:700;color:${TEXT_PRIMARY};letter-spacing:-0.015em;line-height:1.25;">
-      ${greeting} 👋
+      You're invited 🎉
     </h1>
     <p style="margin:0 0 22px;font-size:15px;color:${TEXT_SECONDARY};">
-      Heads up — your <strong style="color:${TEXT_PRIMARY};">${esc(post.platform)}</strong> post is going out today at <strong style="color:${TEXT_PRIMARY};">${esc(time)}</strong>.
+      ${who} has invited you${where} — turn long-form content into ready-to-publish posts, blogs, and newsletters.
     </p>
-    <div style="margin:0 0 22px;padding:18px 20px;background:#f8fafc;border-left:3px solid ${BRAND_COLOR};border-radius:8px;font-size:14px;color:${TEXT_SECONDARY};white-space:pre-wrap;line-height:1.55;">${snippet}${truncated ? '…' : ''}</div>
-    <p style="margin:0 0 22px;font-size:14px;color:${TEXT_SECONDARY};">Want to adjust it? Jump into ScribeShift to edit, reschedule, or cancel.</p>
-    <div>${button(FRONTEND_URL, 'Open ScribeShift')}</div>
+    <p style="margin:0 0 22px;font-size:14px;color:${TEXT_SECONDARY};">
+      Sign in with <strong style="color:${TEXT_PRIMARY};">this email address</strong> (Google, or email + password) to get started.
+    </p>
+    <div>${button(FRONTEND_URL, 'Accept invite & sign in')}</div>
   `;
   return {
-    subject: `Going out today at ${time} — your ${post.platform} post`,
-    html: frame({ preheader: `Your ${post.platform} post is scheduled for ${time} today`, heroTitle: 'Reminder', bodyHtml: body }),
+    subject: "You're invited to ScribeShift",
+    html: frame({ preheader: 'Your ScribeShift invite is ready', heroTitle: 'Invitation', bodyHtml: body }),
     attachments: logoAttachment(),
   };
 }

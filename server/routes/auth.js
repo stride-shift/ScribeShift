@@ -5,6 +5,7 @@ import { supabase } from '../config/supabase.js';
 import { verifyToken, invalidateUserCache } from '../middleware/auth.js';
 import { sendEmail } from '../services/email.js';
 import { passwordResetEmail } from '../templates/emails.js';
+import { findPendingInvite, acceptInvite } from '../services/invitations.js';
 
 const RESET_TOKEN_TTL_MINUTES = 60;
 function hashToken(raw) {
@@ -32,7 +33,17 @@ router.post('/signup', async (req, res) => {
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.errors[0].message });
     }
-    const { email, password, fullName, companyName } = parsed.data;
+    const { email, password, fullName } = parsed.data;
+
+    // Invite-only: self-serve signup requires a pending invitation for this
+    // email. The invite carries the role + company (no self-serve company
+    // creation). Un-invited signups are refused.
+    const invite = await findPendingInvite(email);
+    if (!invite) {
+      return res.status(403).json({ error: 'Signups are invite-only. Ask your admin to send you an invite.' });
+    }
+    const role = invite.role || 'user';
+    const companyId = invite.company_id || null;
 
     // Create auth user in Supabase
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -45,45 +56,22 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: authError.message });
     }
 
-    // Create or find company
-    let companyId = null;
-    if (companyName) {
-      const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const { data: existing } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('slug', slug)
-        .single();
-
-      if (existing) {
-        companyId = existing.id;
-      } else {
-        const { data: newCompany, error: companyError } = await supabase
-          .from('companies')
-          .insert({ name: companyName, slug })
-          .select('id')
-          .single();
-
-        if (companyError) {
-          console.error('[AUTH] Company creation error:', companyError.message);
-        } else {
-          companyId = newCompany.id;
-        }
-      }
-    }
-
-    // Create user profile
+    // Create user profile from the invite
     const { error: profileError } = await supabase.from('users').insert({
       id: authData.user.id,
       email,
       full_name: fullName || '',
-      role: 'user',
+      role,
       company_id: companyId,
     });
 
     if (profileError) {
       console.error('[AUTH] Profile creation error:', profileError.message);
+      try { await supabase.auth.admin.deleteUser(authData.user.id); } catch {}
+      return res.status(400).json({ error: `Failed to create profile: ${profileError.message}` });
     }
+
+    await acceptInvite(invite.id);
 
     // Sign in to get a session
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -100,7 +88,7 @@ router.post('/signup', async (req, res) => {
         id: authData.user.id,
         email,
         full_name: fullName || '',
-        role: 'user',
+        role,
         company_id: companyId,
       },
       session: signInData.session,

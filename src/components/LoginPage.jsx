@@ -3,7 +3,7 @@ import { useAuth } from './AuthProvider';
 import { SignInPage } from './ui/sign-in-flow-1';
 
 export default function LoginPage() {
-  const { login, signup, resetPassword, signInWithGoogle } = useAuth();
+  const { login, signup, resetPassword, signInWithGoogle, authError, clearAuthError } = useAuth();
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,6 +17,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    clearAuthError();
     setLoading(true);
 
     try {
@@ -49,11 +50,13 @@ export default function LoginPage() {
     setMode(m);
     setError('');
     setSuccess('');
+    clearAuthError();
   };
 
   const handleGoogleSignIn = async () => {
     setError('');
     setSuccess('');
+    clearAuthError();
     setLoading(true);
     try {
       await signInWithGoogle();
@@ -71,7 +74,7 @@ export default function LoginPage() {
       password={password}
       fullName={fullName}
       companyName={companyName}
-      error={error}
+      error={error || authError}
       success={success}
       loading={loading}
       onEmailChange={setEmail}

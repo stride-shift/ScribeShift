@@ -15,6 +15,9 @@ export default function AdminDashboard() {
   const [editingCompany, setEditingCompany] = useState(null);
   const [newCompany, setNewCompany] = useState(null);
   const [newUser, setNewUser] = useState(null);
+  const [invitations, setInvitations] = useState([]);
+  const [inviteForm, setInviteForm] = useState({ email: '', role: 'user', company_id: '' });
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [addCreditsTarget, setAddCreditsTarget] = useState(null); // { id, name, amount }
 
   // Usage tab state
@@ -33,12 +36,13 @@ export default function AdminDashboard() {
     setError('');
     try {
       const authHeaders = getAuthHeaders();
-      const [usersRes, usageRes, companiesRes] = await Promise.all([
+      const [usersRes, usageRes, companiesRes, invitesRes] = await Promise.all([
         fetch('/api/admin/users', { headers: authHeaders }),
         fetch('/api/admin/usage', { headers: authHeaders }),
         isSuperAdmin
           ? fetch('/api/admin/companies', { headers: authHeaders })
           : Promise.resolve(null),
+        fetch('/api/admin/invitations', { headers: authHeaders }),
       ]);
 
       const usersData = await usersRes.json();
@@ -51,10 +55,51 @@ export default function AdminDashboard() {
         const companiesData = await companiesRes.json();
         if (companiesData.companies) setCompanies(companiesData.companies);
       }
+
+      if (invitesRes) {
+        const invitesData = await invitesRes.json();
+        if (invitesData.invitations) setInvitations(invitesData.invitations);
+      }
     } catch (err) {
       setError('Failed to load admin data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    const email = inviteForm.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) { setError('Enter a valid email to invite.'); return; }
+    setInviteBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/invitations', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          email,
+          role: inviteForm.role,
+          company_id: inviteForm.company_id || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Failed to send invite'); return; }
+      setInvitations(prev => [data.invitation, ...prev.filter(i => i.id !== data.invitation.id)]);
+      setInviteForm({ email: '', role: 'user', company_id: '' });
+    } catch {
+      setError('Failed to send invite');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleRevokeInvite = async (id) => {
+    try {
+      const res = await fetch(`/api/admin/invitations/${id}`, { method: 'DELETE', headers });
+      if (!res.ok) { const d = await res.json(); setError(d.error || 'Failed to revoke'); return; }
+      setInvitations(prev => prev.filter(i => i.id !== id));
+    } catch {
+      setError('Failed to revoke invite');
     }
   };
 
@@ -333,6 +378,7 @@ export default function AdminDashboard() {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'users', label: 'Users' },
+    { id: 'invitations', label: 'Invitations' },
     ...(isSuperAdmin ? [{ id: 'companies', label: 'Companies' }] : []),
     { id: 'usage', label: 'Usage' },
   ];
@@ -578,6 +624,75 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Invitations Tab */}
+      {tab === 'invitations' && (
+        <div className="admin-section">
+          <div className="admin-section-header">
+            <h2>Invitations</h2>
+          </div>
+          <p className="card-subtitle" style={{ marginTop: 0 }}>
+            Sign-ups are invite-only. Add an email here; they can then sign in with Google or email + password using that address.
+          </p>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', margin: '0.75rem 0 1.25rem' }}>
+            <input
+              type="email"
+              placeholder="person@company.com"
+              value={inviteForm.email}
+              onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleCreateInvite()}
+              style={{ flex: '1 1 240px', minWidth: 200 }}
+              className="admin-input"
+            />
+            <select
+              value={inviteForm.role}
+              onChange={e => setInviteForm(f => ({ ...f, role: e.target.value }))}
+              className="admin-input"
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+              {isSuperAdmin && <option value="super_admin">Super Admin</option>}
+            </select>
+            {isSuperAdmin && (
+              <select
+                value={inviteForm.company_id}
+                onChange={e => setInviteForm(f => ({ ...f, company_id: e.target.value }))}
+                className="admin-input"
+              >
+                <option value="">No company</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+            <button className="btn btn-primary" onClick={handleCreateInvite} disabled={inviteBusy}>
+              {inviteBusy ? 'Sending…' : 'Send invite'}
+            </button>
+          </div>
+
+          {invitations.length === 0 ? (
+            <p className="card-subtitle">No pending invitations.</p>
+          ) : (
+            <table className="admin-table">
+              <thead>
+                <tr><th>Email</th><th>Role</th><th>Company</th><th>Invited</th><th></th></tr>
+              </thead>
+              <tbody>
+                {invitations.map(inv => (
+                  <tr key={inv.id}>
+                    <td>{inv.email}</td>
+                    <td>{inv.role}</td>
+                    <td>{inv.companies?.name || '—'}</td>
+                    <td>{inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="admin-btn-sm" onClick={() => handleRevokeInvite(inv.id)}>Revoke</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}

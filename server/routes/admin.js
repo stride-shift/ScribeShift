@@ -1,11 +1,111 @@
 import { Router } from 'express';
 import { supabase } from '../config/supabase.js';
 import { verifyToken, requireRole, invalidateUserCache } from '../middleware/auth.js';
+import { sendEmail } from '../services/email.js';
+import { inviteEmail } from '../templates/emails.js';
 
 const router = Router();
 
 // All admin routes require authentication
 router.use(verifyToken);
+
+// ── Invitations (invite-only signup) ────────────────────────────────
+// List pending invitations. Admins see only their company's; super_admins all.
+router.get('/invitations', requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    let query = supabase
+      .from('invitations')
+      .select('*, companies(name)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (req.user.role === 'admin') query = query.eq('company_id', req.user.company_id);
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ invitations: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list invitations' });
+  }
+});
+
+// Create (or refresh) an invitation for an email.
+router.post('/invitations', requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'A valid email is required' });
+    }
+    const allowedRoles = ['user', 'admin', 'super_admin'];
+    let role = allowedRoles.includes(req.body?.role) ? req.body.role : 'user';
+    let company_id = req.body?.company_id || null;
+
+    // Admins can only invite into their own company and can't mint super_admins.
+    if (req.user.role === 'admin') {
+      company_id = req.user.company_id;
+      if (role === 'super_admin') role = 'admin';
+    }
+
+    // Already a user? Don't issue an invite.
+    const { data: existingUser } = await supabase
+      .from('users').select('id').ilike('email', email).maybeSingle();
+    if (existingUser) return res.status(409).json({ error: 'That email already has an account.' });
+
+    // Upsert the pending invite (unique on lower(email) where pending).
+    const { data: existing } = await supabase
+      .from('invitations').select('id').eq('status', 'pending').eq('email', email).maybeSingle();
+
+    let invitation;
+    if (existing) {
+      const { data, error } = await supabase
+        .from('invitations')
+        .update({ role, company_id, invited_by: req.user.id })
+        .eq('id', existing.id).select().single();
+      if (error) return res.status(400).json({ error: error.message });
+      invitation = data;
+    } else {
+      const { data, error } = await supabase
+        .from('invitations')
+        .insert({ email, role, company_id, invited_by: req.user.id })
+        .select().single();
+      if (error) return res.status(400).json({ error: error.message });
+      invitation = data;
+    }
+
+    // Best-effort invite email — never block the response on it.
+    try {
+      let companyName = null;
+      if (company_id) {
+        const { data: co } = await supabase.from('companies').select('name').eq('id', company_id).single();
+        companyName = co?.name || null;
+      }
+      const { subject, html, attachments } = inviteEmail({
+        inviterName: req.user.full_name || req.user.email,
+        companyName,
+      });
+      await sendEmail({ to: email, subject, html, attachments });
+    } catch (mailErr) {
+      console.warn('[ADMIN] Invite email failed (invite still created):', mailErr.message);
+    }
+
+    res.json({ invitation });
+  } catch (err) {
+    console.error('[ADMIN] Create invitation error:', err);
+    res.status(500).json({ error: 'Failed to create invitation' });
+  }
+});
+
+// Revoke a pending invitation.
+router.delete('/invitations/:id', requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    let query = supabase
+      .from('invitations').update({ status: 'revoked' }).eq('id', req.params.id);
+    if (req.user.role === 'admin') query = query.eq('company_id', req.user.company_id);
+    const { error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke invitation' });
+  }
+});
 
 // ── GET /api/admin/users ────────────────────────────────────────────
 // Admin: list company users / Super Admin: list all users

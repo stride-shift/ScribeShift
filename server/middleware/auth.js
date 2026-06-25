@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { findPendingInvite, acceptInvite } from '../services/invitations.js';
 
 // ── In-memory user cache (TTL-based) ────────────────────────────────
 const userCache = new Map();
@@ -73,8 +74,19 @@ export async function verifyToken(req, res, next) {
       .eq('id', user.id)
       .single();
 
-    // If no profile exists (e.g. first-time Google OAuth sign-in), create one
+    // If no profile exists (e.g. first-time Google OAuth sign-in), provision one
+    // ONLY if the email was invited. Invite-only: un-invited accounts are
+    // refused here, so no profile is ever created for them.
     if (profileError || !profile) {
+      const invite = await findPendingInvite(user.email);
+      if (!invite) {
+        console.warn(`[AUTH] Blocked un-invited sign-in: ${user.email}`);
+        return res.status(403).json({
+          error: 'not_invited',
+          message: "Your account hasn't been invited to ScribeShift. Ask your admin to send you an invite.",
+        });
+      }
+
       const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
       const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
 
@@ -85,18 +97,20 @@ export async function verifyToken(req, res, next) {
           email: user.email,
           full_name: fullName,
           avatar_url: avatarUrl,
-          role: 'user',
+          role: invite.role || 'user',
+          company_id: invite.company_id || null,
         })
         .select('*, companies(*)')
         .single();
 
       if (insertError || !newProfile) {
-        console.error('[AUTH] Failed to auto-create user profile:', insertError?.message);
+        console.error('[AUTH] Failed to provision invited user profile:', insertError?.message);
         return res.status(401).json({ error: 'User profile not found' });
       }
 
       profile = newProfile;
-      console.log(`[AUTH] Auto-created profile for user ${user.email}`);
+      await acceptInvite(invite.id);
+      console.log(`[AUTH] Provisioned invited user ${user.email} (role ${invite.role || 'user'})`);
     }
 
     if (!profile.is_active) {
