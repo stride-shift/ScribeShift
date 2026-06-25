@@ -1,0 +1,41 @@
+#+TITLE: Product Context — ScribeShift
+#+DATE: 2026-06-23
+
+* Purpose
+Present-state product context. Dormant/deferred features live in DEFERRED.org.
+
+* What It Is
+ScribeShift is an AI-assisted content platform: users define brands and content
+types, generate social/blog/newsletter content with Gemini, preview it per
+network, then schedule and publish to connected accounts (Facebook, Instagram,
+LinkedIn, Twitter) and track post metrics. A credits system meters generation.
+
+* Users & Roles
+| Role | Scope | Can do |
+|------|-------|--------|
+| User | Own brands + content | Generate, schedule, publish, view analytics |
+| Admin | Org-wide | Admin dashboard, invitations, credit management |
+
+(Refine once role boundaries are confirmed against =server/middleware/auth.js= and
+=routes/admin.js=.)
+
+* Feature Lifecycle
+| Feature | Status | Note |
+|---------|--------|------|
+| Content generation (Gemini) | Active | Live via =POST /api/generate=; execution path in transition — see ARCHITECTURE.org → Generation Execution Path and DEFERRED.org |
+| Multi-network scheduling/publishing | Active | server/services/scheduler.js, worker.js |
+| Metrics sync | Active | services/metrics-sync.js, api/cron/refresh-metrics.js |
+| Credits | Active | services/credits.js |
+| Guided tour | Active | src/components/tour/ |
+
+* Intentional Decisions (do not re-flag)
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| "Content Types" label | UI says "Content Types"; backend/API keys still use =pillar= | Display-only rename — do NOT rename backend =pillar= keys |
+| Repo visibility | Private on GitHub | Source, prompts, business logic must not be world-readable |
+| Sender email | =no-reply@strideshift.ai= via Resend | Verified domain |
+| OAuth state replay window | Stateless signed-JWT OAuth =state= (=services/oauth-state.js=) is accepted as replayable within its ~10-min expiry | Serverless CSRF trade-off: the JWT signature still prevents forgery (no valid token without the secret) and the short expiry bounds replay; one-time =jti= tracking would need a distributed store and is deferred. Do NOT re-flag the missing single-use consumption. (A cosmetic rename =consumeState=→=verifyState= is a deferred follow-up.) |
+| =super_admin= cross-company visibility | =super_admin= (platform operator) intentionally sees ALL companies' data/metrics; =admin= is org-scoped; =user= is own-scoped | Metrics endpoints (=routes/metrics.js=) leaving =super_admin= unscoped is intentional, not a leak — do NOT re-flag (audit T-sec XT-4 false positive). |
+
+---
+/Last Updated/: 2026-06-25

@@ -10,7 +10,12 @@ const router = Router();
 router.post('/check-posts', (req, res) => checkPostsHandler(req, res));
 
 // Diagnostic: which LinkedIn API version is this deploy actually sending?
+// Protected with the same CRON_SECRET bearer used by /check-posts.
 router.get('/diag', (req, res) => {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || req.headers.authorization !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   res.json({
     linkedin_version: process.env.LINKEDIN_API_VERSION || '202505',
     node_version: process.version,

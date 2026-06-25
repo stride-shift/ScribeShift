@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
+import { supabase } from '../config/supabase.js';
 import {
   getAuthorizationUrl,
   consumeState,
@@ -47,6 +48,13 @@ router.get('/callback', async (req, res) => {
     return res.redirect(`${frontendUrl}/?twitter_error=${encodeURIComponent('Invalid or expired state. Please try again.')}`);
   }
 
+  // OA-3: verify user still exists before writing tokens
+  const { data: userRow, error: userErr } = await supabase
+    .from('users').select('id').eq('id', stateData.userId).single();
+  if (userErr || !userRow) {
+    return res.redirect(`${frontendUrl}/?twitter_error=${encodeURIComponent('User not found')}`);
+  }
+
   try {
     const tokens = await exchangeCodeForTokens(code, stateData.codeVerifier);
     const profile = await getUserProfile(tokens.accessToken);
@@ -55,8 +63,9 @@ router.get('/callback', async (req, res) => {
     console.log(`[TWITTER-OAUTH] Connected as: @${profile.username} (${profile.name})`);
     res.redirect(`${frontendUrl}/?twitter_success=true&twitter_name=${encodeURIComponent(profile.name)}`);
   } catch (err) {
-    console.error('[TWITTER-OAUTH] Callback error:', err.message);
-    res.redirect(`${frontendUrl}/?twitter_error=${encodeURIComponent(err.message)}`);
+    console.error('[TWITTER-OAUTH] callback error:', err.message);
+    const msg = process.env.NODE_ENV === 'production' ? 'Connection failed' : err.message;
+    res.redirect(`${frontendUrl}/?twitter_error=${encodeURIComponent(msg)}`);
   }
 });
 

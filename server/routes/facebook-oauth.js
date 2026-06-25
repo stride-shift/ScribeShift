@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
+import { supabase } from '../config/supabase.js';
 import {
   getAuthorizationUrl,
   consumeState,
@@ -49,6 +50,13 @@ router.get('/callback', async (req, res) => {
     return res.redirect(`${frontendUrl}/?facebook_error=${encodeURIComponent('Invalid or expired state. Please try again.')}`);
   }
 
+  // OA-3: verify user still exists before writing tokens
+  const { data: userRow, error: userErr } = await supabase
+    .from('users').select('id').eq('id', stateData.userId).single();
+  if (userErr || !userRow) {
+    return res.redirect(`${frontendUrl}/?facebook_error=${encodeURIComponent('User not found')}`);
+  }
+
   try {
     // Get short-lived user token, then exchange for long-lived
     const shortTokens = await exchangeCodeForTokens(code);
@@ -83,8 +91,9 @@ router.get('/callback', async (req, res) => {
 
     res.redirect(`${frontendUrl}/?facebook_select_page=${encodeURIComponent(selectionToken)}`);
   } catch (err) {
-    console.error('[FACEBOOK-OAUTH] Callback error:', err.message);
-    res.redirect(`${frontendUrl}/?facebook_error=${encodeURIComponent(err.message)}`);
+    console.error('[FACEBOOK-OAUTH] callback error:', err.message);
+    const msg = process.env.NODE_ENV === 'production' ? 'Connection failed' : err.message;
+    res.redirect(`${frontendUrl}/?facebook_error=${encodeURIComponent(msg)}`);
   }
 });
 

@@ -96,7 +96,8 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
     });
   } catch (err) {
     console.error('[MEDIA] Upload failed:', err.message);
-    res.status(500).json({ error: err.message });
+    const errMsg = process.env.NODE_ENV === 'production' ? 'Upload failed. Please try again.' : err.message;
+    res.status(500).json({ error: errMsg });
   } finally {
     await fs.unlink(tmpPath).catch(() => {});
   }

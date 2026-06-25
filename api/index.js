@@ -4,10 +4,10 @@ try {
 } catch (err) {
   // If server fails to load, return the actual error as JSON
   app = (req, res) => {
+    const isDev = process.env.NODE_ENV !== 'production';
     res.status(500).json({
       error: 'Server failed to start',
-      message: err.message,
-      stack: err.stack?.split('\n').slice(0, 5),
+      ...(isDev && { message: err.message, stack: err.stack?.split('\n').slice(0, 5) }),
     });
   };
 }

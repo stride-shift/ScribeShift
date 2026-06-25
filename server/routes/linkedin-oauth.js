@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth.js';
+import { supabase } from '../config/supabase.js';
 import {
   getAuthorizationUrl,
   consumeState,
@@ -55,6 +56,13 @@ router.get('/callback', async (req, res) => {
     return res.redirect(`${frontendUrl}/?linkedin_error=${encodeURIComponent('Invalid or expired state. Please try again.')}`);
   }
 
+  // OA-3: verify user still exists before writing tokens
+  const { data: userRow, error: userErr } = await supabase
+    .from('users').select('id').eq('id', stateData.userId).single();
+  if (userErr || !userRow) {
+    return res.redirect(`${frontendUrl}/?linkedin_error=${encodeURIComponent('User not found')}`);
+  }
+
   try {
     // Exchange code for tokens
     console.log(`[LINKEDIN-OAUTH] Exchanging code for tokens (user: ${stateData.userId})...`);
@@ -72,8 +80,9 @@ router.get('/callback', async (req, res) => {
     // Redirect to frontend with success
     res.redirect(`${frontendUrl}/?linkedin_success=true&linkedin_name=${encodeURIComponent(profile.name)}`);
   } catch (err) {
-    console.error(`[LINKEDIN-OAUTH] Callback error:`, err.message);
-    res.redirect(`${frontendUrl}/?linkedin_error=${encodeURIComponent(err.message)}`);
+    console.error('[LINKEDIN-OAUTH] callback error:', err.message);
+    const msg = process.env.NODE_ENV === 'production' ? 'Connection failed' : err.message;
+    res.redirect(`${frontendUrl}/?linkedin_error=${encodeURIComponent(msg)}`);
   }
 });
 

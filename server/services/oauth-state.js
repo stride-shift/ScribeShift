@@ -17,7 +17,7 @@ const SECRET = process.env.OAUTH_STATE_SECRET || process.env.CREDENTIAL_ENCRYPTI
 const EXPIRY = '10m';
 
 if (!SECRET) {
-  console.error('[OAUTH-STATE] No signing secret — set OAUTH_STATE_SECRET or CREDENTIAL_ENCRYPTION_KEY');
+  throw new Error('[OAUTH-STATE] No signing secret configured — set OAUTH_STATE_SECRET or CREDENTIAL_ENCRYPTION_KEY');
 }
 
 /**
@@ -31,7 +31,7 @@ export function createState(payload) {
 }
 
 /**
- * Verify and decode a state token.
+ * Verify and decode a state token. Returns null if invalid or expired.
  * @param {string} state
  * @returns {{ userId: string, companyId: string, codeVerifier?: string } | null}
  */
