@@ -13,6 +13,7 @@ import {
   getConnectionStatus as gcalStatus,
 } from '../services/google-calendar.js';
 import { createApprovalToken } from '../services/approval-token.js';
+import { getValidAccessToken } from '../services/linkedin-api.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL?.split(',')[0]?.trim() || 'https://scribe-shift.vercel.app';
 
@@ -33,6 +34,14 @@ const scheduleSchema = z.object({
   // IANA timezone (e.g. "Africa/Johannesburg") from the client, so the
   // confirmation email shows the time in the user's local zone instead of UTC.
   timezone: z.string().max(64).optional().nullable(),
+  // Multi-target LinkedIn publishing (Wave 2). One item per destination.
+  // Max 5 targets enforced here and in the scheduler (cap 5 safety net).
+  // target_type 'person' with no target_urn → resolved from the user's OAuth token.
+  linkedin_targets: z.array(z.object({
+    target_type: z.enum(['person', 'organization']),
+    target_urn: z.string().optional(),
+    target_label: z.string().optional(),
+  })).max(5).optional(),
 });
 
 // Per-platform support for non-image media. Images are universally OK.
@@ -66,6 +75,7 @@ router.post('/', async (req, res) => {
       content_id, brand_id, platform, post_text,
       post_image_url, post_media_url, post_media_type, post_media_filename,
       scheduled_at, is_boosted, boost_spend, timezone,
+      linkedin_targets,
     } = parsed.data;
 
     // Per-platform media validation
@@ -106,6 +116,56 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
+
+    // ── Insert multi-target rows for LinkedIn (Wave 2) ───────────────────────
+    // Only when the caller explicitly supplies linkedin_targets (platform=linkedin).
+    // Absent → no target rows → scheduler uses the legacy single-publish path.
+    // Targets are created even when the approval gate is on — they won't be
+    // published until the parent is approved and set back to status='scheduled'.
+    if (platform === 'linkedin' && linkedin_targets && linkedin_targets.length > 0) {
+      try {
+        // Resolve person URN for 'person' targets that omit target_urn
+        let resolvedPersonUrn = null;
+        const needsPersonUrn = linkedin_targets.some(
+          t => t.target_type === 'person' && !t.target_urn
+        );
+        if (needsPersonUrn) {
+          try {
+            const tokenData = await getValidAccessToken(req.user.id);
+            if (tokenData?.personId) {
+              resolvedPersonUrn = `urn:li:person:${tokenData.personId}`;
+            }
+          } catch (tokenErr) {
+            console.warn('[SCHEDULE] Could not resolve person URN for target:', tokenErr.message);
+          }
+        }
+
+        const targetRows = linkedin_targets.map(t => ({
+          scheduled_post_id: data.id,
+          company_id: req.user.company_id || null,
+          target_type: t.target_type,
+          target_urn: t.target_urn || (t.target_type === 'person' ? resolvedPersonUrn : null),
+          target_label: t.target_label || null,
+          status: 'pending',
+        }));
+
+        // Drop any target that ended up with no URN (e.g. person URN could not be resolved)
+        const validTargets = targetRows.filter(t => t.target_urn);
+        if (validTargets.length > 0) {
+          const { error: tErr } = await supabase
+            .from('scheduled_post_targets')
+            .insert(validTargets);
+          if (tErr) {
+            console.warn('[SCHEDULE] Failed to insert targets:', tErr.message);
+          } else {
+            console.log(`[SCHEDULE] Inserted ${validTargets.length} target(s) for post ${data.id}`);
+          }
+        }
+      } catch (targetErr) {
+        // Non-fatal: post was created; log and continue
+        console.warn('[SCHEDULE] Target insertion error (post still scheduled):', targetErr.message);
+      }
+    }
 
     // ── Approval workflow hook ───────────────────────────────────────────────
     // Check if this company has the approval workflow enabled. If so:
@@ -420,11 +480,11 @@ router.post('/:id/retry', async (req, res) => {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    if (post.status !== 'failed') {
-      return res.status(400).json({ error: `Can only retry failed posts (current status: '${post.status}')` });
+    if (!['failed', 'partial_failure'].includes(post.status)) {
+      return res.status(400).json({ error: `Can only retry failed or partial_failure posts (current status: '${post.status}')` });
     }
 
-    // Reset to scheduled and clear error
+    // Reset parent to scheduled and clear error
     const { error: updateError } = await supabase
       .from('scheduled_posts')
       .update({
@@ -436,6 +496,18 @@ router.post('/:id/retry', async (req, res) => {
 
     if (updateError) {
       return res.status(500).json({ error: 'Failed to reset post' });
+    }
+
+    // Reset ONLY failed target rows to 'pending' — never re-publish already-posted
+    // targets. This is the retry-failed-only guarantee for multi-target posts.
+    try {
+      await supabase
+        .from('scheduled_post_targets')
+        .update({ status: 'pending', error_message: null, updated_at: new Date().toISOString() })
+        .eq('scheduled_post_id', post.id)
+        .eq('status', 'failed');
+    } catch (targetResetErr) {
+      console.warn('[SCHEDULE] Failed to reset failed targets (continuing):', targetResetErr.message);
     }
 
     // Publish synchronously (see post-now) so the work finishes before the
@@ -452,6 +524,15 @@ router.post('/:id/retry', async (req, res) => {
 
     if (updated?.status === 'posted') {
       return res.json({ success: true, status: 'posted', url: updated.external_post_url || null });
+    }
+    // partial_failure = some targets posted, some failed; inform the caller
+    if (updated?.status === 'partial_failure') {
+      return res.status(207).json({
+        success: false,
+        status: 'partial_failure',
+        url: updated.external_post_url || null,
+        error: updated?.error_message || 'Some targets failed to publish',
+      });
     }
     return res.status(502).json({
       success: false,

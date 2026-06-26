@@ -271,7 +271,10 @@ export async function getValidAccessToken(userId) {
 }
 
 // ── Upload image to LinkedIn ─────────────────────────────────────────
-async function uploadImageToLinkedIn(accessToken, personId, imageData) {
+// ownerUrn must equal the post author URN (LinkedIn REST requirement: the image
+// asset owner must be the same entity that publishes it). For personal posts this
+// is urn:li:person:{personId}; for Page posts this is urn:li:organization:{orgId}.
+async function uploadImageToLinkedIn(accessToken, ownerUrn, imageData) {
   // Step 1: Initialize upload
   const initRes = await fetch(`${LINKEDIN_API_BASE}/rest/images?action=initializeUpload`, {
     method: 'POST',
@@ -283,7 +286,7 @@ async function uploadImageToLinkedIn(accessToken, personId, imageData) {
     },
     body: JSON.stringify({
       initializeUploadRequest: {
-        owner: `urn:li:person:${personId}`,
+        owner: ownerUrn,
       },
     }),
   });
@@ -328,7 +331,11 @@ async function loadImageData(imageSource) {
 }
 
 // ── Create a LinkedIn post via API ───────────────────────────────────
-export async function createLinkedInPostViaAPI(userId, text, imageSource = null) {
+// targetUrn (optional): when provided, overrides the author to post as an org
+// (urn:li:organization:{id}) instead of the user's personal profile. The image
+// upload owner is set to the same URN so it matches the post author — LinkedIn
+// requires the asset owner and the post author to be the same entity.
+export async function createLinkedInPostViaAPI(userId, text, imageSource = null, targetUrn = null) {
   const tokenData = await getValidAccessToken(userId);
   if (!tokenData) {
     return {
@@ -338,12 +345,14 @@ export async function createLinkedInPostViaAPI(userId, text, imageSource = null)
   }
 
   const { accessToken, personId } = tokenData;
-  const author = `urn:li:person:${personId}`;
+  // When a targetUrn is supplied (org Page post) use it as the author;
+  // otherwise default to the user's personal profile URN (legacy path).
+  const author = targetUrn || `urn:li:person:${personId}`;
 
-  console.log(`[LINKEDIN-API] Creating post for user ${userId} (person: ${personId})...`);
+  console.log(`[LINKEDIN-API] Creating post for user ${userId} (author: ${author})...`);
 
   try {
-    // Build post body
+    // Build post body — structure is identical for personal and org posts
     const postBody = {
       author,
       commentary: text,
@@ -356,12 +365,14 @@ export async function createLinkedInPostViaAPI(userId, text, imageSource = null)
       lifecycleState: 'PUBLISHED',
     };
 
-    // Handle image upload if provided
+    // Handle image upload if provided.
+    // ownerUrn = author so the asset owner matches the post author (LinkedIn REST
+    // requirement: image owner must equal the publishing entity).
     if (imageSource) {
       try {
         const imageData = await loadImageData(imageSource);
         if (imageData) {
-          const imageUrn = await uploadImageToLinkedIn(accessToken, personId, imageData);
+          const imageUrn = await uploadImageToLinkedIn(accessToken, author, imageData);
           postBody.content = {
             media: { id: imageUrn },
           };
