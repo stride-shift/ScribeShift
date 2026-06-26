@@ -10,9 +10,11 @@ const LINKEDIN_AUTH_URL = 'https://www.linkedin.com/oauth/v2/authorization';
 const LINKEDIN_TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken';
 const LINKEDIN_API_BASE = 'https://api.linkedin.com';
 // LinkedIn Versioned API — format YYYYMM. LinkedIn keeps each version active
-// for ~12 months before EOL. '202401' was rejected 2026-04 with
-// NONEXISTENT_VERSION. Bump this roughly annually; set via env to override.
-const LINKEDIN_VERSION = process.env.LINKEDIN_API_VERSION || '202505';
+// for ~12 months before EOL, then rejects it with 426 NONEXISTENT_VERSION.
+// History: '202401' died 2026-04; '202505' died ~2026-06 (Shanne's failed post).
+// Keep this within the last ~12 months — bump it from the LinkedIn dev portal
+// when posts start failing with 426. Override via the LINKEDIN_API_VERSION env.
+const LINKEDIN_VERSION = process.env.LINKEDIN_API_VERSION || '202605';
 
 // Scopes needed: OpenID profile + post on behalf of user
 const SCOPES = 'openid profile email w_member_social';
@@ -70,7 +72,7 @@ export async function exchangeCodeForTokens(code) {
 }
 
 // ── Refresh an expired access token ──────────────────────────────────
-export async function refreshAccessToken(refreshToken) {
+async function refreshAccessToken(refreshToken) {
   const res = await fetch(LINKEDIN_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -170,7 +172,7 @@ export async function storeTokens(userId, companyId, tokens, profile) {
 }
 
 // ── Load and decrypt tokens for a user ──────────────────────────────
-export async function loadTokens(userId) {
+async function loadTokens(userId) {
   const { data, error } = await supabase
     .from('social_oauth_tokens')
     .select('*')
@@ -450,4 +452,4 @@ export async function disconnectLinkedIn(userId) {
   return { success: true };
 }
 
-export { LINKEDIN_CLIENT_ID, LINKEDIN_REDIRECT_URI };
+export { LINKEDIN_CLIENT_ID };
