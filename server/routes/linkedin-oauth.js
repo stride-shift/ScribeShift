@@ -9,6 +9,8 @@ import {
   storeTokens,
   getConnectionStatus,
   disconnectLinkedIn,
+  fetchAdminOrganizations,
+  getAdminPages,
   LINKEDIN_CLIENT_ID,
 } from '../services/linkedin-api.js';
 
@@ -77,6 +79,18 @@ router.get('/callback', async (req, res) => {
     await storeTokens(stateData.userId, stateData.companyId, tokens, profile);
     console.log(`[LINKEDIN-OAUTH] Tokens stored successfully for user ${stateData.userId}`);
 
+    // Best-effort: sync admin Pages — failure must not block the connect flow
+    try {
+      const { pages, error: pagesErr } = await fetchAdminOrganizations(stateData.userId);
+      if (pagesErr) {
+        console.warn(`[LINKEDIN-OAUTH] fetchAdminOrganizations warning (non-fatal): ${pagesErr}`);
+      } else {
+        console.log(`[LINKEDIN-OAUTH] Synced ${pages.length} admin Page(s) for user ${stateData.userId}`);
+      }
+    } catch (pagesEx) {
+      console.warn(`[LINKEDIN-OAUTH] fetchAdminOrganizations threw (non-fatal):`, pagesEx.message);
+    }
+
     // Redirect to frontend with success
     res.redirect(`${frontendUrl}/?linkedin_success=true&linkedin_name=${encodeURIComponent(profile.name)}`);
   } catch (err) {
@@ -93,6 +107,17 @@ router.get('/status', verifyToken, async (req, res) => {
     res.json(status);
   } catch (err) {
     console.error('[LINKEDIN-OAUTH] Status error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/auth/linkedin/pages — List admin Pages for the user ──────
+router.get('/pages', verifyToken, async (req, res) => {
+  try {
+    const pages = await getAdminPages(req.user.id);
+    res.json({ pages });
+  } catch (err) {
+    console.error('[LINKEDIN-OAUTH] Pages error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

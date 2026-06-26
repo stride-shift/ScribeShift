@@ -394,6 +394,22 @@ export default function ConnectedAccounts() {
                               </span>
                             )}
                           </div>
+                          {/* Reconnect prompt for existing users who connected before org scopes were added */}
+                          {p.id === 'linkedin' && !status.isExpired && status.orgScopesGranted === false && (
+                            <div className="credential-status" style={{ marginTop: 6 }}>
+                              <span className="credential-status-fail">
+                                Reconnect to enable company Page posting
+                              </span>
+                              <button
+                                className="btn btn-primary admin-btn-sm"
+                                style={{ marginLeft: 8 }}
+                                onClick={() => handleConnect(p)}
+                                disabled={connecting === p.id}
+                              >
+                                {connecting === p.id ? 'Connecting...' : 'Reconnect'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="credential-card-actions">

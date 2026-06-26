@@ -16,8 +16,8 @@ const LINKEDIN_API_BASE = 'https://api.linkedin.com';
 // when posts start failing with 426. Override via the LINKEDIN_API_VERSION env.
 const LINKEDIN_VERSION = process.env.LINKEDIN_API_VERSION || '202605';
 
-// Scopes needed: OpenID profile + post on behalf of user
-const SCOPES = 'openid profile email w_member_social';
+// Scopes needed: OpenID profile + post on behalf of user + org/Page posting
+const SCOPES = 'openid profile email w_member_social w_organization_social r_organization_social rw_organization_admin';
 
 // ── Generate OAuth authorization URL ─────────────────────────────────
 export function getAuthorizationUrl(userId, companyId) {
@@ -205,6 +205,8 @@ async function loadTokens(userId) {
     expiresAt: data.token_expires_at ? new Date(data.token_expires_at) : null,
     personId: data.platform_user_id,
     personName: data.platform_user_name,
+    scope: data.scope || '',
+    companyId: data.company_id || null,
   };
 }
 
@@ -429,6 +431,11 @@ export async function getConnectionStatus(userId) {
 
   const isExpired = tokens.expiresAt && tokens.expiresAt.getTime() < Date.now();
   const hasRefresh = !!tokens.refreshToken;
+  // True only when the stored scope string includes the org-posting scope
+  // introduced in Wave 1. Missing means the user connected before we added
+  // org scopes and must reconnect to grant them.
+  const orgScopesGranted = typeof tokens.scope === 'string' &&
+    tokens.scope.includes('w_organization_social');
 
   return {
     connected: true,
@@ -437,6 +444,7 @@ export async function getConnectionStatus(userId) {
     expiresAt: tokens.expiresAt?.toISOString(),
     isExpired,
     canRefresh: hasRefresh,
+    orgScopesGranted,
   };
 }
 
@@ -450,6 +458,165 @@ export async function disconnectLinkedIn(userId) {
 
   if (error) throw new Error(`Failed to disconnect: ${error.message}`);
   return { success: true };
+}
+
+// ── Fetch LinkedIn org/Page ACLs and sync into linkedin_pages ────────
+// Called after OAuth connect and can be called on-demand to refresh.
+// Resilient: catches LinkedIn API errors and always returns { pages, error? }.
+export async function fetchAdminOrganizations(userId) {
+  try {
+    const tokenData = await getValidAccessToken(userId);
+    if (!tokenData) return { pages: [], error: 'not connected' };
+
+    const { accessToken } = tokenData;
+
+    // Also need the oauth_token row id + company_id for FK columns
+    const { data: tokenRow } = await supabase
+      .from('social_oauth_tokens')
+      .select('id, company_id')
+      .eq('user_id', userId)
+      .eq('platform', 'linkedin')
+      .eq('is_active', true)
+      .single();
+
+    const oauthTokenId = tokenRow?.id || null;
+    const companyId    = tokenRow?.company_id || null;
+
+    const liHeaders = {
+      'Authorization': `Bearer ${accessToken}`,
+      'LinkedIn-Version': LINKEDIN_VERSION,
+      'X-Restli-Protocol-Version': '2.0.0',
+    };
+
+    // Fetch orgs this user administers
+    let aclElements = [];
+    try {
+      const aclRes = await fetch(
+        `${LINKEDIN_API_BASE}/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED`,
+        { headers: liHeaders }
+      );
+      if (aclRes.ok) {
+        const aclData = await aclRes.json();
+        aclElements = aclData.elements || [];
+      } else {
+        const errText = await aclRes.text();
+        console.warn(`[LINKEDIN-API] organizationAcls returned ${aclRes.status}: ${errText.substring(0, 200)}`);
+      }
+    } catch (aclErr) {
+      console.warn(`[LINKEDIN-API] organizationAcls fetch error:`, aclErr.message);
+    }
+
+    if (aclElements.length === 0) {
+      return { pages: [] };
+    }
+
+    const pages = [];
+    const returnedUrns = new Set();
+
+    for (const el of aclElements) {
+      const orgUrn = el.organizationalTarget;   // urn:li:organization:12345
+      if (!orgUrn) continue;
+
+      const numericMatch = orgUrn.match(/\d+$/);
+      if (!numericMatch) continue;
+      const orgId = numericMatch[0];
+
+      returnedUrns.add(orgUrn);
+
+      // Fetch org detail for name + logo (best-effort)
+      let name = null;
+      let logoUrl = null;
+      try {
+        const orgRes = await fetch(
+          `${LINKEDIN_API_BASE}/rest/organizations/${orgId}`,
+          { headers: liHeaders }
+        );
+        if (orgRes.ok) {
+          const orgData = await orgRes.json();
+          name = orgData.localizedName || orgData.name || null;
+          // Logo is nested inside logoV2 → original → elements[0] → identifiers[0] → identifier
+          const logoOrig = orgData.logoV2?.original;
+          if (logoOrig) {
+            logoUrl = typeof logoOrig === 'string' ? logoOrig : null;
+          }
+        } else {
+          console.warn(`[LINKEDIN-API] org detail ${orgId} returned ${orgRes.status}`);
+        }
+      } catch (orgErr) {
+        console.warn(`[LINKEDIN-API] org detail fetch error for ${orgId}:`, orgErr.message);
+      }
+
+      const row = {
+        oauth_token_id: oauthTokenId,
+        user_id:        userId,
+        company_id:     companyId,
+        org_urn:        orgUrn,
+        org_id:         orgId,
+        name,
+        logo_url:       logoUrl,
+        role:           el.role || 'ADMINISTRATOR',
+        is_active:      true,
+        last_synced_at: new Date().toISOString(),
+        updated_at:     new Date().toISOString(),
+      };
+
+      const { error: upsertErr } = await supabase
+        .from('linkedin_pages')
+        .upsert(row, { onConflict: 'user_id,org_urn' });
+
+      if (upsertErr) {
+        console.warn(`[LINKEDIN-API] upsert linkedin_pages for ${orgUrn}:`, upsertErr.message);
+      } else {
+        pages.push(row);
+      }
+    }
+
+    // Best-effort: mark pages no longer returned as inactive
+    try {
+      const { data: existing } = await supabase
+        .from('linkedin_pages')
+        .select('id, org_urn')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+
+      if (existing) {
+        const staleIds = existing
+          .filter(r => !returnedUrns.has(r.org_urn))
+          .map(r => r.id);
+
+        if (staleIds.length > 0) {
+          await supabase
+            .from('linkedin_pages')
+            .update({ is_active: false, updated_at: new Date().toISOString() })
+            .in('id', staleIds);
+        }
+      }
+    } catch (staleErr) {
+      console.warn(`[LINKEDIN-API] stale page mark error:`, staleErr.message);
+    }
+
+    return { pages };
+  } catch (err) {
+    console.error(`[LINKEDIN-API] fetchAdminOrganizations error:`, err.message);
+    return { pages: [], error: err.message };
+  }
+}
+
+// ── Read active admin Pages for a user from the DB ───────────────────
+export async function getAdminPages(userId) {
+  const { data, error } = await supabase
+    .from('linkedin_pages')
+    .select('id, org_urn, org_id, name, logo_url, role, last_synced_at')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.error(`[LINKEDIN-API] getAdminPages error:`, error.message);
+    return [];
+  }
+
+  return data || [];
 }
 
 export { LINKEDIN_CLIENT_ID };
