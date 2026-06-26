@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { PostPreview } from './SchedulePreviews';
 
+const MAX_LINKEDIN_TARGETS = 5;
+
 const PLATFORMS = [
   { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>, charLimit: 3000 },
   { key: 'twitter', label: 'Twitter / X', color: '#1DA1F2', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>, charLimit: 280 },
@@ -43,6 +45,50 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
   const [connectedAccounts, setConnectedAccounts] = useState({});
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // LinkedIn multi-target state
+  const [linkedInPages, setLinkedInPages] = useState([]); // admin Pages
+  const [linkedInOrgScopesGranted, setLinkedInOrgScopesGranted] = useState(null); // null = unknown
+  const [linkedInPersonName, setLinkedInPersonName] = useState('');
+  // Selected LinkedIn destinations: Set of target IDs.
+  // 'person' is the personal profile sentinel; org IDs are page.id values.
+  // Default: personal profile selected. Edit path also defaults to personal (v1 — prior targets not rehydrated).
+  const [selectedLinkedInTargets, setSelectedLinkedInTargets] = useState(() => new Set(['person']));
+  const pagesFetchedRef = useRef(false); // guard: fetch at most once per modal open
+
+  // Fetch LinkedIn pages + org scope flag once LinkedIn becomes the active / selected platform.
+  // Guard with pagesFetchedRef so we don't refetch on every render or selectedPlatforms change.
+  useEffect(() => {
+    const isLinkedInSelected = selectedPlatforms.has('linkedin');
+    if (!isLinkedInSelected || pagesFetchedRef.current) return;
+    pagesFetchedRef.current = true;
+
+    const fetchLinkedInDestinations = async () => {
+      const headers = getAuthHeaders();
+      try {
+        // Fetch status to get personName + orgScopesGranted (may already be in connectedAccounts
+        // but orgScopesGranted is not guaranteed to be there yet, so re-fetch to be safe).
+        const statusRes = await fetch('/api/auth/linkedin/status', { headers });
+        const statusData = statusRes.ok ? await statusRes.json() : {};
+        setLinkedInPersonName(statusData.personName || '');
+        const orgScopes = statusData.orgScopesGranted !== false; // treat missing as true
+        setLinkedInOrgScopesGranted(orgScopes);
+
+        if (orgScopes) {
+          const pagesRes = await fetch('/api/auth/linkedin/pages', { headers });
+          if (pagesRes.ok) {
+            const pagesData = await pagesRes.json();
+            setLinkedInPages(pagesData.pages || []);
+          }
+        }
+      } catch {
+        // Non-fatal — personal profile posting still works
+        setLinkedInOrgScopesGranted(false);
+      }
+    };
+
+    fetchLinkedInDestinations();
+  }, [selectedPlatforms]); // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState('');
   const [previewPlatform, setPreviewPlatform] = useState(null);
   const mediaInputRef = useRef(null);
@@ -105,6 +151,33 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     }
     setSelectedPlatforms(next);
     if (!next.has(previewPlatform)) setPreviewPlatform([...next][0]);
+  };
+
+  // Toggle a LinkedIn destination (personal profile or a Page).
+  // At least 1 must remain selected; max MAX_LINKEDIN_TARGETS can be selected.
+  const toggleLinkedInTarget = (id) => {
+    const next = new Set(selectedLinkedInTargets);
+    if (next.has(id)) {
+      if (next.size > 1) next.delete(id); // enforce min 1
+    } else {
+      if (next.size < MAX_LINKEDIN_TARGETS) next.add(id);
+      // If already at max, silently ignore — checkbox is disabled so this path won't normally fire
+    }
+    setSelectedLinkedInTargets(next);
+  };
+
+  // Build the linkedin_targets array from the current selection, given pages data + personName.
+  const buildLinkedInTargets = () => {
+    const targets = [];
+    if (selectedLinkedInTargets.has('person')) {
+      targets.push({ target_type: 'person', target_label: linkedInPersonName || 'Personal profile' });
+    }
+    for (const page of linkedInPages) {
+      if (selectedLinkedInTargets.has(page.id)) {
+        targets.push({ target_type: 'organization', target_urn: page.org_urn, target_label: page.name });
+      }
+    }
+    return targets;
   };
 
   const handleMediaSelect = async (e) => {
@@ -182,16 +255,21 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
 
     try {
       if (editingPost) {
+        // Build edit body; add linkedin_targets only when the platform is LinkedIn.
+        const editBody = {
+          post_text: postText,
+          scheduled_at: new Date(scheduledAt).toISOString(),
+          platform: platforms[0],
+          ...mediaPayload,
+          is_boosted: editingPost.is_boosted,
+          boost_spend: editingPost.boost_spend,
+        };
+        if (platforms[0] === 'linkedin') {
+          editBody.linkedin_targets = buildLinkedInTargets();
+        }
         const res = await fetch(`/api/schedule/${editingPost.id}`, {
           method: 'PUT', headers,
-          body: JSON.stringify({
-            post_text: postText,
-            scheduled_at: new Date(scheduledAt).toISOString(),
-            platform: platforms[0],
-            ...mediaPayload,
-            is_boosted: editingPost.is_boosted,
-            boost_spend: editingPost.boost_spend,
-          }),
+          body: JSON.stringify(editBody),
         });
         if (!res.ok) { const data = await res.json(); setError(data.error || 'Failed to update'); setSubmitting(false); return; }
         onCreated?.();
@@ -204,6 +282,10 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
             ...mediaPayload,
             is_boosted: false,
           };
+          // Add linkedin_targets only for LinkedIn; leave body unchanged for other platforms.
+          if (platform === 'linkedin') {
+            payload.linkedin_targets = buildLinkedInTargets();
+          }
           const res = await fetch('/api/schedule', {
             method: 'POST', headers,
             body: JSON.stringify(payload),
@@ -323,6 +405,93 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 {loadingAccounts && <div className="spm-loading-accounts">Checking accounts...</div>}
               </div>
             </div>
+
+            {/* LinkedIn destination picker — shown only when LinkedIn is selected and connected */}
+            {selectedPlatforms.has('linkedin') && connectedAccounts.linkedin?.connected && !connectedAccounts.linkedin?.isExpired && (
+              <div className="spm-section">
+                <label className="spm-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  Post to (LinkedIn)
+                  {selectedLinkedInTargets.size >= MAX_LINKEDIN_TARGETS && (
+                    <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px' }}>
+                      Max {MAX_LINKEDIN_TARGETS} selected
+                    </span>
+                  )}
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* Personal profile row — always shown */}
+                  <label
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer',
+                      background: selectedLinkedInTargets.has('person') ? 'color-mix(in srgb, #0A66C2 8%, var(--bg-raised))' : 'var(--bg-raised)',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedLinkedInTargets.has('person')}
+                      onChange={() => toggleLinkedInTarget('person')}
+                      style={{ accentColor: '#0A66C2', width: 15, height: 15, flexShrink: 0 }}
+                    />
+                    <span style={{ width: 28, height: 28, borderRadius: '50%', background: '#0A66C2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
+                      {linkedInPersonName || 'Personal profile'}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>Personal</span>
+                  </label>
+
+                  {/* Reconnect hint if org scopes missing */}
+                  {linkedInOrgScopesGranted === false && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 12px', background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      Reconnect LinkedIn to post to company Pages.
+                    </div>
+                  )}
+
+                  {/* Page rows — shown only when org scopes are granted and pages exist */}
+                  {linkedInOrgScopesGranted !== false && linkedInPages.map(page => {
+                    const isChecked = selectedLinkedInTargets.has(page.id);
+                    const atMax = selectedLinkedInTargets.size >= MAX_LINKEDIN_TARGETS && !isChecked;
+                    return (
+                      <label
+                        key={page.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                          borderRadius: 8, border: '1px solid var(--border)', cursor: atMax ? 'not-allowed' : 'pointer',
+                          background: isChecked ? 'color-mix(in srgb, #0A66C2 8%, var(--bg-raised))' : 'var(--bg-raised)',
+                          opacity: atMax ? 0.55 : 1,
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleLinkedInTarget(page.id)}
+                          disabled={atMax}
+                          style={{ accentColor: '#0A66C2', width: 15, height: 15, flexShrink: 0 }}
+                        />
+                        {page.logo_url ? (
+                          <img
+                            src={page.logo_url}
+                            alt={page.name}
+                            style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }}
+                          />
+                        ) : (
+                          <span style={{ width: 28, height: 28, borderRadius: 6, background: '#0A66C215', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                          </span>
+                        )}
+                        <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {page.name}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>Page</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Post content */}
             <div className="spm-section">

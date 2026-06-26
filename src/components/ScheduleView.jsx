@@ -204,7 +204,19 @@ export default function ScheduleView() {
       const res = await fetch(`/api/schedule/${id}/retry`, { method: 'POST', headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) {
-        setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'posting', error_message: null } : p));
+        if (data.status === 'partial_failure') {
+          // HTTP 207: some targets still failed — update row to partial_failure with error
+          setPosts(prev => prev.map(p => p.id === id
+            ? { ...p, status: 'partial_failure', error_message: data.error || p.error_message, external_post_url: data.url || p.external_post_url, scheduled_post_targets: undefined }
+            : p));
+          // Reload the full post list so per-destination breakdown reflects the retry result
+          loadPosts();
+        } else {
+          // HTTP 200 full success
+          setPosts(prev => prev.map(p => p.id === id
+            ? { ...p, status: data.status || 'posted', error_message: null, external_post_url: data.url || p.external_post_url }
+            : p));
+        }
       } else {
         setError(data.error || 'Failed to retry post');
       }
@@ -357,7 +369,7 @@ export default function ScheduleView() {
   }, [posts]);
 
   const statusColor = (status) => ({
-    scheduled: '#3b82f6', posting: '#0da2e7', posted: '#22c55e', failed: '#ef4444',
+    scheduled: '#3b82f6', posting: '#0da2e7', posted: '#22c55e', failed: '#ef4444', partial_failure: '#f59e0b',
   }[status] || '#94a3b8');
 
   const statusIcon = (status) => {
@@ -366,8 +378,52 @@ export default function ScheduleView() {
       case 'posting': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
       case 'posted': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>;
       case 'failed': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+      case 'partial_failure': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
       default: return null;
     }
+  };
+
+  /* ─── Per-destination breakdown for multi-target LinkedIn posts ─── */
+  const renderTargetBreakdown = (post) => {
+    const targets = post.scheduled_post_targets;
+    if (!targets || targets.length === 0) return null;
+    return (
+      <div className="mt-2 mb-1 border border-[var(--border)] rounded-md overflow-hidden text-[12px]">
+        <div className="px-3 py-1.5 bg-[var(--bg-raised)] border-b border-[var(--border)] font-medium text-[var(--text-secondary)] uppercase tracking-wide text-[10px]">
+          Destinations ({targets.length})
+        </div>
+        <div className="divide-y divide-[var(--border)]">
+          {targets.map((t, i) => {
+            const label = t.target_label || (t.target_type === 'company' ? 'Company Page' : t.target_type === 'personal' ? 'Personal Profile' : t.target_type || 'Unknown');
+            const tColor = statusColor(t.status);
+            return (
+              <div key={i} className="flex items-start gap-2 px-3 py-2 bg-[var(--bg-card)]">
+                <span style={{ color: tColor, flexShrink: 0, marginTop: '1px' }}>{statusIcon(t.status)}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-[var(--text)]">{label}</span>
+                  {t.status === 'posted' && t.external_post_url && (
+                    <a
+                      href={t.external_post_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-[var(--primary)] underline underline-offset-2 hover:opacity-80"
+                    >
+                      View
+                    </a>
+                  )}
+                  {t.status === 'failed' && t.error_message && (
+                    <span className="ml-2 text-[var(--danger)] truncate">{t.error_message}</span>
+                  )}
+                </div>
+                <span className="text-[10px] font-semibold uppercase" style={{ color: tColor, flexShrink: 0 }}>
+                  {t.status === 'partial_failure' ? 'Partial' : t.status}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   /* ─── Reusable: render a single calendar cell ─── */
@@ -713,7 +769,7 @@ export default function ScheduleView() {
                           <div key={post.id} className="sched-detail__post">
                             <div className="sched-detail__post-meta">
                               <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
-                                {statusIcon(post.status)} {post.status}
+                                {statusIcon(post.status)} {post.status === 'partial_failure' ? 'Partial failure' : post.status}
                               </span>
                               <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
                               <span className="text-[var(--text-secondary)]">{formatTime(post.scheduled_at)}</span>
@@ -723,6 +779,10 @@ export default function ScheduleView() {
                             {post.status === 'failed' && post.error_message && (
                               <div className="text-[12px] text-[var(--danger)] mb-2">{post.error_message}</div>
                             )}
+                            {post.status === 'partial_failure' && post.error_message && (
+                              <div className="text-[12px] text-[#f59e0b] mb-2">{post.error_message}</div>
+                            )}
+                            {renderTargetBreakdown(post)}
                             <div className="flex gap-2 flex-wrap">
                               {post.status === 'scheduled' && (
                                 <>
@@ -731,7 +791,7 @@ export default function ScheduleView() {
                                   <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
                                 </>
                               )}
-                              {post.status === 'failed' && (
+                              {(post.status === 'failed' || post.status === 'partial_failure') && (
                                 <>
                                   <button className="sched-action-btn" onClick={() => handleRetry(post.id)}>Retry</button>
                                   <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
@@ -765,7 +825,7 @@ export default function ScheduleView() {
                           <div key={post.id} className="border border-[var(--border)] rounded-lg p-4 bg-[var(--bg-raised)]">
                             <div className="flex items-center gap-2 flex-wrap mb-2 text-[13px]">
                               <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
-                                {statusIcon(post.status)} {post.status}
+                                {statusIcon(post.status)} {post.status === 'partial_failure' ? 'Partial failure' : post.status}
                               </span>
                               <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
                               <span className="text-[var(--text-secondary)]">{formatDate(post.scheduled_at)}</span>
@@ -774,6 +834,8 @@ export default function ScheduleView() {
                             <p className="text-[14px] text-[var(--text)] whitespace-pre-wrap mb-3">{post.post_text}</p>
                             {post.users && <div className="text-[12px] text-[var(--text-secondary)] mb-2">By {post.users.full_name || post.users.email}</div>}
                             {post.status === 'failed' && post.error_message && <div className="text-[12px] text-[var(--danger)] mb-2">{post.error_message}</div>}
+                            {post.status === 'partial_failure' && post.error_message && <div className="text-[12px] text-[#f59e0b] mb-2">{post.error_message}</div>}
+                            {renderTargetBreakdown(post)}
                             <div className="flex gap-2 flex-wrap">
                               {post.status === 'scheduled' && (
                                 <>
@@ -782,7 +844,7 @@ export default function ScheduleView() {
                                   <button className="sched-action-btn sched-action-btn--danger" onClick={() => handleDelete(post.id)}>Delete</button>
                                 </>
                               )}
-                              {post.status === 'failed' && (
+                              {(post.status === 'failed' || post.status === 'partial_failure') && (
                                 <>
                                   <button className="sched-action-btn" onClick={() => handleRetry(post.id)}>Retry</button>
                                   <button className="sched-action-btn" onClick={() => openEditModal({ ...post })}>Edit</button>
