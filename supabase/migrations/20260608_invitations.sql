@@ -18,4 +18,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS invitations_pending_email ON invitations (lowe
 CREATE INDEX IF NOT EXISTS invitations_email_idx ON invitations (lower(email));
 
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Service role full access" ON invitations FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Service role full access" ON invitations;
+CREATE POLICY "Service role full access" ON invitations
+  FOR ALL TO service_role USING (true) WITH CHECK (true);

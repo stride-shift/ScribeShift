@@ -21,4 +21,6 @@ CREATE INDEX IF NOT EXISTS linkedin_pages_user_id_idx ON linkedin_pages (user_id
 CREATE UNIQUE INDEX IF NOT EXISTS linkedin_pages_user_org_urn_uidx ON linkedin_pages (user_id, org_urn);
 
 ALTER TABLE linkedin_pages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Service role full access" ON linkedin_pages FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Service role full access" ON linkedin_pages;
+CREATE POLICY "Service role full access" ON linkedin_pages
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
