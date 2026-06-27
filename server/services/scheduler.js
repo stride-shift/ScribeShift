@@ -86,6 +86,7 @@ const MAX_RETRIES = 3;
 // Delays must sum (plus API wall time) to well under Vercel's 60s function
 // cap. Previously [0, 30s, 120s] blew past it and left posts stuck in 'posting'.
 const RETRY_DELAYS = [0, 5_000, 15_000]; // immediate, 5s, 15s
+const OVERDUE_THRESHOLD_MS = 15 * 60 * 1000; // 15 min past scheduled_at (still 'scheduled') ⇒ overdue
 
 /**
  * Attempt to publish a post via the official API for the platform.
@@ -432,6 +433,29 @@ async function recoverStalePosts() {
           .eq('id', target.id);
       }
     }
+
+    // ── Overdue post detection ─────────────────────────────────────────────────
+    // FLAG: posts still 'scheduled' more than 15 min past their scheduled_at,
+    // not yet marked overdue. Does NOT change status — post remains claimable.
+    const nowIso = new Date().toISOString();
+    const overdueThreshold = new Date(Date.now() - OVERDUE_THRESHOLD_MS).toISOString();
+    const { data: flagged } = await supabase
+      .from('scheduled_posts')
+      .update({ overdue_since: nowIso })
+      .eq('status', 'scheduled')
+      .lt('scheduled_at', overdueThreshold)
+      .is('overdue_since', null)
+      .select('id');
+    if (flagged?.length) console.log(`[SCHEDULER] Flagged ${flagged.length} overdue post(s)`);
+
+    // CLEAR: posts that were flagged but have been rescheduled to the future
+    // (scheduled_at now >= now means they are no longer overdue).
+    await supabase
+      .from('scheduled_posts')
+      .update({ overdue_since: null })
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', nowIso)
+      .not('overdue_since', 'is', null);
   } catch (err) {
     console.error('[SCHEDULER] Error recovering stale posts:', err.message);
   }
