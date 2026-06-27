@@ -46,6 +46,42 @@ async function getLinkedInApi() {
   return linkedinApiService;
 }
 
+/**
+ * Resolve the image URL the scheduler should use when publishing a post to a
+ * specific platform.
+ *
+ * Resolution order:
+ *   1. caption_only → null (never attaches an image, regardless of stored URLs)
+ *   2. post_image_variants row for (post.id, platform) → its storage_url
+ *      (Layer A: same as base; Layer B: per-format rendered variant)
+ *   3. Fallback → post.post_image_url (base image; covers legacy posts, posts
+ *      approved before this feature shipped, and any variant-write failure)
+ *
+ * For multi-target LinkedIn (processLinkedInTargets): all targets share the
+ * ONE 'linkedin' variant — resolveImageUrl is called with platform='linkedin'
+ * once per post, not once per target. This is intentional: the variant is keyed
+ * on (scheduled_post_id, platform), not on the target URN.
+ *
+ * @param {object} post      A scheduled_posts row (needs .id, .image_mode, .post_image_url)
+ * @param {string} platform  The publishing platform (linkedin|twitter|facebook|instagram)
+ * @returns {Promise<string|null>}
+ */
+async function resolveImageUrl(post, platform) {
+  if (post.image_mode === 'caption_only') return null;
+
+  const { data: variant } = await supabase
+    .from('post_image_variants')
+    .select('storage_url')
+    .eq('scheduled_post_id', post.id)
+    .eq('platform', platform)
+    .maybeSingle();
+
+  if (variant?.storage_url) return variant.storage_url;
+
+  // Fallback: base image URL (legacy posts / no variant written yet)
+  return post.post_image_url || null;
+}
+
 const MAX_RETRIES = 3;
 // Delays must sum (plus API wall time) to well under Vercel's 60s function
 // cap. Previously [0, 30s, 120s] blew past it and left posts stuck in 'posting'.
@@ -56,10 +92,10 @@ const RETRY_DELAYS = [0, 5_000, 15_000]; // immediate, 5s, 15s
  * Returns { success, postUrl?, message }.
  */
 async function attemptPost(post) {
-  // Belt-and-suspenders: caption_only posts must never attach an image even if
-  // post_image_url is somehow set. For all other modes (including 'auto' and
-  // undefined) the resolved URL is unchanged — legacy behaviour is preserved.
-  const effectiveImageUrl = post.image_mode === 'caption_only' ? null : post.post_image_url;
+  // Resolve the image URL for this post's platform: checks post_image_variants
+  // first (Layer A: same as base; Layer B: per-format variant), then falls back
+  // to post.post_image_url for legacy / no-variant posts. caption_only → null.
+  const effectiveImageUrl = await resolveImageUrl(post, post.platform);
 
   const apiHandlers = {
     linkedin: async () => {
@@ -103,9 +139,11 @@ async function attemptLinkedInTarget(post, targetUrn) {
   const api = await getLinkedInApi();
   if (!api) return { success: false, message: 'LinkedIn API service not available' };
 
-  // Same caption_only guard as attemptPost: a caption-only post never attaches an
-  // image, even on the multi-target path. All other modes keep legacy behaviour.
-  const effectiveImageUrl = post.image_mode === 'caption_only' ? null : post.post_image_url;
+  // Resolve the 'linkedin' variant URL (or fallback to base). caption_only → null.
+  // All targets for this post share the ONE 'linkedin' variant: the variant is
+  // keyed on (scheduled_post_id, 'linkedin'), not on the individual target URN.
+  // This is intentional — all targets receive the same platform-formatted image.
+  const effectiveImageUrl = await resolveImageUrl(post, 'linkedin');
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {

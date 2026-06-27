@@ -28,6 +28,7 @@ import { rateLimit } from 'express-rate-limit';
 import { supabase } from '../config/supabase.js';
 import { verifyToken, scopeByRole } from '../middleware/auth.js';
 import { verifyApprovalToken } from '../services/approval-token.js';
+import { finalizeDimensions } from '../services/image-finalizer.js';
 
 const router = Router();
 
@@ -137,10 +138,10 @@ router.post('/act', actLimiter, async (req, res) => {
   }
 
   try {
-    // Load current post state
+    // Load current post state (include image fields for finalizeDimensions)
     const { data: post, error: postErr } = await supabase
       .from('scheduled_posts')
-      .select('id, review_status, status, company_id')
+      .select('id, review_status, status, company_id, platform, image_mode, post_image_url')
       .eq('id', payload.postId)
       .eq('company_id', payload.companyId)
       .single();
@@ -161,6 +162,12 @@ router.post('/act', actLimiter, async (req, res) => {
     const now = new Date().toISOString();
 
     if (action === 'approve') {
+      // Materialise per-platform image variants. Belt-and-suspenders: even though
+      // finalizeDimensions is itself failure-isolated, wrap the call so the approval
+      // flip below ALWAYS proceeds regardless of any (future) error in finalize.
+      try { await finalizeDimensions(post); }
+      catch (finErr) { console.error('[REVIEW] finalizeDimensions failed (approval continues):', finErr.message); }
+
       // GATE FLIP: status='draft' → 'scheduled', cron can now see this post
       const { error: updateErr } = await supabase
         .from('scheduled_posts')
@@ -246,13 +253,20 @@ router.get('/:id', async (req, res) => {
 router.put('/:id/approve', async (req, res) => {
   try {
     // Scope-check: ensure the caller can access this post
+    // (include image fields so finalizeDimensions has what it needs)
     let fetchQuery = supabase
       .from('scheduled_posts')
-      .select('id, review_status, status')
+      .select('id, review_status, status, company_id, platform, image_mode, post_image_url')
       .eq('id', req.params.id);
     fetchQuery = scopeByRole(req)(fetchQuery);
     const { data: post, error: fetchErr } = await fetchQuery.single();
     if (fetchErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    // Materialise per-platform image variants. Belt-and-suspenders: even though
+    // finalizeDimensions is itself failure-isolated, wrap the call so the approval
+    // flip below ALWAYS proceeds regardless of any (future) error in finalize.
+    try { await finalizeDimensions(post); }
+    catch (finErr) { console.error('[REVIEW] finalizeDimensions failed (approval continues):', finErr.message); }
 
     const now = new Date().toISOString();
     const { data, error } = await supabase
