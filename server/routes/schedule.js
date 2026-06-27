@@ -42,6 +42,8 @@ const scheduleSchema = z.object({
     target_urn: z.string().optional(),
     target_label: z.string().optional(),
   })).max(5).optional(),
+  // Per-post image intent. 'auto' = legacy media-presence-driven (default).
+  image_mode: z.enum(['auto', 'generated', 'uploaded', 'caption_only']).default('auto').optional(),
 });
 
 // Per-platform support for non-image media. Images are universally OK.
@@ -75,7 +77,7 @@ router.post('/', async (req, res) => {
       content_id, brand_id, platform, post_text,
       post_image_url, post_media_url, post_media_type, post_media_filename,
       scheduled_at, is_boosted, boost_spend, timezone,
-      linkedin_targets,
+      linkedin_targets, image_mode,
     } = parsed.data;
 
     // Per-platform media validation
@@ -106,6 +108,7 @@ router.post('/', async (req, res) => {
         post_media_url: post_media_url || post_image_url || null,
         post_media_type: post_media_type || (post_image_url ? 'image' : null),
         post_media_filename: post_media_filename || null,
+        image_mode: image_mode || 'auto',
         scheduled_at,
         status: 'scheduled',
         utm_params,
@@ -360,7 +363,7 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const updates = {};
-    const allowed = ['post_text', 'post_image_url', 'post_media_url', 'post_media_type', 'post_media_filename', 'scheduled_at', 'platform', 'is_boosted', 'boost_spend'];
+    const allowed = ['post_text', 'post_image_url', 'post_media_url', 'post_media_type', 'post_media_filename', 'image_mode', 'scheduled_at', 'platform', 'is_boosted', 'boost_spend'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }

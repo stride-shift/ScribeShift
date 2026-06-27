@@ -56,26 +56,31 @@ const RETRY_DELAYS = [0, 5_000, 15_000]; // immediate, 5s, 15s
  * Returns { success, postUrl?, message }.
  */
 async function attemptPost(post) {
+  // Belt-and-suspenders: caption_only posts must never attach an image even if
+  // post_image_url is somehow set. For all other modes (including 'auto' and
+  // undefined) the resolved URL is unchanged — legacy behaviour is preserved.
+  const effectiveImageUrl = post.image_mode === 'caption_only' ? null : post.post_image_url;
+
   const apiHandlers = {
     linkedin: async () => {
       const api = await getLinkedInApi();
       if (!api) return { success: false, message: 'LinkedIn API service not available' };
-      return api.createLinkedInPostViaAPI(post.user_id, post.post_text, post.post_image_url);
+      return api.createLinkedInPostViaAPI(post.user_id, post.post_text, effectiveImageUrl);
     },
     twitter: async () => {
       const api = await getTwitterApi();
       if (!api) return { success: false, message: 'Twitter API service not available' };
-      return api.createTwitterPost(post.user_id, post.post_text, post.post_image_url);
+      return api.createTwitterPost(post.user_id, post.post_text, effectiveImageUrl);
     },
     facebook: async () => {
       const api = await getFacebookApi();
       if (!api) return { success: false, message: 'Facebook API service not available' };
-      return api.createFacebookPost(post.user_id, post.post_text, post.post_image_url);
+      return api.createFacebookPost(post.user_id, post.post_text, effectiveImageUrl);
     },
     instagram: async () => {
       const api = await getInstagramApi();
       if (!api) return { success: false, message: 'Instagram API service not available' };
-      return api.createInstagramPost(post.user_id, post.post_text, post.post_image_url);
+      return api.createInstagramPost(post.user_id, post.post_text, effectiveImageUrl);
     },
   };
 
@@ -98,6 +103,10 @@ async function attemptLinkedInTarget(post, targetUrn) {
   const api = await getLinkedInApi();
   if (!api) return { success: false, message: 'LinkedIn API service not available' };
 
+  // Same caption_only guard as attemptPost: a caption-only post never attaches an
+  // image, even on the multi-target path. All other modes keep legacy behaviour.
+  const effectiveImageUrl = post.image_mode === 'caption_only' ? null : post.post_image_url;
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       const delay = RETRY_DELAYS[attempt] || 120_000;
@@ -107,7 +116,7 @@ async function attemptLinkedInTarget(post, targetUrn) {
 
     let result;
     try {
-      result = await api.createLinkedInPostViaAPI(post.user_id, post.post_text, post.post_image_url, targetUrn);
+      result = await api.createLinkedInPostViaAPI(post.user_id, post.post_text, effectiveImageUrl, targetUrn);
     } catch (err) {
       const isFinal = attempt === MAX_RETRIES - 1;
       if (isFinal) return { success: false, message: `Failed after ${MAX_RETRIES} attempts: ${err.message}` };
