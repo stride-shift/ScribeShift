@@ -9,10 +9,19 @@ import { RailPanel, EmptyPanel } from './ui/empty-panel';
 const STATUS_FILTERS = [
   { value: '', label: 'All Status' },
   { value: 'scheduled', label: 'Scheduled' },
+  { value: 'overdue', label: 'Overdue' },
   { value: 'posting', label: 'Posting' },
   { value: 'posted', label: 'Posted' },
   { value: 'failed', label: 'Failed' },
 ];
+
+// A post is overdue when it is still 'scheduled' but the scheduler has set
+// overdue_since (meaning >15 min past its scheduled_at).
+const isOverdue = (p) => p.status === 'scheduled' && p.overdue_since != null;
+
+// Compute the effective display status — 'overdue' is a display-layer overlay
+// over 'scheduled'; it is not a DB value. Use this for badge color/icon/label.
+const displayStatus = (p) => isOverdue(p) ? 'overdue' : p.status;
 
 const PLATFORM_COLORS = {
   linkedin: '#0A66C2',
@@ -114,7 +123,10 @@ export default function ScheduleView() {
     setError('');
     try {
       const params = new URLSearchParams();
-      if (statusFilter) params.set('status', statusFilter);
+      // 'overdue' is a client-side display filter — NOT a DB status value.
+      // When it's active, fetch all scheduled posts so we can narrow client-side.
+      if (statusFilter && statusFilter !== 'overdue') params.set('status', statusFilter);
+      else if (statusFilter === 'overdue') params.set('status', 'scheduled');
       const res = await fetch(`/api/schedule?${params}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Failed to load posts'); return; }
@@ -331,7 +343,13 @@ export default function ScheduleView() {
     return `${startMonth} ${currentWeekStart.getDate()} – ${endMonth} ${end.getDate()}, ${end.getFullYear()}`;
   })();
 
-  const displayPosts = platformFilter ? posts.filter(p => p.platform === platformFilter) : posts;
+  // When the overdue filter is active, narrow client-side (API already returned
+  // only 'scheduled' posts — we further filter to those with overdue_since set).
+  const displayPosts = (() => {
+    let ps = platformFilter ? posts.filter(p => p.platform === platformFilter) : posts;
+    if (statusFilter === 'overdue') ps = ps.filter(isOverdue);
+    return ps;
+  })();
   const groupedPosts = displayPosts.reduce((acc, post) => {
     const date = new Date(post.scheduled_at).toLocaleDateString();
     if (!acc[date]) acc[date] = [];
@@ -365,11 +383,15 @@ export default function ScheduleView() {
       return acc;
     }, {});
 
-    return { scheduled, posted, failed, healthLabel, gapDays, postedByRange };
+    const overdue = posts.filter(isOverdue).length;
+
+    return { scheduled, posted, failed, overdue, healthLabel, gapDays, postedByRange };
   }, [posts]);
 
   const statusColor = (status) => ({
     scheduled: '#3b82f6', posting: '#0da2e7', posted: '#22c55e', failed: '#ef4444', partial_failure: '#f59e0b',
+    // overdue: orange — visually distinct from red failed (#ef4444) and amber partial_failure (#f59e0b)
+    overdue: '#f97316',
   }[status] || '#94a3b8');
 
   const statusIcon = (status) => {
@@ -379,6 +401,8 @@ export default function ScheduleView() {
       case 'posted': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>;
       case 'failed': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
       case 'partial_failure': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+      // overdue: exclamation/alert icon — visually distinct from the clock (scheduled) and X (failed)
+      case 'overdue': return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
       default: return null;
     }
   };
@@ -469,12 +493,12 @@ export default function ScheduleView() {
               <div
                 key={post.id || i}
                 className="sched-chip"
-                style={{ '--chip-color': PLATFORM_COLORS[post.platform] || '#94a3b8' }}
+                style={{ '--chip-color': isOverdue(post) ? '#f97316' : (PLATFORM_COLORS[post.platform] || '#94a3b8') }}
                 draggable={post.status === 'scheduled'}
                 onDragStart={(e) => { e.stopPropagation(); setDragPost(post.id); }}
                 onDragEnd={() => setDragPost(null)}
                 onClick={e => { e.stopPropagation(); openEditModal({ ...post }); }}
-                title={`${post.platform} – ${formatTime(post.scheduled_at)} – ${post.status}\n${post.post_text.slice(0, 100)}`}
+                title={`${post.platform} – ${formatTime(post.scheduled_at)} – ${displayStatus(post)}\n${post.post_text.slice(0, 100)}`}
               >
                 <span className="sched-chip__dot" />
                 <span className="sched-chip__platform">{PLATFORM_LABELS[post.platform]}</span>
@@ -533,7 +557,7 @@ export default function ScheduleView() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" data-tour="schedule-stats">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-5" data-tour="schedule-stats">
         <StatCard
           tone="green"
           icon={Icons.health}
@@ -566,6 +590,14 @@ export default function ScheduleView() {
           value={`${stats.failed} failed post${stats.failed === 1 ? '' : 's'}`}
           subtext="Review and try to improve delivery"
           onClick={() => { setStatusFilter('failed'); setViewMode('list'); }}
+        />
+        <StatCard
+          tone="orange"
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
+          label="Overdue"
+          value={`${stats.overdue} post${stats.overdue === 1 ? '' : 's'}`}
+          subtext="Still scheduled, past their send time"
+          onClick={() => { setStatusFilter('overdue'); setViewMode('list'); }}
         />
         <StatCard
           tone="purple"
@@ -768,8 +800,8 @@ export default function ScheduleView() {
                         {selectedDatePosts.map(post => (
                           <div key={post.id} className="sched-detail__post">
                             <div className="sched-detail__post-meta">
-                              <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
-                                {statusIcon(post.status)} {post.status === 'partial_failure' ? 'Partial failure' : post.status}
+                              <span className="sched-detail__status" style={{ '--status-color': statusColor(displayStatus(post)) }}>
+                                {statusIcon(displayStatus(post))} {displayStatus(post) === 'overdue' ? 'Overdue' : post.status === 'partial_failure' ? 'Partial failure' : post.status}
                               </span>
                               <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
                               <span className="text-[var(--text-secondary)]">{formatTime(post.scheduled_at)}</span>
@@ -824,8 +856,8 @@ export default function ScheduleView() {
                         {datePosts.map(post => (
                           <div key={post.id} className="border border-[var(--border)] rounded-lg p-4 bg-[var(--bg-raised)]">
                             <div className="flex items-center gap-2 flex-wrap mb-2 text-[13px]">
-                              <span className="sched-detail__status" style={{ '--status-color': statusColor(post.status) }}>
-                                {statusIcon(post.status)} {post.status === 'partial_failure' ? 'Partial failure' : post.status}
+                              <span className="sched-detail__status" style={{ '--status-color': statusColor(displayStatus(post)) }}>
+                                {statusIcon(displayStatus(post))} {displayStatus(post) === 'overdue' ? 'Overdue' : post.status === 'partial_failure' ? 'Partial failure' : post.status}
                               </span>
                               <span className="font-semibold" style={{ color: PLATFORM_COLORS[post.platform] }}>{PLATFORM_LABELS[post.platform]}</span>
                               <span className="text-[var(--text-secondary)]">{formatDate(post.scheduled_at)}</span>
