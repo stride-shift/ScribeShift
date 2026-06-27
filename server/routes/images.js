@@ -205,6 +205,9 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
 
     const prompts = [];
     for (const { key, promptTemplate } of styleEntries) {
+      // brandData is spread whole so brand_palette (structured palette from
+      // OpenAI extraction) reaches injectBrand/buildPaletteBlock for palette-
+      // aware COLORS blocks. Falls back to primaryColor/secondaryColor when absent.
       const basePrompt = injectBrand(promptTemplate, { ...brandData, topicSummary });
       for (let v = 0; v < 3; v++) {
         let prompt = `${basePrompt}\n\nVariant ${v + 1} of 3: ${variantInstructions[v]}`;

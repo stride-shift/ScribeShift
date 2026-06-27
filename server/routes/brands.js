@@ -3,7 +3,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
 import { verifyToken } from '../middleware/auth.js';
-import { geminiText } from '../services/gemini-client.js';
+import { extractStructuredJSON } from '../services/openai-client.js';
 import { BRAND_EXTRACTION_PROMPT } from '../config/skills.js';
 
 // Node's built-in fetch can hang on TCP connect when DNS returns an IPv6
@@ -448,38 +448,38 @@ router.post('/extract-from-url', async (req, res) => {
 
     const bodyText = extractBodyText(html).slice(0, 10000);
 
-    // Ask Gemini to fill in what we couldn't get from structured signals.
-    // Low temperature (0.2) and JSON response mode keep the output reliable.
-    // The prompt gives the model every structured signal we already have so
-    // it doesn't second-guess things we know for sure.
-    const aiPrompt = BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTitle, ogDescription, ldName, ldDescription, ldSlogan, themeColor, tileColor, bodyText });
+    // Ask OpenAI to fill in what we couldn't get from structured signals.
+    // BRAND_EXTRACTION_PROMPT returns { systemPrompt, userText } for the
+    // Responses API system/user split. Falls back gracefully if key is missing.
+    const { systemPrompt: extractSystem, userText: extractUser } =
+      BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTitle, ogDescription, ldName, ldDescription, ldSlogan, themeColor, tileColor, bodyText });
 
     let extracted = {};
     try {
-      const aiRaw = await geminiText(aiPrompt, 3, {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-      });
-      const cleaned = aiRaw
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/```\s*$/, '')
-        .trim();
-      extracted = JSON.parse(cleaned);
+      extracted = await extractStructuredJSON(extractSystem, extractUser);
     } catch (err) {
-      console.warn('[BRANDS] AI extraction parse failed:', err.message);
+      console.warn('[BRANDS] OpenAI extraction failed, brand_palette will be null:', err.message);
       extracted = {};
     }
 
-    // Pick a primary colour: prefer AI suggestion → theme-color meta → tile-color → fallback.
+    // Derive primary/secondary from the structured palette when present,
+    // for back-compat with all existing consumers that read primary_color/secondary_color.
+    //   primary_color  ← palette.primary.accent (the main brand accent), else palette.primary.bg
+    //   secondary_color ← first secondary[0].hex, else palette.primary.text
     const colorRe = /^#[0-9a-fA-F]{6}$/;
+    const pal = extracted.palette;
     let primaryColor = '#3b82f6';
-    if (colorRe.test(extracted.primary_color || '')) primaryColor = extracted.primary_color;
-    else if (themeColor && colorRe.test(themeColor)) primaryColor = themeColor;
-    else if (tileColor && colorRe.test(tileColor)) primaryColor = tileColor;
+    if (pal?.primary?.accent && colorRe.test(pal.primary.accent))      primaryColor = pal.primary.accent;
+    else if (pal?.primary?.bg && colorRe.test(pal.primary.bg))         primaryColor = pal.primary.bg;
+    else if (colorRe.test(extracted.primary_color || ''))              primaryColor = extracted.primary_color;
+    else if (themeColor && colorRe.test(themeColor))                   primaryColor = themeColor;
+    else if (tileColor && colorRe.test(tileColor))                     primaryColor = tileColor;
 
-    const secondaryColor = colorRe.test(extracted.secondary_color || '')
-      ? extracted.secondary_color
-      : '#475569';
+    let secondaryColor = '#475569';
+    if (Array.isArray(pal?.secondary) && pal.secondary[0]?.hex && colorRe.test(pal.secondary[0].hex))
+      secondaryColor = pal.secondary[0].hex;
+    else if (pal?.primary?.text && colorRe.test(pal.primary.text))     secondaryColor = pal.primary.text;
+    else if (colorRe.test(extracted.secondary_color || ''))            secondaryColor = extracted.secondary_color;
 
     // Brand name: AI's pick, but if it's the same as the raw page title we can
     // try to strip common boilerplate suffixes ("| The X for Y", "- Home").
@@ -506,6 +506,9 @@ router.post('/extract-from-url', async (req, res) => {
         .includes(extracted.industry) ? extracted.industry : 'general',
       primary_color: primaryColor,
       secondary_color: secondaryColor,
+      // Structured palette (null when OpenAI extraction was skipped/failed).
+      // Persisted to the brands.brand_palette JSONB column when the user saves.
+      brand_palette: (pal && typeof pal === 'object') ? pal : null,
       icp_description: extracted.icp_description || ldDescription || '',
       brand_guidelines: guidelines,
       tone_descriptors: Array.isArray(extracted.tone_descriptors)
@@ -543,6 +546,7 @@ router.post('/', async (req, res) => {
       icp_description, brand_guidelines, writing_samples,
       default_audience, default_image_styles,
       source_url, ci_document_url, ci_document_text, ci_document_name,
+      brand_palette,
     } = req.body;
 
     // Enforce per-plan brand count before insert
@@ -580,6 +584,7 @@ router.post('/', async (req, res) => {
         ci_document_url: ci_document_url || null,
         ci_document_text: ci_document_text || null,
         ci_document_name: ci_document_name || null,
+        brand_palette: (brand_palette && typeof brand_palette === 'object') ? brand_palette : null,
       })
       .select()
       .single();
@@ -599,6 +604,7 @@ router.put('/:id', async (req, res) => {
       'brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry',
       'icp_description', 'brand_guidelines', 'default_audience',
       'source_url', 'ci_document_url', 'ci_document_text', 'ci_document_name',
+      'brand_palette',
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];

@@ -4,11 +4,82 @@
 // Image styles: minimal, vibrant, editorial, artistic, retro, modern, futuristic, cinematic
 
 // ── Brand Injection Helper ──────────────────────────────────────────
+
+/**
+ * Build a COLORS block for image prompts.
+ * When the brand has a structured `brand_palette` (from OpenAI extraction) the
+ * block surfaces the full palette with exact-hex and no-invented-marks rules.
+ * Falls back to the legacy primary/secondary tokens when no palette is present.
+ *
+ * @param {object} brandData - brand record from the DB or extract-from-url draft
+ * @returns {string} Ready-to-inject COLORS block (no surrounding newlines)
+ */
+function buildPaletteBlock(brandData = {}) {
+  const palette = brandData.brand_palette;
+
+  if (palette && typeof palette === 'object') {
+    const lines = [];
+    lines.push('COLORS (use these EXACT hex values — do not invent or shift colours):');
+
+    const p = palette.primary;
+    if (p && typeof p === 'object') {
+      if (p.bg)             lines.push(`- Primary background: ${p.bg}`);
+      if (p.text)           lines.push(`- Primary text: ${p.text}`);
+      if (p.accent)         lines.push(`- Primary accent: ${p.accent}`);
+      if (p.gradient_start) lines.push(`- Gradient start: ${p.gradient_start}`);
+      if (p.gradient_end)   lines.push(`- Gradient end: ${p.gradient_end}`);
+    }
+
+    if (Array.isArray(palette.secondary) && palette.secondary.length > 0) {
+      for (const s of palette.secondary) {
+        if (s?.hex) {
+          const label = s.label ? ` (${s.label})` : '';
+          lines.push(`- Secondary${label}: ${s.hex}`);
+        }
+      }
+    }
+
+    if (palette.accent) lines.push(`- Accent: ${palette.accent}`);
+    if (palette.neutral_light) lines.push(`- Neutral light: ${palette.neutral_light}`);
+    if (palette.neutral_dark)  lines.push(`- Neutral dark: ${palette.neutral_dark}`);
+
+    if (Array.isArray(palette.never_in_text) && palette.never_in_text.length > 0) {
+      lines.push(`- NEVER use these as text colours: ${palette.never_in_text.join(', ')}`);
+    }
+
+    if (Array.isArray(palette.forbidden_pairings) && palette.forbidden_pairings.length > 0) {
+      const pairs = palette.forbidden_pairings.map(([a, b]) => `${a}/${b}`).join(', ');
+      lines.push(`- FORBIDDEN colour pairings (never combine): ${pairs}`);
+    }
+
+    lines.push('GUARDRAILS:');
+    lines.push('- Use these exact hex values; do not invent or shift colours.');
+    lines.push('- Do not draw, invent, or approximate any logo/wordmark/brand mark; only use a provided logo image if one is attached.');
+
+    return lines.join('\n');
+  }
+
+  // Fallback: no structured palette — use legacy primary/secondary tokens
+  const primary   = brandData.primaryColor   || '#FBBF24';
+  const secondary = brandData.secondaryColor || '#818cf8';
+  return [
+    `COLORS:`,
+    `- Primary: ${primary}`,
+    `- Secondary: ${secondary}`,
+    `GUARDRAILS:`,
+    `- Use these exact hex values; do not invent or shift colours.`,
+    `- Do not draw, invent, or approximate any logo/wordmark/brand mark; only use a provided logo image if one is attached.`,
+  ].join('\n');
+}
+
 export function injectBrand(promptTemplate, brandData = {}) {
+  const paletteBlock = buildPaletteBlock(brandData);
+
   return promptTemplate
     .replace(/\{\{BRAND_NAME\}\}/g, brandData.brandName || '')
     .replace(/\{\{PRIMARY_COLOR\}\}/g, brandData.primaryColor || '#FBBF24')
     .replace(/\{\{SECONDARY_COLOR\}\}/g, brandData.secondaryColor || '#818cf8')
+    .replace(/\{\{BRAND_PALETTE_BLOCK\}\}/g, paletteBlock)
     .replace(/\{\{BRAND_IDENTITY\}\}/g,
       brandData.brandName
         ? `This content is for ${brandData.brandName}. Reflect the brand voice and values where appropriate.`
@@ -433,9 +504,7 @@ export const IMAGE_STYLE_MINIMAL = `Generate a clean, minimal social media graph
 
 STYLE: Flat design, geometric shapes, limited 3-4 color palette, generous white space, modern sans-serif typography. Think Swiss poster design — a single standalone graphic, NOT a webpage or screenshot.
 
-COLORS: Use these brand colors as the primary palette:
-- Primary: {{PRIMARY_COLOR}}
-- Secondary: {{SECONDARY_COLOR}}
+{{BRAND_PALETTE_BLOCK}}
 - Background: Clean white or very light gray
 - Text: Dark charcoal (#1a1a2e)
 
@@ -459,10 +528,8 @@ export const IMAGE_STYLE_VIBRANT = `Generate a bold, vibrant social media graphi
 
 STYLE: Rich gradients, dynamic composition, bold typography, eye-catching contrast, energetic feel. Think music festival poster meets concert flyer — a single standalone graphic, NOT a webpage.
 
-COLORS: Build a vibrant palette from these brand colors:
-- Primary: {{PRIMARY_COLOR}} (dominant)
-- Secondary: {{SECONDARY_COLOR}} (accent)
-- Add complementary bright accents for energy
+{{BRAND_PALETTE_BLOCK}}
+- Build outward with complementary bright accents for energy
 - Dark background with glowing elements
 
 BRAND: {{BRAND_NAME}}
@@ -485,9 +552,7 @@ export const IMAGE_STYLE_EDITORIAL = `Generate a professional, editorial-style s
 
 STYLE: Photography-inspired, sophisticated, business-ready. Think premium magazine cover — a single standalone graphic, NOT a webpage or article screenshot. Subtle textures, refined typography, muted tones with brand color accents.
 
-COLORS: Refined palette based on brand:
-- Primary accent: {{PRIMARY_COLOR}} (used sparingly for emphasis)
-- Secondary: {{SECONDARY_COLOR}}
+{{BRAND_PALETTE_BLOCK}}
 - Base: Warm grays, deep navy, or off-white backgrounds
 - Text: High contrast, professional
 
@@ -511,10 +576,8 @@ export const IMAGE_STYLE_ARTISTIC = `Generate an artistic, expressive social med
 
 STYLE: Painterly textures, mixed-media collage feel, hand-drawn elements blended with digital precision. Think museum exhibition poster meets indie album cover — a single standalone graphic, NOT a webpage. Organic shapes, brush strokes, textured paper backgrounds.
 
-COLORS: Artistic palette derived from brand:
-- Primary: {{PRIMARY_COLOR}} (washed out or saturated for artistic effect)
-- Secondary: {{SECONDARY_COLOR}}
-- Add earthy, muted tones for depth
+{{BRAND_PALETTE_BLOCK}}
+- Extend with earthy, muted tones for depth
 - Off-white or kraft paper background textures
 
 BRAND: {{BRAND_NAME}}
@@ -536,10 +599,8 @@ export const IMAGE_STYLE_RETRO = `Generate a retro/vintage-inspired social media
 
 STYLE: Nostalgic aesthetics — think 70s/80s design revival. Halftone patterns, rounded fonts, warm color casts, film grain overlay, retro geometric patterns. Inspired by vintage print ads and old-school poster design — a single standalone graphic, NOT a webpage.
 
-COLORS: Warm retro palette:
-- Primary: {{PRIMARY_COLOR}} (with warm vintage cast)
-- Secondary: {{SECONDARY_COLOR}}
-- Add warm amber, burnt orange, and cream tones
+{{BRAND_PALETTE_BLOCK}}
+- Add warm amber, burnt orange, and cream tones as accents
 - Slightly desaturated overall for vintage feel
 
 BRAND: {{BRAND_NAME}}
@@ -561,9 +622,7 @@ export const IMAGE_STYLE_MODERN = `Generate a sleek, ultra-modern social media g
 
 STYLE: Cutting-edge digital design. Glass-morphism effects, frosted translucent elements, thin-line icons, soft shadows, layered depth. Think premium brand advertisement — a single standalone graphic, NOT a webpage or app screenshot.
 
-COLORS: Modern palette:
-- Primary: {{PRIMARY_COLOR}} (used for glass highlights and accents)
-- Secondary: {{SECONDARY_COLOR}}
+{{BRAND_PALETTE_BLOCK}}
 - Soft gradients between neutrals
 - Light frosted glass over dark subtle backgrounds
 
@@ -586,9 +645,7 @@ export const IMAGE_STYLE_FUTURISTIC = `Generate a futuristic, sci-fi inspired so
 
 STYLE: Cyberpunk meets high-tech aesthetics. Neon accents, dark environments, holographic effects, circuit-board patterns. Think Blade Runner movie poster meets SpaceX branding — a single standalone graphic, NOT a webpage or software UI.
 
-COLORS: Futuristic palette:
-- Primary: {{PRIMARY_COLOR}} (as neon glow/accent)
-- Secondary: {{SECONDARY_COLOR}} (holographic highlight)
+{{BRAND_PALETTE_BLOCK}}
 - Deep blacks and dark blues as base
 - Electric neon accents and glow effects
 
@@ -611,9 +668,7 @@ export const IMAGE_STYLE_CINEMATIC = `Generate a cinematic, movie-poster style s
 
 STYLE: Dramatic lighting, wide-format composition, cinematic color grading. Think movie poster meets premium brand campaign — a single standalone graphic, NOT a webpage. Moody atmosphere with deliberate light sources, dramatic shadows, and depth of field effects.
 
-COLORS: Cinematic palette:
-- Primary: {{PRIMARY_COLOR}} (as dramatic light source or accent)
-- Secondary: {{SECONDARY_COLOR}}
+{{BRAND_PALETTE_BLOCK}}
 - Teal and orange cinematic color grading
 - Deep shadows with selective highlighting
 
@@ -639,9 +694,7 @@ export const IMAGE_STYLE_BRAND_ALIGNED = `Generate a standalone social media gra
 
 STYLE: Match what the brand identity tells you. Read the BRAND GUIDELINES and BRAND IDENTITY DOCUMENT sections below and treat them as the design brief. Use the brand colours as the dominant palette.
 
-COLORS:
-- Primary: {{PRIMARY_COLOR}}
-- Secondary: {{SECONDARY_COLOR}}
+{{BRAND_PALETTE_BLOCK}}
 
 BRAND: {{BRAND_NAME}}
 
@@ -737,25 +790,11 @@ Output ONLY the tone description. No preambles, no labels, no bullet points — 
 Content to analyze:
 `;
 
-// Brand extraction from a website. Interpolates the structured signals + cleaned
-// page body assembled by the /api/brands/extract-from-url route.
+// Brand extraction from a website. Returns { systemPrompt, userText } for the
+// system/user split expected by OpenAI's Responses API (extractStructuredJSON).
+// Also exported as a legacy single-string form for callers that need it.
 export function BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTitle, ogDescription, ldName, ldDescription, ldSlogan, themeColor, tileColor, bodyText }) {
-  return `You are a brand strategist analysing a company's website. Read the structured signals and page content below, then produce a single JSON object describing the brand.
-
-# Structured signals (trust these — they came directly from the page)
-URL: ${finalUrl}
-Page title: ${pageTitle || '(none)'}
-Open Graph site name: ${ogSiteName || '(none)'}
-Open Graph title: ${ogTitle || '(none)'}
-Open Graph description: ${ogDescription || '(none)'}
-JSON-LD organisation name: ${ldName || '(none)'}
-JSON-LD organisation description: ${ldDescription || '(none)'}
-JSON-LD slogan: ${ldSlogan || '(none)'}
-theme-color meta: ${themeColor || '(none)'}
-msapplication-TileColor: ${tileColor || '(none)'}
-
-# Cleaned page body (truncated)
-${bodyText}
+  const systemPrompt = `You are a brand strategist analysing a company's website. Read the structured signals and page content the user provides, then produce a single JSON object describing the brand.
 
 # Output schema — return EXACTLY this shape, no extras, no comments
 {
@@ -768,14 +807,56 @@ ${bodyText}
   "brand_guidelines": "2-4 sentences capturing the brand voice: tone, formality, vocabulary preferences, things they avoid. E.g. 'Direct, plain-spoken, founder-voice. Skips buzzwords like leverage and synergy. Confident but not arrogant. Numbers over adjectives.'",
   "tone_descriptors": ["3-6 short adjectives describing the voice (e.g. 'direct', 'witty', 'technical', 'warm')"],
   "suggested_pillars": ["3-5 content pillar names the brand could publish under, derived from what the site already talks about. 1-3 words each."],
-  "writing_samples": ["3 ACTUAL passages copied VERBATIM from the page that best represent the brand voice — hero copy, value props, about-page paragraphs. 1-4 sentences each. Must be exact quotes."]
+  "writing_samples": ["3 ACTUAL passages copied VERBATIM from the page that best represent the brand voice — hero copy, value props, about-page paragraphs. 1-4 sentences each. Must be exact quotes."],
+  "palette": {
+    "primary": {
+      "bg":             "#rrggbb — the brand's primary background/fill colour (use theme-color if available)",
+      "text":           "#rrggbb — colour used for text on the primary background",
+      "accent":         "#rrggbb — the brand's main accent/highlight colour",
+      "gradient_start": "#rrggbb — gradient start hex, or omit if no gradient",
+      "gradient_end":   "#rrggbb — gradient end hex, or omit if no gradient"
+    },
+    "secondary": [
+      { "hex": "#rrggbb", "label": "short human label e.g. 'sky blue'" }
+    ],
+    "accent":        "#rrggbb — a tertiary accent if distinct from palette.primary.accent, else omit",
+    "neutral_light": "#rrggbb — lightest neutral surface colour (near-white / light grey)",
+    "neutral_dark":  "#rrggbb — darkest neutral (near-black / charcoal for body text)",
+    "relationship":  "one of: complementary | analogous | triadic | split-complementary | monochrome",
+    "usage": {
+      "primary":   "one sentence on when to use the primary colour",
+      "secondary": "one sentence on when to use secondary colours",
+      "accent":    "one sentence on when to use the accent"
+    },
+    "forbidden_pairings": [["#hex1","#hex2"]],
+    "never_in_text": ["#hex — colours that must NEVER be used as text"]
+  }
 }
 
 Rules:
 - Strict JSON only. No markdown, no comments, no trailing prose.
-- writing_samples MUST be verbatim from the body content above. Do not paraphrase, summarise, or invent.
+- writing_samples MUST be verbatim from the body content. Do not paraphrase, summarise, or invent.
+- All colour fields MUST be exact 6-digit hex strings (#rrggbb). Do not invent colours — only include what you can infer from the signals or page body.
+- Omit optional palette sub-fields (gradient_start/end, accent, forbidden_pairings, never_in_text, etc.) when they cannot be reasonably inferred.
 - If a field truly can't be inferred, return a sensible default ("" for strings, [] for arrays, "general" for industry).
 - Never wrap in \`\`\` fences.`;
+
+  const userText = `# Structured signals (trust these — they came directly from the page)
+URL: ${finalUrl}
+Page title: ${pageTitle || '(none)'}
+Open Graph site name: ${ogSiteName || '(none)'}
+Open Graph title: ${ogTitle || '(none)'}
+Open Graph description: ${ogDescription || '(none)'}
+JSON-LD organisation name: ${ldName || '(none)'}
+JSON-LD organisation description: ${ldDescription || '(none)'}
+JSON-LD slogan: ${ldSlogan || '(none)'}
+theme-color meta: ${themeColor || '(none)'}
+msapplication-TileColor: ${tileColor || '(none)'}
+
+# Cleaned page body (truncated)
+${bodyText}`;
+
+  return { systemPrompt, userText };
 }
 
 // AI-generated post ideas, grounded in the team's brand + recent topics.
