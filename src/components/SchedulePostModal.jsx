@@ -41,6 +41,23 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
   const [mediaType, setMediaType] = useState(editingPost?.post_media_type || (editingPost?.post_image_url ? 'image' : null));
   const [mediaFilename, setMediaFilename] = useState(editingPost?.post_media_filename || null);
   const [mediaPreview, setMediaPreview] = useState(editingPost?.post_media_url || editingPost?.post_image_url || null);
+
+  // Image mode: 'generated' | 'caption_only' | 'uploaded'
+  // Edit path: derive from persisted image_mode; fall back on media presence for legacy ('auto' or missing).
+  // New post path: default 'caption_only' (no image attached; matches today's behaviour — no image sent).
+  const [imageMode, setImageMode] = useState(() => {
+    if (editingPost) {
+      const persisted = editingPost.image_mode;
+      if (persisted === 'generated' || persisted === 'caption_only' || persisted === 'uploaded') {
+        return persisted;
+      }
+      // Legacy fallback: 'auto' or missing — infer from media presence
+      const hasMedia = !!(editingPost.post_media_url || editingPost.post_image_url);
+      return hasMedia ? 'generated' : 'caption_only';
+    }
+    // New post: default caption_only (no image attached yet — matches current submit behaviour)
+    return 'caption_only';
+  });
   const [uploading, setUploading] = useState(false);
   const [connectedAccounts, setConnectedAccounts] = useState({});
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -208,6 +225,8 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
       setMediaType(data.type);
       setMediaFilename(data.original_filename || file.name);
       setMediaPreview(data.url);
+      // Auto-switch to 'uploaded' when a file is successfully uploaded
+      setImageMode('uploaded');
     } catch (err) {
       setError(`Upload failed: ${err.message}`);
       setMediaPreview(null);
@@ -226,6 +245,8 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     setMediaFilename(null);
     setMediaPreview(null);
     if (mediaInputRef.current) mediaInputRef.current.value = '';
+    // Removing media makes 'uploaded' and 'generated' meaningless; fall back to caption_only
+    setImageMode(prev => (prev === 'uploaded' || prev === 'generated') ? 'caption_only' : prev);
   };
 
   const canProceed =
@@ -243,13 +264,21 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
     const platforms = [...selectedPlatforms];
 
-    const mediaPayload = mediaUrl
+    // Build media payload from imageMode:
+    // 'caption_only' → strip all media regardless of what is attached
+    // 'generated'    → pass through existing attached media (generated image was pre-attached)
+    // 'uploaded'     → pass through uploaded media
+    const effectiveMediaUrl = imageMode === 'caption_only' ? null : mediaUrl;
+    const effectiveMediaType = imageMode === 'caption_only' ? null : mediaType;
+    const effectiveMediaFilename = imageMode === 'caption_only' ? null : mediaFilename;
+
+    const mediaPayload = effectiveMediaUrl
       ? {
-          post_media_url: mediaUrl,
-          post_media_type: mediaType,
-          post_media_filename: mediaFilename,
+          post_media_url: effectiveMediaUrl,
+          post_media_type: effectiveMediaType,
+          post_media_filename: effectiveMediaFilename,
           // Keep image URL field populated for image media so older code paths still work
-          post_image_url: mediaType === 'image' ? mediaUrl : null,
+          post_image_url: effectiveMediaType === 'image' ? effectiveMediaUrl : null,
         }
       : { post_image_url: null, post_media_url: null, post_media_type: null, post_media_filename: null };
 
@@ -261,6 +290,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
           scheduled_at: new Date(scheduledAt).toISOString(),
           platform: platforms[0],
           ...mediaPayload,
+          image_mode: imageMode,
           is_boosted: editingPost.is_boosted,
           boost_spend: editingPost.boost_spend,
         };
@@ -280,6 +310,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
             platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
             ...mediaPayload,
+            image_mode: imageMode,
             is_boosted: false,
           };
           // Add linkedin_targets only for LinkedIn; leave body unchanged for other platforms.
@@ -518,6 +549,51 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </span>
               </label>
 
+              {/* Image mode selector — 3-way control */}
+              <div className="spm-image-mode" style={{ display: 'flex', gap: 4, marginBottom: 12, padding: 4, background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 8, width: 'fit-content' }}>
+                {[
+                  { value: 'generated', label: 'Use generated', title: 'Use an AI-generated image attached to this post' },
+                  { value: 'caption_only', label: 'Caption only', title: 'Post text only — no image or media' },
+                  { value: 'uploaded', label: 'Upload own', title: 'Attach your own image or file' },
+                ].map(({ value, label, title }) => {
+                  const isActive = imageMode === value;
+                  // 'generated' is only meaningful if there is attached media (this modal has no generate button)
+                  const isDisabled = value === 'generated' && !mediaUrl;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`spm-image-mode__btn${isActive ? ' active' : ''}`}
+                      title={title}
+                      disabled={isDisabled}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        setImageMode(value);
+                        // Switching to 'Upload own' and there is no media yet → trigger file picker
+                        if (value === 'uploaded' && !mediaUrl) {
+                          mediaInputRef.current?.click();
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        border: 'none',
+                        borderRadius: 5,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                        transition: 'background 0.15s, color 0.15s',
+                        background: isActive ? 'var(--primary)' : 'transparent',
+                        color: isActive ? '#fff' : isDisabled ? 'var(--text-muted)' : 'var(--text)',
+                        opacity: isDisabled ? 0.45 : 1,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
               {uploading && (
                 <div className="spm-image-preview" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, gap: 12, color: 'var(--text-muted)' }}>
                   <div className="loading-spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
@@ -525,7 +601,8 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </div>
               )}
 
-              {!uploading && mediaUrl && mediaType === 'image' && (
+              {/* Media previews: only show when not in caption_only mode */}
+              {!uploading && mediaUrl && mediaType === 'image' && imageMode !== 'caption_only' && (
                 <div className="spm-image-preview">
                   <img src={mediaPreview} alt="Post media" />
                   <button className="spm-image-remove" onClick={removeMedia}>
@@ -534,7 +611,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </div>
               )}
 
-              {!uploading && mediaUrl && mediaType === 'video' && (
+              {!uploading && mediaUrl && mediaType === 'video' && imageMode !== 'caption_only' && (
                 <div className="spm-image-preview" style={{ position: 'relative', background: '#000' }}>
                   <video src={mediaPreview} controls style={{ width: '100%', maxHeight: 320, display: 'block', borderRadius: 8 }} />
                   <button className="spm-image-remove" onClick={removeMedia}>
@@ -543,7 +620,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </div>
               )}
 
-              {!uploading && mediaUrl && mediaType === 'document' && (
+              {!uploading && mediaUrl && mediaType === 'document' && imageMode !== 'caption_only' && (
                 <div className="spm-image-preview" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, position: 'relative' }}>
                   <div style={{ width: 48, height: 56, borderRadius: 6, background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                     PDF
@@ -558,7 +635,8 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 </div>
               )}
 
-              {!uploading && !mediaUrl && (
+              {/* Show upload button only when Upload own mode is active and no media is attached yet */}
+              {!uploading && !mediaUrl && imageMode === 'uploaded' && (
                 <button className="spm-image-upload" onClick={() => mediaInputRef.current?.click()}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -567,6 +645,20 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                   </svg>
                   <span>Add media</span>
                 </button>
+              )}
+
+              {/* Caption-only mode: no media prompt — just a note */}
+              {!uploading && imageMode === 'caption_only' && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
+                  No image will be attached — text caption only.
+                </div>
+              )}
+
+              {/* Generated mode with no media attached: nudge to upload or switch mode */}
+              {!uploading && imageMode === 'generated' && !mediaUrl && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
+                  No generated image attached. Switch to "Upload own" to attach a file, or "Caption only" to post without media.
+                </div>
               )}
 
               <input

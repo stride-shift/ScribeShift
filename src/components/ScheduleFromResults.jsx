@@ -134,6 +134,94 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
   const [mediaRemoved, setMediaRemoved] = useState(() => new Set());
   const [uploadingItem, setUploadingItem] = useState(null);
 
+  // ── Image mode selector (self-contained block) ────────────────────
+  // Per-post image mode: 'generated' | 'caption_only' | 'uploaded'
+  // Default: 'generated' when a generated/tagged image is available,
+  // 'caption_only' when there is no image (matches today's no-media behaviour).
+  const defaultImageMode = (item) => {
+    if (!item.schedulable) return 'caption_only';
+    const idx = parseInt(item.id.split('-')[1], 10);
+    const img = imageForPost(postImages, taggedImages, item.platform, idx);
+    return img ? 'generated' : 'caption_only';
+  };
+
+  const [imageMode, setImageMode] = useState(() => {
+    const map = {};
+    for (const item of allItems) {
+      map[item.id] = defaultImageMode(item);
+    }
+    return map;
+  });
+
+  const setItemImageMode = (itemId, mode) => {
+    setImageMode(prev => ({ ...prev, [itemId]: mode }));
+    // When switching TO 'uploaded', nothing extra to do — the existing upload
+    // controls already set mediaOverrides. When switching AWAY, clear the
+    // removed flag so the generated image can re-appear.
+    if (mode === 'generated') {
+      setMediaRemoved(prev => { const next = new Set(prev); next.delete(itemId); return next; });
+    }
+    if (mode === 'caption_only') {
+      // Remove any override and mark as removed so effectiveMedia returns null.
+      setMediaOverrides(prev => { const next = { ...prev }; delete next[itemId]; return next; });
+      setMediaRemoved(prev => { const next = new Set(prev); next.add(itemId); return next; });
+    }
+  };
+
+  // Does this item have a generated/tagged image available?
+  const hasGeneratedImage = (item) => {
+    if (!item.schedulable) return false;
+    const idx = parseInt(item.id.split('-')[1], 10);
+    return !!imageForPost(postImages, taggedImages, item.platform, idx);
+  };
+
+  // Render the compact 3-way segmented control for a schedulable post.
+  const renderImageModeSelector = (item) => {
+    const mode = imageMode[item.id] || 'caption_only';
+    const hasImg = hasGeneratedImage(item);
+    const btnBase = {
+      padding: '3px 10px', fontSize: 12, border: '1px solid var(--border)',
+      background: 'var(--bg)', color: 'var(--text-muted)', cursor: 'pointer',
+      lineHeight: 1.5, transition: 'background 0.15s, color 0.15s',
+    };
+    const btnActive = { background: 'var(--primary)', color: '#fff', borderColor: 'var(--primary)' };
+    const btnDisabled = { opacity: 0.4, cursor: 'not-allowed' };
+    const options = [
+      { value: 'generated', label: 'Use generated', disabled: !hasImg },
+      { value: 'caption_only', label: 'Caption only', disabled: false },
+      { value: 'uploaded', label: 'Upload own', disabled: false },
+    ];
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 8, paddingLeft: 26 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 8, whiteSpace: 'nowrap' }}>Image:</span>
+        <div style={{ display: 'flex', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          {options.map((opt, i) => (
+            <button
+              key={opt.value}
+              type="button"
+              disabled={opt.disabled}
+              onClick={() => !opt.disabled && setItemImageMode(item.id, opt.value)}
+              style={{
+                ...btnBase,
+                ...(mode === opt.value ? btnActive : {}),
+                ...(opt.disabled ? btnDisabled : {}),
+                borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
+                borderRight: 'none', borderTop: 'none', borderBottom: 'none',
+              }}
+              title={opt.disabled && opt.value === 'generated' ? 'No generated image available — upload one instead' : undefined}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {!hasImg && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>No generated image</span>
+        )}
+      </div>
+    );
+  };
+  // ── End image mode selector block ─────────────────────────────────
+
   // What media (if any) does this item end up scheduling with?
   const effectiveMedia = (item) => {
     if (mediaOverrides[item.id]) return mediaOverrides[item.id];
@@ -288,35 +376,55 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
     // a generated image, upload it now so we can pass a persistent URL to /api/schedule.
     for (const item of schedulableSelected) {
       try {
-        const media = effectiveMedia(item);
+        // ── image_mode derivation ──────────────────────────────────────
+        const itemMode = imageMode[item.id] || defaultImageMode(item);
         let mediaPayload = { post_image_url: null, post_media_url: null, post_media_type: null, post_media_filename: null };
 
-        if (media?.kind === 'url') {
-          mediaPayload = {
-            post_media_url: media.mediaUrl,
-            post_media_type: media.mediaType,
-            post_media_filename: media.mediaFilename,
-            post_image_url: media.mediaType === 'image' ? media.mediaUrl : null,
-          };
-        } else if (media?.kind === 'base64') {
-          // Wrap base64 in a Blob/File and upload to /api/media/upload, same path as the single-post modal.
-          const blob = base64ToBlob(media.base64, media.mimeType);
-          const file = new File([blob], `${item.id}-image.png`, { type: media.mimeType });
-          const fd = new FormData();
-          fd.append('file', file);
-          const upRes = await fetch('/api/media/upload', {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: fd,
-          });
-          const upData = await upRes.json();
-          if (upRes.ok && upData.url) {
+        if (itemMode === 'caption_only') {
+          // Force all media to null; image_mode sent below.
+          // mediaPayload is already all-null above.
+        } else if (itemMode === 'uploaded') {
+          // Use the user-uploaded override (already resolved in mediaOverrides).
+          const media = effectiveMedia(item);
+          if (media?.kind === 'url') {
             mediaPayload = {
-              post_media_url: upData.url,
-              post_media_type: upData.type || 'image',
-              post_media_filename: upData.original_filename || file.name,
-              post_image_url: (upData.type || 'image') === 'image' ? upData.url : null,
+              post_media_url: media.mediaUrl,
+              post_media_type: media.mediaType,
+              post_media_filename: media.mediaFilename,
+              post_image_url: media.mediaType === 'image' ? media.mediaUrl : null,
             };
+          }
+          // If no override yet, schedule without media (graceful degradation).
+        } else {
+          // 'generated' — use the generated/tagged image exactly as before.
+          const media = effectiveMedia(item);
+          if (media?.kind === 'url') {
+            mediaPayload = {
+              post_media_url: media.mediaUrl,
+              post_media_type: media.mediaType,
+              post_media_filename: media.mediaFilename,
+              post_image_url: media.mediaType === 'image' ? media.mediaUrl : null,
+            };
+          } else if (media?.kind === 'base64') {
+            // Wrap base64 in a Blob/File and upload to /api/media/upload, same path as the single-post modal.
+            const blob = base64ToBlob(media.base64, media.mimeType);
+            const file = new File([blob], `${item.id}-image.png`, { type: media.mimeType });
+            const fd = new FormData();
+            fd.append('file', file);
+            const upRes = await fetch('/api/media/upload', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: fd,
+            });
+            const upData = await upRes.json();
+            if (upRes.ok && upData.url) {
+              mediaPayload = {
+                post_media_url: upData.url,
+                post_media_type: upData.type || 'image',
+                post_media_filename: upData.original_filename || file.name,
+                post_image_url: (upData.type || 'image') === 'image' ? upData.url : null,
+              };
+            }
           }
         }
 
@@ -328,6 +436,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
             platform: item.platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
             is_boosted: false,
+            image_mode: itemMode,
             ...mediaPayload,
           }),
         });
@@ -511,10 +620,45 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
                       {item.text.length > 180 ? item.text.slice(0, 180) + '…' : item.text}
                     </div>
 
-                    {/* Media row — only for social posts, not blogs/newsletters */}
-                    {item.schedulable && (
-                      <div style={{ marginTop: 10, paddingLeft: 26, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        {mediaSrc ? (
+                    {/* Image mode selector — self-contained 3-way control */}
+                    {item.schedulable && renderImageModeSelector(item)}
+
+                    {/* Media row — only for social posts, not blogs/newsletters.
+                        Shown when mode is 'generated' (image exists) or 'uploaded'. */}
+                    {item.schedulable && (imageMode[item.id] || defaultImageMode(item)) !== 'caption_only' && (
+                      <div style={{ marginTop: 6, paddingLeft: 26, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        {(imageMode[item.id] || defaultImageMode(item)) === 'uploaded' ? (
+                          /* Upload own — always show upload control; show preview if override exists */
+                          <>
+                            {mediaSrc && (
+                              <>
+                                <img
+                                  src={mediaSrc}
+                                  alt=""
+                                  style={{
+                                    width: 64, height: 64, objectFit: 'cover', borderRadius: 6,
+                                    border: '1px solid var(--border)',
+                                  }}
+                                />
+                              </>
+                            )}
+                            <label className="admin-btn-sm" style={{ cursor: 'pointer', opacity: isUploading ? 0.6 : 1 }}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: '-2px' }}>
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                              </svg>
+                              {isUploading ? 'Uploading…' : (mediaSrc ? 'Replace' : 'Upload image')}
+                              <input
+                                type="file"
+                                accept="image/*,video/*"
+                                style={{ display: 'none' }}
+                                onChange={e => uploadReplacement(item.id, e.target.files?.[0])}
+                              />
+                            </label>
+                          </>
+                        ) : mediaSrc ? (
+                          /* Generated mode with an image present */
                           <>
                             <img
                               src={mediaSrc}
@@ -545,6 +689,8 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
                             </div>
                           </>
                         ) : (
+                          /* Generated mode but no image yet (shouldn't normally reach here
+                             since 'generated' is disabled when no image, but kept for safety) */
                           <label className="admin-btn-sm" style={{ cursor: 'pointer', opacity: isUploading ? 0.6 : 1 }}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: '-2px' }}>
                               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
