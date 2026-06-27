@@ -14,10 +14,20 @@ router.get('/posts', async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
 
+    // sort_by becomes a column identifier inside the query builder, so it must
+    // come from an allowlist — never pass user-controlled query params straight
+    // into .order().
+    const SORTABLE = new Set(['impressions', 'reactions', 'comments', 'shares', 'clicks', 'engagement_rate', 'boost_spend', 'created_at']);
+    const sortColumn = SORTABLE.has(sort_by) ? sort_by : 'reactions';
+    const ascending = order === 'asc';
+
     let query = supabase
       .from('post_metrics')
       .select('*, scheduled_posts(post_text, platform, scheduled_at, status, external_post_url)', { count: 'exact' })
-      .order(sort_by, { ascending: order === 'asc' })
+      // NULLS LAST: posts with no measurable value for the sort column (e.g.
+      // LinkedIn/Twitter posts with null engagement_rate because impressions
+      // aren't available) must sink to the bottom, not float to the top.
+      .order(sortColumn, { ascending, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
     // Scope by role
