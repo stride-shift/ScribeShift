@@ -26,6 +26,7 @@ export function useImageGeneration({ brand, setError }) {
     referenceImageBase64: null,
     referenceImageMimeType: null,
     referenceImagePreview: null, // data URL for the UI preview only
+    generateThisRun: true,       // "Generate images this run?" toggle — default ON preserves existing behaviour
   });
 
   // ── Image results + loading flags ─────────────────────────────────────────
@@ -50,6 +51,17 @@ export function useImageGeneration({ brand, setError }) {
    * so generateImages inherits it via closure, just like the interactive handlers.
    */
   const generateImages = useCallback(async ({ setProgress, textPrompt, authHeaders }) => {
+    // Early-return when the user toggled "Generate images this run?" OFF.
+    // Placed BEFORE setIsImageGenerating(true) so isImageGenerating ownership
+    // is never disturbed — quick_reference.org: "isImageGenerating is managed
+    // entirely inside useImageGeneration; generateImages clears it in its own
+    // finally. Do not add a reset in the provider's finally — it would create a race."
+    // This is an ADDITIONAL skip path; the text-failure early-abort in the provider
+    // (handleGenerate returns before images on { ok: false }) is unchanged.
+    if (!imageConfig.generateThisRun) {
+      setImages([]);
+      return;
+    }
     setIsImageGenerating(true);
 
     // Prefer the user's own topic description over a generic brand-name placeholder —

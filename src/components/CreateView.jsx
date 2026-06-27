@@ -727,143 +727,169 @@ export default function CreateView() {
               <div style={{ borderTop: '1px solid var(--border)', margin: '1.5rem 0 1rem' }} />
               <label className="wizard-context-label" style={{ marginBottom: '0.5rem' }}>Visual style</label>
 
-              <div className="image-style-grid">
-                {IMAGE_STYLES.map((style) => {
-                  const isActive = imageConfig.selectedStyles.has(style.key);
-                  return (
-                    <div
-                      key={style.key}
-                      className={`image-style-card ${isActive ? 'selected' : ''}`}
-                      onClick={() => toggleStyle(style.key)}
-                    >
-                      <div className="style-swatch" style={{ background: style.gradient }} />
-                      <div className="style-card-info">
-                        <div className="style-card-name">{style.name}</div>
-                        <div className="style-card-desc">{style.desc}</div>
-                      </div>
-                      {isActive && (
-                        <div className="style-check">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
+              {imageConfig.generateThisRun && (
+                <>
+                  <div className="image-style-grid">
+                    {IMAGE_STYLES.map((style) => {
+                      const isActive = imageConfig.selectedStyles.has(style.key);
+                      return (
+                        <div
+                          key={style.key}
+                          className={`image-style-card ${isActive ? 'selected' : ''}`}
+                          onClick={() => toggleStyle(style.key)}
+                        >
+                          <div className="style-swatch" style={{ background: style.gradient }} />
+                          <div className="style-card-info">
+                            <div className="style-card-name">{style.name}</div>
+                            <div className="style-card-desc">{style.desc}</div>
+                          </div>
+                          {isActive && (
+                            <div className="style-check">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="wizard-image-extras">
+                    <div className="wizard-context-block" style={{ flex: 1 }}>
+                      <label className="wizard-context-label">Additional guidelines</label>
+                      <textarea
+                        className="wizard-textarea"
+                        placeholder="e.g. Use abstract geometric shapes, dark backgrounds..."
+                        value={imageConfig.customGuidelines}
+                        onChange={(e) => setImageConfig({ ...imageConfig, customGuidelines: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="wizard-context-block" style={{ flex: 1 }}>
+                      <label className="wizard-context-label">Custom style prompt (+3 images)</label>
+                      <textarea
+                        className="wizard-textarea"
+                        placeholder="e.g. Watercolor illustration on aged paper..."
+                        value={imageConfig.customStylePrompt}
+                        onChange={(e) => setImageConfig({ ...imageConfig, customStylePrompt: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
+                    <label className="wizard-context-label">Things to avoid</label>
+                    <textarea
+                      className="wizard-textarea"
+                      placeholder="e.g. No text rendered in the image, no human figures, no clichéd metaphors..."
+                      value={imageConfig.avoidList || ''}
+                      onChange={(e) => setImageConfig({ ...imageConfig, avoidList: e.target.value })}
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Optional reference image — upload one and the AI matches its style. */}
+                  <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
+                    <label className="wizard-context-label">Reference image (optional)</label>
+                    <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                      Upload an image to guide the style, mood, and composition. The AI uses it as inspiration, not a literal copy.
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      {imageConfig.referenceImagePreview ? (
+                        <img
+                          src={imageConfig.referenceImagePreview}
+                          alt="Reference"
+                          style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 80, height: 80, borderRadius: 8, border: '1px dashed var(--border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)',
+                            fontSize: '1.5rem',
+                          }}
+                        >
+                          +
                         </div>
                       )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          id="reference-image-upload"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) {
+                              alert('Reference image must be under 5MB');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              const dataUrl = String(reader.result);
+                              const base64 = dataUrl.split(',')[1];
+                              setImageConfig({
+                                ...imageConfig,
+                                referenceImageBase64: base64,
+                                referenceImageMimeType: file.type,
+                                referenceImagePreview: dataUrl,
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                        <label htmlFor="reference-image-upload" className="btn btn-sm" style={{ cursor: 'pointer' }}>
+                          {imageConfig.referenceImagePreview ? 'Replace image' : 'Upload reference'}
+                        </label>
+                        {imageConfig.referenceImagePreview && (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => setImageConfig({
+                              ...imageConfig,
+                              referenceImageBase64: null,
+                              referenceImageMimeType: null,
+                              referenceImagePreview: null,
+                            })}
+                            style={{ color: '#ef4444' }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-
-              <div className="wizard-image-extras">
-                <div className="wizard-context-block" style={{ flex: 1 }}>
-                  <label className="wizard-context-label">Additional guidelines</label>
-                  <textarea
-                    className="wizard-textarea"
-                    placeholder="e.g. Use abstract geometric shapes, dark backgrounds..."
-                    value={imageConfig.customGuidelines}
-                    onChange={(e) => setImageConfig({ ...imageConfig, customGuidelines: e.target.value })}
-                    rows={2}
-                  />
-                </div>
-                <div className="wizard-context-block" style={{ flex: 1 }}>
-                  <label className="wizard-context-label">Custom style prompt (+3 images)</label>
-                  <textarea
-                    className="wizard-textarea"
-                    placeholder="e.g. Watercolor illustration on aged paper..."
-                    value={imageConfig.customStylePrompt}
-                    onChange={(e) => setImageConfig({ ...imageConfig, customStylePrompt: e.target.value })}
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
-                <label className="wizard-context-label">Things to avoid</label>
-                <textarea
-                  className="wizard-textarea"
-                  placeholder="e.g. No text rendered in the image, no human figures, no clichéd metaphors..."
-                  value={imageConfig.avoidList || ''}
-                  onChange={(e) => setImageConfig({ ...imageConfig, avoidList: e.target.value })}
-                  rows={2}
-                />
-              </div>
-
-              {/* Optional reference image — upload one and the AI matches its style. */}
-              <div className="wizard-context-block" style={{ marginTop: '0.75rem' }}>
-                <label className="wizard-context-label">Reference image (optional)</label>
-                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
-                  Upload an image to guide the style, mood, and composition. The AI uses it as inspiration, not a literal copy.
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  {imageConfig.referenceImagePreview ? (
-                    <img
-                      src={imageConfig.referenceImagePreview}
-                      alt="Reference"
-                      style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: 80, height: 80, borderRadius: 8, border: '1px dashed var(--border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)',
-                        fontSize: '1.5rem',
-                      }}
-                    >
-                      +
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      id="reference-image-upload"
-                      style={{ display: 'none' }}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (file.size > 5 * 1024 * 1024) {
-                          alert('Reference image must be under 5MB');
-                          return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          const dataUrl = String(reader.result);
-                          const base64 = dataUrl.split(',')[1];
-                          setImageConfig({
-                            ...imageConfig,
-                            referenceImageBase64: base64,
-                            referenceImageMimeType: file.type,
-                            referenceImagePreview: dataUrl,
-                          });
-                        };
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-                    <label htmlFor="reference-image-upload" className="btn btn-sm" style={{ cursor: 'pointer' }}>
-                      {imageConfig.referenceImagePreview ? 'Replace image' : 'Upload reference'}
-                    </label>
-                    {imageConfig.referenceImagePreview && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => setImageConfig({
-                          ...imageConfig,
-                          referenceImageBase64: null,
-                          referenceImageMimeType: null,
-                          referenceImagePreview: null,
-                        })}
-                        style={{ color: '#ef4444' }}
-                      >
-                        Remove
-                      </button>
-                    )}
                   </div>
-                </div>
+                </>
+              )}
+
+              {/* "Generate images this run?" toggle — lets users skip suite generation
+                  and upload / generate per-post at schedule time instead. */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', marginTop: '1rem', padding: '0.75rem 1rem', background: 'var(--surface-alt, var(--bg-secondary, #f8fafc))', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <input
+                  type="checkbox"
+                  id="generate-images-this-run"
+                  checked={imageConfig.generateThisRun}
+                  onChange={(e) => setImageConfig({ ...imageConfig, generateThisRun: e.target.checked })}
+                  style={{ marginTop: '0.2rem', width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }}
+                />
+                <label htmlFor="generate-images-this-run" style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Generate images this run</span>
+                  {!imageConfig.generateThisRun && (
+                    <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      Images will be skipped. You can still upload or generate images per-post when scheduling.
+                    </span>
+                  )}
+                </label>
               </div>
 
-              <div className="image-summary">
-                {styleCount} style{styleCount !== 1 ? 's' : ''} selected
-                {customAdds > 0 ? ' + custom' : ''} — <strong>{totalImages} images</strong> will be generated
-              </div>
+              {imageConfig.generateThisRun && (
+                <div className="image-summary">
+                  {styleCount} style{styleCount !== 1 ? 's' : ''} selected
+                  {customAdds > 0 ? ' + custom' : ''} — <strong>{totalImages} images</strong> will be generated
+                </div>
+              )}
             </>
           )}
         </div>
