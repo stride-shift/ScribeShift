@@ -10,7 +10,12 @@ const ROOT_DIR = path.resolve(__dirname, '../..');
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 export const TEXT_MODEL = 'gemini-2.5-flash';
-export const IMAGE_MODEL = 'gemini-2.5-flash-image';
+// Image model: "Nano Banana Pro" (Gemini 3 Pro Image) — the model Justin's
+// battlepack generator uses for professional, high-resolution, text-legible,
+// brand-accurate output. Env-overridable so we can fall back to the older
+// 'gemini-2.5-flash-image' (Nano Banana) instantly if the preview model isn't
+// enabled on the active API key.
+export const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image-preview';
 export const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 // ── Clean AI response (strip code fences, error patterns) ──────────
@@ -99,7 +104,10 @@ export async function geminiImageWithParts(parts, maxRetries = 3) {
           generationConfig: {
             temperature: 0.7,
             response_modalities: ['IMAGE'],
-            image_config: { aspect_ratio: '16:9' },
+            // 2K output (matches Justin's battlepack config) — crisper text and
+            // detail. Layer B then cover-crops this to each platform's native
+            // dimensions, so the per-platform variants inherit the higher res.
+            image_config: { aspect_ratio: '16:9', image_size: '2K' },
           },
         }),
       });
