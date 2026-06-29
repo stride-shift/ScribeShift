@@ -680,6 +680,27 @@ export async function refreshAccountMetrics(userId, companyId) {
       } else {
         await supabase.from('account_metrics').insert(row);
       }
+
+      // Append a time-series snapshot (best-effort — never fail the sync over it)
+      // so the dashboard can chart follower / reach / impression growth over time.
+      try {
+        await supabase.from('account_metrics_history').insert({
+          user_id: userId,
+          company_id: companyId,
+          platform,
+          followers: row.followers,
+          following: row.following,
+          posts_count: row.posts_count,
+          profile_views_30d: row.profile_views_30d,
+          reach_30d: row.reach_30d,
+          impressions_30d: row.impressions_30d,
+          engagement_30d: row.engagement_30d,
+          captured_at: row.synced_at,
+        });
+      } catch (histErr) {
+        console.warn(`[METRICS] history snapshot for ${platform} failed:`, histErr.message);
+      }
+
       results[platform] = {
         status: 'ok',
         followers: row.followers,
@@ -765,4 +786,64 @@ export async function refreshAll(userId, companyId) {
     refreshPostMetrics(userId, companyId),
   ]);
   return { accounts, posts, refreshed_at: new Date().toISOString() };
+}
+
+// Cron driver: refresh metrics for connected users, stalest first, time-boxed
+// so the serverless function stays well under its cap. Whatever isn't reached
+// this tick gets picked up next tick (because it's now the stalest).
+export async function refreshDueUsers({ maxUsers = 25, maxMs = 45000 } = {}) {
+  const startedAt = Date.now();
+
+  // All users with at least one active social connection.
+  const { data: tokenRows, error } = await supabase
+    .from('social_oauth_tokens')
+    .select('user_id, company_id')
+    .eq('is_active', true);
+  if (error) {
+    console.error('[METRICS] refreshDueUsers token query failed:', error.message);
+    return { processed: 0, total: 0, error: error.message };
+  }
+
+  const companyByUser = new Map();
+  for (const r of tokenRows || []) {
+    if (r.user_id && !companyByUser.has(r.user_id)) companyByUser.set(r.user_id, r.company_id);
+  }
+  const userIds = [...companyByUser.keys()];
+  if (userIds.length === 0) return { processed: 0, total: 0 };
+
+  // Order by staleness: never-synced first, then oldest synced_at.
+  const { data: amRows } = await supabase
+    .from('account_metrics')
+    .select('user_id, synced_at')
+    .in('user_id', userIds);
+  const lastSync = new Map();
+  for (const r of amRows || []) {
+    const prev = lastSync.get(r.user_id);
+    if (!prev || (r.synced_at && r.synced_at < prev)) lastSync.set(r.user_id, r.synced_at);
+  }
+  userIds.sort((a, b) => {
+    const sa = lastSync.get(a) || ''; // '' (never synced) sorts before any ISO timestamp
+    const sb = lastSync.get(b) || '';
+    return sa < sb ? -1 : sa > sb ? 1 : 0;
+  });
+
+  let processed = 0;
+  let errored = 0;
+  for (const userId of userIds) {
+    if (processed >= maxUsers || Date.now() - startedAt > maxMs) break;
+    try {
+      await refreshAll(userId, companyByUser.get(userId));
+    } catch (err) {
+      errored++;
+      console.warn(`[METRICS] refreshDueUsers user ${userId} failed:`, err.message);
+    }
+    processed++;
+  }
+
+  return {
+    processed,
+    errored,
+    total: userIds.length,
+    duration_ms: Date.now() - startedAt,
+  };
 }

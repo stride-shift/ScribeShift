@@ -11,6 +11,9 @@
     },
     "api/cron/daily-reminder.js": {
       "maxDuration": 60
+    },
+    "api/cron/refresh-metrics.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

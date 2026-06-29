@@ -52,6 +52,35 @@ router.get('/posts', async (req, res) => {
   }
 });
 
+// ── GET /api/metrics/trends ─────────────────────────────────────────
+// Time-series of account-level metrics (followers / reach / impressions) for
+// charting growth over time. Reads the append-only account_metrics_history.
+router.get('/trends', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    let query = supabase
+      .from('account_metrics_history')
+      .select('platform, followers, reach_30d, impressions_30d, captured_at')
+      .gte('captured_at', since)
+      .order('captured_at', { ascending: true });
+
+    // Same scoping rule as /posts — scope on the base table's company_id.
+    if (req.user.role === 'user' || req.user.role === 'admin') {
+      query = query.eq('company_id', req.user.company_id);
+    }
+    if (req.query.platform) query = query.eq('platform', req.query.platform);
+
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ trends: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch trends' });
+  }
+});
+
 // ── GET /api/metrics/summary ────────────────────────────────────────
 router.get('/summary', async (req, res) => {
   try {
@@ -188,7 +217,39 @@ router.get('/account-overview', async (req, res) => {
     const { data, error } = await query;
     if (error) return res.status(400).json({ error: error.message });
 
-    // Roll up totals for the header
+    const synced = data || [];
+
+    // Surface connected-but-not-yet-synced accounts. account_metrics is only
+    // populated after a sync, so a freshly connected account would otherwise
+    // make the dashboard say "No connected accounts" (the bug Shanne hit). Pull
+    // active connections and add placeholders for any platform without metrics.
+    const havePlatform = new Set(synced.map(a => a.platform));
+    let connQuery = supabase
+      .from('social_oauth_tokens')
+      .select('platform, platform_user_name')
+      .eq('is_active', true);
+    if (req.user.role === 'admin' || req.user.role === 'user') {
+      connQuery = connQuery.eq('user_id', req.user.id);
+    }
+    const { data: conns } = await connQuery;
+    const pending = [];
+    for (const c of conns || []) {
+      if (havePlatform.has(c.platform)) continue;
+      havePlatform.add(c.platform);
+      pending.push({
+        id: `pending-${c.platform}`,
+        platform: c.platform,
+        platform_user_name: c.platform_user_name || null,
+        followers: null, following: null, posts_count: null,
+        reach_30d: null, impressions_30d: null, engagement_30d: null,
+        synced_at: null, not_synced: true,
+        recent_posts: [], extra_metrics: {},
+      });
+    }
+
+    const accounts = [...synced, ...pending];
+
+    // Roll up totals for the header (placeholders contribute null → 0)
     const totals = {
       followers: 0,
       following: 0,
@@ -196,7 +257,7 @@ router.get('/account-overview', async (req, res) => {
       reach_30d: 0,
       impressions_30d: 0,
     };
-    for (const row of data || []) {
+    for (const row of accounts) {
       totals.followers += row.followers || 0;
       totals.following += row.following || 0;
       totals.posts += row.posts_count || 0;
@@ -204,7 +265,7 @@ router.get('/account-overview', async (req, res) => {
       totals.impressions_30d += row.impressions_30d || 0;
     }
 
-    res.json({ accounts: data || [], totals });
+    res.json({ accounts, totals });
   } catch (err) {
     console.error('[METRICS] account-overview:', err);
     res.status(500).json({ error: 'Failed to fetch account overview' });

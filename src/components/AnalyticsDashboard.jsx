@@ -78,30 +78,34 @@ export default function AnalyticsDashboard() {
   const [posts, setPosts] = useState([]);
   const [comparison, setComparison] = useState(null);
   const [scribeshift, setScribeshift] = useState(null);
+  const [trends, setTrends] = useState([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError('');
     const auth = getAuthHeaders();
     try {
-      const [accountsRes, summaryRes, postsRes, compRes, ssRes] = await Promise.all([
+      const [accountsRes, summaryRes, postsRes, compRes, ssRes, trendsRes] = await Promise.all([
         fetch('/api/metrics/account-overview', { headers: auth }),
         fetch('/api/metrics/summary', { headers: auth }),
         fetch('/api/metrics/posts?sort_by=engagement_rate&order=desc&limit=10', { headers: auth }),
         fetch('/api/metrics/boosted-vs-organic', { headers: auth }),
         fetch('/api/metrics/scribeshift-stats?days=30', { headers: auth }),
+        fetch('/api/metrics/trends?days=30', { headers: auth }),
       ]);
       const accountsData = accountsRes.ok ? await accountsRes.json() : { accounts: [], totals: {} };
       const summaryData = summaryRes.ok ? await summaryRes.json() : { summary: null };
       const postsData = postsRes.ok ? await postsRes.json() : { metrics: [] };
       const compData = compRes.ok ? await compRes.json() : null;
       const ssData = ssRes.ok ? await ssRes.json() : null;
+      const trendsData = trendsRes.ok ? await trendsRes.json() : { trends: [] };
 
       setAccountOverview({ accounts: accountsData.accounts || [], totals: accountsData.totals || {} });
       setPostSummary(summaryData.summary || null);
       setPosts(postsData.metrics || []);
       setComparison(compData);
       setScribeshift(ssData);
+      setTrends(trendsData.trends || []);
     } catch (err) {
       setError(`Failed to load analytics: ${err.message}`);
     } finally {
@@ -215,6 +219,7 @@ export default function AnalyticsDashboard() {
           posts={posts}
           postSummary={postSummary}
           totals={totals}
+          trends={trends}
           hasAnyAccount={hasAnyAccount}
           hasAnyPosts={hasAnyPosts}
           onRefresh={handleRefresh}
@@ -233,7 +238,22 @@ export default function AnalyticsDashboard() {
 }
 
 /* ── Native platforms tab ───────────────────────────────────────────── */
-function NativeTab({ accountOverview, posts, postSummary, totals, hasAnyAccount, hasAnyPosts, onRefresh }) {
+function NativeTab({ accountOverview, posts, postSummary, totals, trends, hasAnyAccount, hasAnyPosts, onRefresh }) {
+  // Audience growth: total followers across platforms per snapshot day. Multiple
+  // same-day snapshots collapse to the latest value per platform before summing.
+  const growth = useMemo(() => {
+    const byDay = {};
+    for (const t of trends || []) {
+      const day = (t.captured_at || '').slice(0, 10);
+      if (!day) continue;
+      byDay[day] = byDay[day] || {};
+      byDay[day][t.platform] = t.followers || 0;
+    }
+    return Object.entries(byDay)
+      .map(([date, plats]) => ({ date, followers: Object.values(plats).reduce((a, b) => a + b, 0) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [trends]);
+
   if (!hasAnyAccount) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
@@ -269,6 +289,22 @@ function NativeTab({ accountOverview, posts, postSummary, totals, hasAnyAccount,
           value={formatNumber(totals.posts || 0)}
           subtext="lifetime, per platform API" />
       </div>
+
+      {/* Audience growth over time — needs ≥2 snapshots to draw a line */}
+      {growth.length > 1 && (
+        <div className="card" style={{ marginBottom: '1.25rem' }}>
+          <h3 style={{ marginTop: 0 }}>Audience growth</h3>
+          <p className="card-subtitle" style={{ marginTop: 0 }}>Total followers across connected platforms over time.</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={growth}>
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={formatNumber} />
+              <Tooltip />
+              <Line type="monotone" dataKey="followers" stroke="#3b82f6" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Per-platform account cards (rich) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.25rem' }}>
@@ -553,6 +589,11 @@ function PlatformPanel({ a }) {
             )}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{a.platform_user_name || '(unknown)'}</div>
+          {a.not_synced && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+              Connected — hit <strong>Refresh</strong> to pull stats (or wait for the next auto-sync).
+            </div>
+          )}
           {extra.bio && (
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
               {extra.bio.length > 120 ? extra.bio.slice(0, 120) + '…' : extra.bio}
