@@ -214,19 +214,35 @@ export async function disconnect(userId) {
 }
 
 // ── Calendar API helpers ────────────────────────────────────────────
+const CAL_PLATFORM_LABELS = {
+  linkedin: 'LinkedIn', twitter: 'Twitter / X', facebook: 'Facebook', instagram: 'Instagram',
+};
+
 function buildEventBody({ platform, postText, scheduledAt, durationMinutes = 15 }) {
   const start = new Date(scheduledAt);
   const end = new Date(start.getTime() + durationMinutes * 60_000);
+  const label = CAL_PLATFORM_LABELS[platform] || platform;
+  const appUrl = (process.env.FRONTEND_URL || 'https://scribeshift.app').split(',')[0].trim();
+
+  // Short topic reference instead of the full caption: the calendar entry is a
+  // reminder of WHAT is going out, not a place to read the whole post.
+  const firstLine = (postText || '').split('\n').map(s => s.trim()).find(Boolean) || '';
+  const topic = firstLine.length > 80 ? firstLine.slice(0, 80).trimEnd() + '…' : firstLine;
+
+  const description = topic
+    ? `Scheduled with ScribeShift — based on: "${topic}"\n\nView or edit this post: ${appUrl}`
+    : `Scheduled with ScribeShift.\n\nView or edit this post: ${appUrl}`;
+
   return {
-    summary: `ScribeShift: ${platform} post`,
-    description: (postText || '').slice(0, 2000),
+    summary: `Post on ${label}`,
+    description,
     start: { dateTime: start.toISOString() },
     end: { dateTime: end.toISOString() },
     reminders: {
       useDefault: false,
       overrides: [{ method: 'popup', minutes: 15 }],
     },
-    source: { title: 'ScribeShift', url: process.env.FRONTEND_URL || 'https://scribeshift.app' },
+    source: { title: 'ScribeShift', url: appUrl },
   };
 }
 
