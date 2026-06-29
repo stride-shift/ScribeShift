@@ -49,6 +49,14 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 
 const app = express();
 
+// Vercel runs this app behind exactly ONE proxy hop. Trust only that first hop
+// so req.ip (and express-rate-limit's keyGenerator) read the real client IP from
+// X-Forwarded-For. Gated to the Vercel runtime: locally there is no proxy, so
+// req.ip stays the socket IP. We deliberately do NOT use `trust proxy: true` —
+// that trusts the whole X-Forwarded-For chain and lets a client prepend a spoofed
+// IP to evade per-IP rate limits or impersonate another IP.
+if (process.env.VERCEL) app.set('trust proxy', 1);
+
 // ── Rate limiters ────────────────────────────────────────────────────
 // Auth limiter — applies to /api/auth (login/signup/me).
 // Status checks for OAuth providers are mounted earlier with their own oauthLimiter.
