@@ -423,7 +423,7 @@ router.post('/companies', requireRole('super_admin'), async (req, res) => {
 // ── PUT /api/admin/companies/:id ────────────────────────────────────
 router.put('/companies/:id', requireRole('super_admin'), async (req, res) => {
   try {
-    const { name, plan, credit_balance, credit_monthly_limit, logo_url, max_brands } = req.body;
+    const { name, plan, credit_balance, credit_monthly_limit, logo_url, max_brands, approval_workflow_enabled } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (plan !== undefined) updates.plan = plan;
@@ -432,6 +432,7 @@ router.put('/companies/:id', requireRole('super_admin'), async (req, res) => {
     if (logo_url !== undefined) updates.logo_url = logo_url;
     // null = clear override (fall back to plan default), number = explicit cap
     if (max_brands !== undefined) updates.max_brands = max_brands;
+    if (approval_workflow_enabled !== undefined) updates.approval_workflow_enabled = approval_workflow_enabled;
     updates.updated_at = new Date().toISOString();
 
     const { error } = await supabase

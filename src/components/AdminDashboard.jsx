@@ -256,6 +256,7 @@ export default function AdminDashboard() {
           credit_balance: editingCompany.credit_balance,
           credit_monthly_limit: editingCompany.credit_monthly_limit,
           max_brands: editingCompany.max_brands ?? null,
+          approval_workflow_enabled: editingCompany.approval_workflow_enabled ?? false,
         }),
       });
       if (!res.ok) {
@@ -787,6 +788,16 @@ export default function AdminDashboard() {
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Leave empty to use the plan default
                   </span>
+                </label>
+              </div>
+              <div className="admin-form-row" style={{ marginTop: '0.5rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={editingCompany.approval_workflow_enabled ?? false}
+                    onChange={e => setEditingCompany({ ...editingCompany, approval_workflow_enabled: e.target.checked })}
+                  />
+                  Approval workflow — require posts to be reviewed &amp; approved before publishing
                 </label>
               </div>
               <div className="admin-form-actions">
