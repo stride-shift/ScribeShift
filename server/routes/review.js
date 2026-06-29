@@ -221,6 +221,41 @@ router.post('/act', actLimiter, async (req, res) => {
 // ── All remaining routes require authentication ─────────────────────────────────
 router.use(verifyToken);
 
+// ── GET /api/review/unread-count ─────────────────────────────────────────────────
+// Badge count for the top-bar feedback icon. Counts comments/feedback created
+// after `since` (the client's last-seen timestamp) that the caller hasn't
+// authored themselves. Scoped by role: super_admin = all; company members =
+// their company. External-reviewer comments (author_user_id NULL) are included.
+//
+// MUST be declared before GET /:id, or '/unread-count' is captured as an :id.
+router.get('/unread-count', async (req, res) => {
+  try {
+    const since = req.query.since
+      ? new Date(req.query.since).toISOString()
+      : new Date(0).toISOString();
+
+    let q = supabase
+      .from('post_comments')
+      .select('id', { count: 'exact', head: true })
+      .gt('created_at', since)
+      // Include external (null-author) comments; exclude the caller's own.
+      .or(`author_user_id.is.null,author_user_id.neq.${req.user.id}`);
+
+    if (req.user.role !== 'super_admin') {
+      if (req.user.company_id) q = q.eq('company_id', req.user.company_id);
+      else q = q.eq('author_user_id', req.user.id); // no company → effectively none
+    }
+
+    const { count, error } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ count: count || 0 });
+  } catch (err) {
+    console.error('[REVIEW] unread-count error:', err);
+    // Non-fatal for the UI — return 0 so the badge just hides.
+    res.json({ count: 0 });
+  }
+});
+
 // ── GET /api/review/:id ─────────────────────────────────────────────────────────
 // Fetch a single post + its comments, scoped by role.
 router.get('/:id', async (req, res) => {

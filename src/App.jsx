@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './components/AuthProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import LoginPage from './components/LoginPage';
@@ -41,7 +41,8 @@ const NAV_VIEWS = [
   { id: 'create', label: 'Create', icon: 'M12 5v14M5 12h14', roles: ['user', 'admin', 'super_admin'] },
   { id: 'history', label: 'History', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', roles: ['user', 'admin', 'super_admin'] },
-  { id: 'review', label: 'Feedback', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', roles: ['user', 'admin', 'super_admin'] },
+  // 'review' (Feedback) is intentionally NOT a side-nav item — it's reached via
+  // the top-bar FeedbackBell icon. Its view is still rendered by renderView().
   { id: 'planner', label: 'Content Types', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['user', 'admin', 'super_admin'] },
   { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'brands', label: 'Brands', icon: 'M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01', roles: ['user', 'admin', 'super_admin'] },
@@ -154,6 +155,81 @@ const NavIcon = ({ d }) => (
     <path d={d} />
   </svg>
 );
+
+// ── Top-bar feedback/messages icon with unread badge ──────────────
+// Replaces the old "Feedback" side-nav item. Polls /api/review/unread-count
+// for messages/feedback created since the user last opened the feedback view
+// (a localStorage timestamp). Clicking opens the feedback view and marks seen.
+const FEEDBACK_SEEN_KEY = 'scribeshift-feedback-seen';
+const FEEDBACK_BUBBLE = 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z';
+
+function FeedbackBell({ onOpen, active }) {
+  const { getAuthHeaders } = useAuth();
+  const [count, setCount] = useState(0);
+
+  // First ever load: anchor "seen" at now so historic comments don't all
+  // show as unread. Returns the stored ISO timestamp.
+  const getSeen = () => {
+    let s = localStorage.getItem(FEEDBACK_SEEN_KEY);
+    if (!s) { s = new Date().toISOString(); localStorage.setItem(FEEDBACK_SEEN_KEY, s); }
+    return s;
+  };
+
+  const refresh = useCallback(async () => {
+    try {
+      const since = localStorage.getItem(FEEDBACK_SEEN_KEY) || new Date().toISOString();
+      const res = await fetch(`/api/review/unread-count?since=${encodeURIComponent(since)}`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setCount(data.count || 0);
+    } catch { /* non-fatal: badge just stays as-is */ }
+  }, [getAuthHeaders]);
+
+  // Poll every 60s.
+  useEffect(() => {
+    getSeen();
+    refresh();
+    const t = setInterval(refresh, 60_000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  // Opening the feedback view marks everything seen.
+  useEffect(() => {
+    if (active) {
+      localStorage.setItem(FEEDBACK_SEEN_KEY, new Date().toISOString());
+      setCount(0);
+    }
+  }, [active]);
+
+  const handleClick = () => {
+    localStorage.setItem(FEEDBACK_SEEN_KEY, new Date().toISOString());
+    setCount(0);
+    onOpen();
+  };
+
+  return (
+    <button
+      className="feedback-bell"
+      onClick={handleClick}
+      title="Feedback & messages"
+      aria-label={count > 0 ? `Feedback & messages, ${count} unread` : 'Feedback & messages'}
+      style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'inline-flex', alignItems: 'center', padding: 6 }}
+    >
+      <NavIcon d={FEEDBACK_BUBBLE} />
+      {count > 0 && (
+        <span
+          style={{
+            position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, padding: '0 4px',
+            borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700,
+            lineHeight: '16px', textAlign: 'center', boxShadow: '0 0 0 2px var(--bg, #fff)',
+          }}
+        >
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
 
 // ── Workflow sidebar (only shown on Create view) ──────────────────
 function WorkflowSidebar() {
@@ -340,6 +416,7 @@ function AppShell() {
             {user?.full_name || user?.email?.split('@')[0]}
             <span className="navbar-role-badge">{user?.role?.replace('_', ' ')}</span>
           </span>
+          <FeedbackBell active={activeView === 'review'} onOpen={() => setActiveView('review')} />
           <button className="theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
