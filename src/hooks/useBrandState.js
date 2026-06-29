@@ -70,6 +70,9 @@ export function useBrandState() {
           default_image_styles: Array.isArray(active.default_image_styles)
             ? active.default_image_styles
             : null,
+          // Structured colour palette extracted by Wave 1 AI — may be null for
+          // legacy brands created before palette extraction was added.
+          brand_palette: active.brand_palette ?? null,
         }));
 
         // If the active brand has a logo URL but no base64 yet, fetch the

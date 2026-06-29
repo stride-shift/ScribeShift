@@ -24,6 +24,7 @@ const EMPTY_DRAFT = {
   default_audience: '',
   default_image_styles: [],
   source_url: null,
+  brand_palette: null,  // read-only, populated from API on edit — never sent to server
   // CI document fields — local pending state for upload, saved fields on edit
   ci_document_url: null,
   ci_document_name: null,
@@ -118,6 +119,7 @@ export default function BrandsView() {
       default_audience: brand.default_audience || '',
       default_image_styles: Array.isArray(brand.default_image_styles) ? brand.default_image_styles : [],
       source_url: brand.source_url || null,
+      brand_palette: brand.brand_palette ?? null,
       ci_document_url: brand.ci_document_url || null,
       ci_document_name: brand.ci_document_name || null,
       ci_document_text: brand.ci_document_text || null,
@@ -263,7 +265,7 @@ export default function BrandsView() {
       // Strip local-only fields before sending to the JSON endpoint — files
       // upload separately to dedicated endpoints to avoid the 1MB JSON cap.
       // eslint-disable-next-line no-unused-vars
-      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ciDocPending, ...payload } = draft;
+      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ciDocPending, brand_palette: _brandPalette, ...payload } = draft;
 
       // If user explicitly cleared the logo (preview is null but the brand
       // had a logo before), forward that as null so the backend wipes it.
@@ -631,6 +633,134 @@ export default function BrandsView() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Read-only brand palette ─────────────────────────── */}
+              {draft.brand_palette ? (
+                <div className="wizard-context-block" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                  <label className="wizard-context-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    Brand palette
+                    <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-muted, #888)', textTransform: 'none' }}>
+                      — extracted automatically · read-only
+                    </span>
+                  </label>
+
+                  {/* Primary swatches: bg / text / accent / gradient */}
+                  {draft.brand_palette.primary && (
+                    <div style={{ marginTop: '0.6rem' }}>
+                      <p className="card-subtitle" style={{ margin: '0 0 0.35rem', fontSize: '0.7rem', fontWeight: 600 }}>Primary</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {[
+                          { hex: draft.brand_palette.primary?.bg,             label: 'bg' },
+                          { hex: draft.brand_palette.primary?.text,           label: 'text' },
+                          { hex: draft.brand_palette.primary?.accent,         label: 'accent' },
+                          { hex: draft.brand_palette.primary?.gradient_start, label: 'grad start' },
+                          { hex: draft.brand_palette.primary?.gradient_end,   label: 'grad end' },
+                        ].filter(s => s.hex).map(({ hex, label }) => (
+                          <div key={label} style={{ textAlign: 'center', minWidth: 44 }}>
+                            <div
+                              style={{
+                                width: 36, height: 36, borderRadius: 6,
+                                background: hex,
+                                border: '1px solid var(--border)',
+                                margin: '0 auto',
+                              }}
+                              title={`${label}: ${hex}`}
+                            />
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)', marginTop: 2 }}>{hex}</div>
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)' }}>{label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Single hex tokens: accent / neutral_light / neutral_dark */}
+                  {(draft.brand_palette.accent || draft.brand_palette.neutral_light || draft.brand_palette.neutral_dark) && (
+                    <div style={{ marginTop: '0.7rem' }}>
+                      <p className="card-subtitle" style={{ margin: '0 0 0.35rem', fontSize: '0.7rem', fontWeight: 600 }}>Accents & neutrals</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {[
+                          { hex: draft.brand_palette.accent,        label: 'accent' },
+                          { hex: draft.brand_palette.neutral_light, label: 'neutral light' },
+                          { hex: draft.brand_palette.neutral_dark,  label: 'neutral dark' },
+                        ].filter(s => s.hex).map(({ hex, label }) => (
+                          <div key={label} style={{ textAlign: 'center', minWidth: 44 }}>
+                            <div
+                              style={{
+                                width: 36, height: 36, borderRadius: 6,
+                                background: hex,
+                                border: '1px solid var(--border)',
+                                margin: '0 auto',
+                              }}
+                              title={`${label}: ${hex}`}
+                            />
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)', marginTop: 2 }}>{hex}</div>
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)' }}>{label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Secondary palette swatches with labels */}
+                  {Array.isArray(draft.brand_palette.secondary) && draft.brand_palette.secondary.length > 0 && (
+                    <div style={{ marginTop: '0.7rem' }}>
+                      <p className="card-subtitle" style={{ margin: '0 0 0.35rem', fontSize: '0.7rem', fontWeight: 600 }}>Secondary</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {draft.brand_palette.secondary.map((s, i) => s?.hex ? (
+                          <div key={i} style={{ textAlign: 'center', minWidth: 44 }}>
+                            <div
+                              style={{
+                                width: 36, height: 36, borderRadius: 6,
+                                background: s.hex,
+                                border: '1px solid var(--border)',
+                                margin: '0 auto',
+                              }}
+                              title={`${s.label || ''}: ${s.hex}`}
+                            />
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)', marginTop: 2 }}>{s.hex}</div>
+                            {s.label && (
+                              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted, #888)' }}>{s.label}</div>
+                            )}
+                          </div>
+                        ) : null)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Relationship + usage hints */}
+                  {(draft.brand_palette.relationship || draft.brand_palette.usage) && (
+                    <div style={{ marginTop: '0.7rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      {draft.brand_palette.relationship && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+                          Colour relationship: <strong style={{ color: 'var(--text, inherit)' }}>{draft.brand_palette.relationship}</strong>
+                        </span>
+                      )}
+                      {draft.brand_palette.usage?.primary && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+                          Primary use: <strong style={{ color: 'var(--text, inherit)' }}>{draft.brand_palette.usage.primary}</strong>
+                        </span>
+                      )}
+                      {draft.brand_palette.usage?.secondary && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+                          Secondary use: <strong style={{ color: 'var(--text, inherit)' }}>{draft.brand_palette.usage.secondary}</strong>
+                        </span>
+                      )}
+                      {draft.brand_palette.usage?.accent && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+                          Accent use: <strong style={{ color: 'var(--text, inherit)' }}>{draft.brand_palette.usage.accent}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : modalMode === 'edit' ? (
+                /* Legacy brand: no structured palette yet — show a subtle note */
+                <div style={{ marginTop: '1rem', padding: '0.6rem 0.75rem', borderRadius: 6, background: 'var(--surface-2, rgba(0,0,0,0.03))', fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+                  No structured palette yet — using primary &amp; secondary colours above.
+                  Re-extract from a website URL to generate a full palette.
+                </div>
+              ) : null}
 
               <div className="wizard-context-block" style={{ marginTop: '1rem' }}>
                 <label className="wizard-context-label">Ideal Customer Profile</label>
