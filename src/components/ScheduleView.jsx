@@ -95,6 +95,7 @@ export default function ScheduleView() {
   const [expandedCell, setExpandedCell] = useState(null);
   const [postedRange, setPostedRange] = useState('week');
   const [showPostedPicker, setShowPostedPicker] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
   const postedPickerRef = useRef(null);
 
   useEffect(() => {
@@ -118,21 +119,33 @@ export default function ScheduleView() {
   useEffect(() => { loadPosts(); }, [statusFilter]);
   useEffect(() => { loadReusePool(); }, []);
 
-  const loadPosts = async () => {
+  const loadPosts = async (overrideFilter, { rethrow = false } = {}) => {
     setLoading(true);
     setError('');
+    // overrideFilter lets handleModalCreated fetch unfiltered even before the
+    // statusFilter state update has propagated (state updates are async in React).
+    const activeFilter = overrideFilter !== undefined ? overrideFilter : statusFilter;
     try {
       const params = new URLSearchParams();
       // 'overdue' is a client-side display filter — NOT a DB status value.
       // When it's active, fetch all scheduled posts so we can narrow client-side.
-      if (statusFilter && statusFilter !== 'overdue') params.set('status', statusFilter);
-      else if (statusFilter === 'overdue') params.set('status', 'scheduled');
+      if (activeFilter && activeFilter !== 'overdue') params.set('status', activeFilter);
+      else if (activeFilter === 'overdue') params.set('status', 'scheduled');
       const res = await fetch(`/api/schedule?${params}`, { headers: getAuthHeaders() });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed to load posts'); return; }
+      if (!res.ok) {
+        const msg = data.error || 'Failed to load posts';
+        setError(msg);
+        if (rethrow) throw new Error(msg);
+        return;
+      }
       setPosts(data.posts || []);
-    } catch {
-      setError('Failed to load scheduled posts');
+    } catch (err) {
+      // Only set generic network error if a more specific one wasn't already set above.
+      if (!err.message || err.message === 'Failed to load posts') {
+        setError('Failed to load scheduled posts');
+      }
+      if (rethrow) throw err;
     } finally {
       setLoading(false);
     }
@@ -167,8 +180,28 @@ export default function ScheduleView() {
     setModalInitialText('');
   };
 
-  const handleModalCreated = () => {
-    loadPosts();
+  const handleModalCreated = async () => {
+    // A freshly-created post always has status 'scheduled'. If the current
+    // filter would hide it (e.g. 'posted', 'failed'), relax it to 'All Status'
+    // so the new post is visible in the calendar/list immediately.
+    const filterHidesScheduled = statusFilter && statusFilter !== 'scheduled' && statusFilter !== 'overdue';
+    const effectiveFilter = filterHidesScheduled ? '' : statusFilter;
+    if (filterHidesScheduled) setStatusFilter('');
+
+    // Await the reload (passing the relaxed filter directly, since React state
+    // batching means statusFilter may not have updated yet when loadPosts runs).
+    // On failure, surface a clear message rather than silently leaving an empty
+    // calendar after a known-successful save.
+    try {
+      await loadPosts(effectiveFilter, { rethrow: true });
+    } catch {
+      setError('Post was saved, but the calendar could not be refreshed. Try reloading the page.');
+      return;
+    }
+
+    // Show a brief success indicator then auto-dismiss.
+    setSuccessMsg('Post scheduled ✓');
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   const handleDragReschedule = async (postId, newDate) => {
@@ -648,6 +681,13 @@ export default function ScheduleView() {
           )}
         </div>
       </div>
+
+      {successMsg && (
+        <div className="mb-4 px-4 py-3 bg-[var(--success-bg,#f0fdf4)] border border-[var(--success,#22c55e)]/40 text-[var(--success,#16a34a)] text-[13px] rounded-md flex items-center justify-between">
+          {successMsg}
+          <button className="text-[var(--success,#16a34a)] underline text-xs" onClick={() => setSuccessMsg('')}>Dismiss</button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 px-4 py-3 bg-[var(--danger-bg)] border border-[var(--danger)]/30 text-[var(--danger)] text-[13px] rounded-md flex items-center justify-between">

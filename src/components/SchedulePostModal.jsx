@@ -282,6 +282,12 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
         }
       : { post_image_url: null, post_media_url: null, post_media_type: null, post_media_filename: null };
 
+    // saved tracks whether ALL network calls succeeded. onCreated/onClose run
+    // OUTSIDE the try so a secondary throw (e.g. in a callback) can never
+    // surface as "Failed to schedule" — the error state only reflects a real
+    // save failure (non-ok response or network error during the POST/PUT).
+    let saved = false;
+
     try {
       if (editingPost) {
         // Build edit body; add linkedin_targets only when the platform is LinkedIn.
@@ -302,7 +308,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
           body: JSON.stringify(editBody),
         });
         if (!res.ok) { const data = await res.json(); setError(data.error || 'Failed to update'); setSubmitting(false); return; }
-        onCreated?.();
+        saved = true;
       } else {
         for (const platform of platforms) {
           const payload = {
@@ -328,13 +334,20 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
             return;
           }
         }
-        onCreated?.();
+        saved = true;
       }
-      onClose();
     } catch (err) {
       setError(err.message || 'Failed to schedule');
-    } finally {
       setSubmitting(false);
+      return;
+    }
+
+    // Success path — runs outside the try so any throw here can't masquerade
+    // as a save failure. The post IS saved at this point.
+    if (saved) {
+      setSubmitting(false);
+      onCreated?.();
+      onClose();
     }
   };
 
