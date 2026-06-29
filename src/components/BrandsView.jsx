@@ -71,6 +71,12 @@ export default function BrandsView() {
   const [extractError, setExtractError] = useState('');
   const [extractedFrom, setExtractedFrom] = useState('');
 
+  // Brand asset library (edit mode only — assets attach to a saved brand).
+  const [assets, setAssets] = useState([]);
+  const [assetUploading, setAssetUploading] = useState(false);
+  const [assetError, setAssetError] = useState('');
+  const assetInputRef = useRef(null);
+
   const planLabel = PLAN_LABELS[user?.company?.plan] || 'Free';
   const atLimit = used >= limit;
 
@@ -141,6 +147,71 @@ export default function BrandsView() {
     setExtractUrl('');
     setExtractError('');
     setExtractedFrom('');
+    setAssets([]);
+    setAssetError('');
+  };
+
+  // ── Brand asset library ─────────────────────────────────────────────
+  // Assets attach to a SAVED brand, so this only operates in edit mode.
+  const loadAssets = useCallback(async (brandId) => {
+    setAssetError('');
+    try {
+      const res = await fetch(`/api/brands/${brandId}/assets`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load assets');
+      setAssets(data.assets || []);
+    } catch (err) {
+      setAssetError(err.message);
+    }
+  }, [getAuthHeaders]);
+
+  // Load the brand's assets whenever the edit modal opens.
+  useEffect(() => {
+    if (modalMode === 'edit' && editingId) loadAssets(editingId);
+    else setAssets([]);
+  }, [modalMode, editingId, loadAssets]);
+
+  const handleAssetFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingId) return;
+    if (file.size > 5 * 1024 * 1024) { setAssetError('Image must be under 5MB'); return; }
+    setAssetUploading(true);
+    setAssetError('');
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const base64 = String(dataUrl).split(',')[1];
+      const res = await fetch(`/api/brands/${editingId}/assets`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mimeType: file.type || 'image/png', label: file.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      setAssets((prev) => [...prev, data.asset]);
+    } catch (err) {
+      setAssetError(err.message);
+    } finally {
+      setAssetUploading(false);
+      if (assetInputRef.current) assetInputRef.current.value = '';
+    }
+  };
+
+  const deleteAsset = async (assetId) => {
+    setAssetError('');
+    try {
+      const res = await fetch(`/api/brands/${editingId}/assets/${assetId}`, {
+        method: 'DELETE', headers: getAuthHeaders(),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Delete failed'); }
+      setAssets((prev) => prev.filter((a) => a.id !== assetId));
+    } catch (err) {
+      setAssetError(err.message);
+    }
   };
 
   // Paste a website URL → AI fills the brand form. Mirrors the same flow in
@@ -946,6 +1017,45 @@ export default function BrandsView() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Brand asset library (edit mode only) ────────────── */}
+              {modalMode === 'edit' && (
+                <div className="wizard-context-block" style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                  <label className="wizard-context-label">Reference image library</label>
+                  <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.6rem' }}>
+                    Save product shots, past graphics, or style references here. They're reusable as style references when generating images for this brand.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {assets.map((a) => (
+                      <div key={a.id} style={{ position: 'relative', width: 84, height: 84, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <img src={a.storage_url} alt={a.label || ''} title={a.label || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        <button
+                          type="button"
+                          onClick={() => deleteAsset(a.id)}
+                          title="Remove"
+                          style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: 10, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', cursor: 'pointer', lineHeight: 1, fontSize: 13 }}
+                        >×</button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => assetInputRef.current?.click()}
+                      disabled={assetUploading || assets.length >= 12}
+                      style={{ width: 84, height: 84, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', cursor: (assetUploading || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--text-muted, #888)', fontSize: 12 }}
+                    >
+                      {assetUploading ? '…' : assets.length >= 12 ? 'Full' : '+ Add'}
+                    </button>
+                    <input
+                      ref={assetInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleAssetFile}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                  {assetError && <div className="error-msg" style={{ marginTop: '0.5rem', fontSize: 13 }}>{assetError}</div>}
+                </div>
+              )}
 
               {error && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{error}</div>}
             </div>

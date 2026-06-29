@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
@@ -761,6 +762,95 @@ router.delete('/:id/ci-doc', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to remove CI document' });
+  }
+});
+
+// ── Brand asset library ─────────────────────────────────────────────
+// Reusable reference images for a brand (in-context logos, product shots, past
+// graphics, mood/style references). Persisted so they can be reused as style
+// references across generations instead of re-uploading a one-off each time.
+// Stored in the brand-logos bucket under assets/<brandId>/.
+const MAX_ASSETS_PER_BRAND = 12;
+
+// GET /api/brands/:id/assets — list a brand's reference images
+router.get('/:id/assets', async (req, res) => {
+  try {
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+    const { data, error } = await supabase
+      .from('brand_assets')
+      .select('id, storage_url, label, created_at')
+      .eq('brand_id', req.params.id)
+      .order('created_at', { ascending: true });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ assets: data || [] });
+  } catch (err) {
+    console.error('[BRANDS] List assets error:', err.message);
+    res.status(500).json({ error: 'Failed to load brand assets' });
+  }
+});
+
+// POST /api/brands/:id/assets — upload a reference image to the library
+router.post('/:id/assets', async (req, res) => {
+  try {
+    const { base64, mimeType, label } = req.body;
+    if (!base64) return res.status(400).json({ error: 'No image data provided' });
+
+    // Verify ownership BEFORE the storage upload so an attacker can't push
+    // files against an arbitrary brand id.
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+
+    // Per-brand cap keeps the library + storage bounded.
+    const { count } = await supabase
+      .from('brand_assets')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', req.params.id);
+    if ((count || 0) >= MAX_ASSETS_PER_BRAND) {
+      return res.status(400).json({ error: `Asset limit reached (${MAX_ASSETS_PER_BRAND}). Delete one to add another.` });
+    }
+
+    const ext = (mimeType || 'image/png').split('/')[1] || 'png';
+    const filePath = `assets/${req.params.id}/${randomUUID()}.${ext}`;
+    const publicUrl = await uploadBase64('brand-logos', filePath, base64, mimeType || 'image/png');
+
+    const { data, error } = await supabase
+      .from('brand_assets')
+      .insert({
+        brand_id:   req.params.id,
+        company_id: req.user.company_id || null,
+        user_id:    req.user.id,
+        storage_url: publicUrl,
+        label: (label || '').toString().slice(0, 120) || null,
+      })
+      .select('id, storage_url, label, created_at')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ success: true, asset: data });
+  } catch (err) {
+    console.error('[BRANDS] Asset upload error:', err.message);
+    res.status(500).json({ error: 'Failed to upload asset' });
+  }
+});
+
+// DELETE /api/brands/:id/assets/:assetId — remove one reference image
+router.delete('/:id/assets/:assetId', async (req, res) => {
+  try {
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+    const { error } = await supabase
+      .from('brand_assets')
+      .delete()
+      .eq('id', req.params.assetId)
+      .eq('brand_id', req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete asset' });
   }
 });
 
