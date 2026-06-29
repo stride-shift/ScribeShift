@@ -250,6 +250,46 @@ export default function CreateView() {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
 
+  /* ─── Brand reference-image library ─── */
+  // Saved reference images for the active brand (managed in Brands → Edit).
+  // Picking one sets it as this run's reference image.
+  const [brandAssets, setBrandAssets] = useState([]);
+  useEffect(() => {
+    if (!activeBrandId) { setBrandAssets([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/brands/${activeBrandId}/assets`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!cancelled) setBrandAssets(res.ok ? (data.assets || []) : []);
+      } catch { if (!cancelled) setBrandAssets([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeBrandId, getAuthHeaders]);
+
+  // Fetch a saved asset and load it as the reference image (the generation
+  // endpoint expects base64, so convert the stored URL client-side).
+  const useAssetAsReference = async (asset) => {
+    try {
+      const res = await fetch(asset.storage_url);
+      const blob = await res.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      setImageConfig({
+        ...imageConfig,
+        referenceImageBase64: dataUrl.split(',')[1],
+        referenceImageMimeType: blob.type || 'image/png',
+        referenceImagePreview: dataUrl,
+      });
+    } catch {
+      alert('Could not load that reference image. Try again.');
+    }
+  };
+
   /* ─── Content type toggle ─── */
   const toggleType = (val) => {
     const next = new Set(selectedTypes);
@@ -860,6 +900,35 @@ export default function CreateView() {
                         )}
                       </div>
                     </div>
+
+                    {/* Brand library: pick a saved reference image for the active brand. */}
+                    {brandAssets.length > 0 && (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <p className="card-subtitle" style={{ margin: '0 0 0.4rem' }}>
+                          Or pick from this brand's saved references:
+                        </p>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {brandAssets.map((a) => {
+                            const selected = imageConfig.referenceImagePreview === a.storage_url;
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => useAssetAsReference(a)}
+                                title={a.label || 'Use as reference'}
+                                style={{
+                                  width: 64, height: 64, padding: 0, borderRadius: 8, overflow: 'hidden',
+                                  cursor: 'pointer', background: 'transparent',
+                                  border: selected ? '2px solid var(--accent, #3b82f6)' : '1px solid var(--border)',
+                                }}
+                              >
+                                <img src={a.storage_url} alt={a.label || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
