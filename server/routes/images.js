@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { geminiImageWithParts, buildImageParts } from '../services/gemini-client.js';
-import { IMAGE_STYLE_MAP, IMAGE_STYLE_BRAND_ALIGNED, injectBrand } from '../config/skills.js';
+import { IMAGE_STYLE_MAP, IMAGE_STYLE_BRAND_ALIGNED, injectBrand, composeBrandGuardrails } from '../config/skills.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
 
@@ -203,11 +203,18 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
       brandContextBlock = `\n\n${parts.join('\n\n')}`;
     }
 
+    // Brand do/don'ts → a guardrails SUFFIX appended after the creative
+    // direction (mirrors Justin's composeBrandGuardrails). The deck-style-lock
+    // (palette + typography + motif + no-invent-marks) is injected inside the
+    // template via the {{BRAND_PALETTE_BLOCK}} token by injectBrand.
+    const guardrails = composeBrandGuardrails(brandData);
+    const guardrailsBlock = guardrails ? `\n\n---\n\n${guardrails}` : '';
+
     const prompts = [];
     for (const { key, promptTemplate } of styleEntries) {
-      // brandData is spread whole so brand_palette (structured palette from
-      // OpenAI extraction) reaches injectBrand/buildPaletteBlock for palette-
-      // aware COLORS blocks. Falls back to primaryColor/secondaryColor when absent.
+      // brandData is spread whole so brand_palette / typography / motif_description
+      // reach injectBrand → composeDeckStyleLock for the deck-style-lock block.
+      // Falls back to primaryColor/secondaryColor when no structured palette.
       const basePrompt = injectBrand(promptTemplate, { ...brandData, topicSummary });
       for (let v = 0; v < 3; v++) {
         let prompt = `${basePrompt}\n\nVariant ${v + 1} of 3: ${variantInstructions[v]}`;
@@ -216,6 +223,7 @@ router.post('/build-image-prompts', imageLimiter, verifyToken, async (req, res) 
           prompt += `\n\nAdditional user guidelines: ${customGuidelines.trim()}`;
         }
         prompt += avoidBlock;
+        prompt += guardrailsBlock;
         prompts.push({ style: key, variant: v, prompt });
       }
     }

@@ -14,66 +14,86 @@
  * @param {object} brandData - brand record from the DB or extract-from-url draft
  * @returns {string} Ready-to-inject COLORS block (no surrounding newlines)
  */
-function buildPaletteBlock(brandData = {}) {
+export function composeDeckStyleLock(brandData = {}) {
   const palette = brandData.brand_palette;
+  const typo = brandData.typography;
+  const lines = ['BRAND STYLE LOCK (applies to the whole image — follow exactly):'];
 
   if (palette && typeof palette === 'object') {
-    const lines = [];
-    lines.push('COLORS (use these EXACT hex values — do not invent or shift colours):');
-
     const p = palette.primary;
     if (p && typeof p === 'object') {
-      if (p.bg)             lines.push(`- Primary background: ${p.bg}`);
-      if (p.text)           lines.push(`- Primary text: ${p.text}`);
-      if (p.accent)         lines.push(`- Primary accent: ${p.accent}`);
-      if (p.gradient_start) lines.push(`- Gradient start: ${p.gradient_start}`);
-      if (p.gradient_end)   lines.push(`- Gradient end: ${p.gradient_end}`);
-    }
-
-    if (Array.isArray(palette.secondary) && palette.secondary.length > 0) {
-      for (const s of palette.secondary) {
-        if (s?.hex) {
-          const label = s.label ? ` (${s.label})` : '';
-          lines.push(`- Secondary${label}: ${s.hex}`);
-        }
+      if (p.bg)     lines.push(`- Default background: ${p.bg}`);
+      if (p.text)   lines.push(`- Default text colour: ${p.text}`);
+      if (p.accent) lines.push(`- Accent / emphasis colour: ${p.accent}`);
+      if (p.gradient_start && p.gradient_end) {
+        lines.push(`- Decorative gradient (only when used): ${p.gradient_start} → ${p.gradient_end} (left-to-right or top-to-bottom only)`);
       }
     }
-
-    if (palette.accent) lines.push(`- Accent: ${palette.accent}`);
-    if (palette.neutral_light) lines.push(`- Neutral light: ${palette.neutral_light}`);
+    if (Array.isArray(palette.secondary) && palette.secondary.length > 0) {
+      const secs = palette.secondary
+        .map((s) => (s?.hex ? (s.label ? `${s.hex} (${s.label})` : s.hex) : null))
+        .filter(Boolean)
+        .join(', ');
+      if (secs) lines.push(`- Secondary accents (single strokes / callouts only, NEVER body fills): ${secs}`);
+    }
+    if (palette.accent)        lines.push(`- Tertiary accent: ${palette.accent}`);
+    if (palette.neutral_light) lines.push(`- Neutral light surface: ${palette.neutral_light}`);
     if (palette.neutral_dark)  lines.push(`- Neutral dark: ${palette.neutral_dark}`);
-
     if (Array.isArray(palette.never_in_text) && palette.never_in_text.length > 0) {
-      lines.push(`- NEVER use these as text colours: ${palette.never_in_text.join(', ')}`);
+      lines.push(`- NEVER use these colours for text: ${palette.never_in_text.join(', ')}`);
     }
-
     if (Array.isArray(palette.forbidden_pairings) && palette.forbidden_pairings.length > 0) {
-      const pairs = palette.forbidden_pairings.map(([a, b]) => `${a}/${b}`).join(', ');
-      lines.push(`- FORBIDDEN colour pairings (never combine): ${pairs}`);
+      lines.push(`- NEVER combine these colour pairings: ${palette.forbidden_pairings.map(([a, b]) => `${a}/${b}`).join(', ')}`);
     }
-
-    lines.push('GUARDRAILS:');
-    lines.push('- Use these exact hex values; do not invent or shift colours.');
-    lines.push('- Do not draw, invent, or approximate any logo/wordmark/brand mark; only use a provided logo image if one is attached.');
-
-    return lines.join('\n');
+  } else {
+    // Legacy fallback — no structured palette extracted yet.
+    lines.push(`- Primary colour: ${brandData.primaryColor || '#FBBF24'}`);
+    lines.push(`- Secondary colour: ${brandData.secondaryColor || '#818cf8'}`);
   }
 
-  // Fallback: no structured palette — use legacy primary/secondary tokens
-  const primary   = brandData.primaryColor   || '#FBBF24';
-  const secondary = brandData.secondaryColor || '#818cf8';
-  return [
-    `COLORS:`,
-    `- Primary: ${primary}`,
-    `- Secondary: ${secondary}`,
-    `GUARDRAILS:`,
-    `- Use these exact hex values; do not invent or shift colours.`,
-    `- Do not draw, invent, or approximate any logo/wordmark/brand mark; only use a provided logo image if one is attached.`,
-  ].join('\n');
+  // Typography with analog fallbacks (mirrors Justin's deck-style-lock).
+  const dispFam = typo?.display?.family;
+  const bodyFam = typo?.body?.family;
+  lines.push(`- Display font: ${dispFam
+    ? `${dispFam} (if unavailable, a clean modern geometric sans-serif — visual analog of Manrope, Geist or Inter)`
+    : 'a clean modern geometric sans-serif (Manrope / Geist / Inter style)'}`);
+  lines.push(`- Body font: ${bodyFam
+    ? `${bodyFam} (if unavailable, Inter or a clean grotesque sans-serif)`
+    : 'Inter or a clean grotesque sans-serif'}`);
+
+  // Signature motif (optional).
+  const motif = (brandData.motif_description || '').toString().trim();
+  if (motif) lines.push(`- Signature motif (use subtly / low-key): ${motif}`);
+
+  lines.push('- Layout: generous margins and whitespace, a clear 12-column sense of alignment, strong hierarchy; no decorative borders or frames.');
+  lines.push('- Render the exact hex codes faithfully — do not invent or shift colours.');
+  lines.push("- Brand marks come ONLY from an attached reference/logo image. NEVER draw, approximate, or invent the brand's logo, wordmark, identity mark, watermark, or monogram. If no logo image is attached, the image has NO logo. Brand-coloured geometry, gradients and typographic moments are welcome — a rendition of the brand mark is not.");
+
+  return lines.join('\n');
+}
+
+/**
+ * Build the BRAND GUARDRAILS block (the do/don'ts) — appended AFTER the creative
+ * direction (suffix), so it doesn't crowd the model's prefix attention. Returns
+ * '' when the brand has no do_donts. Mirrors Justin's composeBrandGuardrails.
+ *
+ * @param {object} brandData - expects brandData.do_donts = { do:[], dont:[] }
+ * @returns {string}
+ */
+export function composeBrandGuardrails(brandData = {}) {
+  const dd = brandData.do_donts;
+  if (!dd || typeof dd !== 'object') return '';
+  const dos   = Array.isArray(dd.do)   ? dd.do.filter(Boolean)   : [];
+  const donts = Array.isArray(dd.dont) ? dd.dont.filter(Boolean) : [];
+  if (dos.length === 0 && donts.length === 0) return '';
+  const out = ['BRAND GUARDRAILS (apply on every image; non-negotiable):'];
+  if (dos.length)   out.push('DO:\n' + dos.map((d) => `- ${d}`).join('\n'));
+  if (donts.length) out.push("DON'T:\n" + donts.map((d) => `- ${d}`).join('\n'));
+  return out.join('\n');
 }
 
 export function injectBrand(promptTemplate, brandData = {}) {
-  const paletteBlock = buildPaletteBlock(brandData);
+  const paletteBlock = composeDeckStyleLock(brandData);
 
   return promptTemplate
     .replace(/\{\{BRAND_NAME\}\}/g, brandData.brandName || '')
@@ -830,13 +850,26 @@ export function BRAND_EXTRACTION_PROMPT({ finalUrl, pageTitle, ogSiteName, ogTit
     },
     "forbidden_pairings": [["#hex1","#hex2"]],
     "never_in_text": ["#hex — colours that must NEVER be used as text"]
-  }
+  },
+  "typography": {
+    "display": { "family": "headline/display font family if discoverable (from CSS/font links), else omit", "weights": [700], "usage": "headlines" },
+    "body":    { "family": "body font family if discoverable, else omit", "weights": [400], "usage": "body copy" },
+    "accent":  { "family": "accent/quote font if distinct, else omit", "weights": [500], "usage": "callouts" }
+  },
+  "motif_description": "one short line describing the brand's signature visual motif / recurring graphic device if any (e.g. 'thin hexagon line-art at low opacity in a corner'). Empty string if none is evident.",
+  "do_donts": {
+    "do":   ["2-5 short, prescriptive visual/voice DOs inferred from the brand (e.g. 'Use generous whitespace', 'Lead with outcomes')"],
+    "dont": ["2-5 short DON'Ts (e.g. 'No stock-photo clichés', 'Never use jargon')"]
+  },
+  "cover_formula": "optional title/cover formula if the brand has an obvious naming pattern, else empty string"
 }
 
 Rules:
 - Strict JSON only. No markdown, no comments, no trailing prose.
 - writing_samples MUST be verbatim from the body content. Do not paraphrase, summarise, or invent.
 - All colour fields MUST be exact 6-digit hex strings (#rrggbb). Do not invent colours — only include what you can infer from the signals or page body.
+- typography: only name a font family if you can actually infer it (font-family CSS, Google Fonts links, obvious wordmark). Omit display/body/accent sub-objects you can't infer — do NOT guess font names.
+- do_donts: derive from the brand_guidelines + tone you inferred; keep each item short and actionable. [] if nothing can be inferred.
 - Omit optional palette sub-fields (gradient_start/end, accent, forbidden_pairings, never_in_text, etc.) when they cannot be reasonably inferred.
 - If a field truly can't be inferred, return a sensible default ("" for strings, [] for arrays, "general" for industry).
 - Never wrap in \`\`\` fences.`;

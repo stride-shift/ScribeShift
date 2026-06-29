@@ -510,6 +510,11 @@ router.post('/extract-from-url', async (req, res) => {
       // Structured palette (null when OpenAI extraction was skipped/failed).
       // Persisted to the brands.brand_palette JSONB column when the user saves.
       brand_palette: (pal && typeof pal === 'object') ? pal : null,
+      // Justin-style profile fields (feed the deck-style-lock at image gen).
+      typography: (extracted.typography && typeof extracted.typography === 'object') ? extracted.typography : null,
+      motif_description: (extracted.motif_description || '').toString().trim() || null,
+      do_donts: (extracted.do_donts && typeof extracted.do_donts === 'object') ? extracted.do_donts : null,
+      cover_formula: (extracted.cover_formula || '').toString().trim() || null,
       icp_description: extracted.icp_description || ldDescription || '',
       brand_guidelines: guidelines,
       tone_descriptors: Array.isArray(extracted.tone_descriptors)
@@ -547,7 +552,7 @@ router.post('/', async (req, res) => {
       icp_description, brand_guidelines, writing_samples,
       default_audience, default_image_styles,
       source_url, ci_document_url, ci_document_text, ci_document_name,
-      brand_palette,
+      brand_palette, typography, motif_description, do_donts, cover_formula,
     } = req.body;
 
     // Enforce per-plan brand count before insert
@@ -586,6 +591,10 @@ router.post('/', async (req, res) => {
         ci_document_text: ci_document_text || null,
         ci_document_name: ci_document_name || null,
         brand_palette: (brand_palette && typeof brand_palette === 'object') ? brand_palette : null,
+        typography: (typography && typeof typography === 'object') ? typography : null,
+        motif_description: motif_description || null,
+        do_donts: (do_donts && typeof do_donts === 'object') ? do_donts : null,
+        cover_formula: cover_formula || null,
       })
       .select()
       .single();
@@ -605,7 +614,7 @@ router.put('/:id', async (req, res) => {
       'brand_name', 'primary_color', 'secondary_color', 'logo_url', 'industry',
       'icp_description', 'brand_guidelines', 'default_audience',
       'source_url', 'ci_document_url', 'ci_document_text', 'ci_document_name',
-      'brand_palette',
+      'brand_palette', 'typography', 'motif_description', 'do_donts', 'cover_formula',
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
