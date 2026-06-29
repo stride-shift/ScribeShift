@@ -359,6 +359,34 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ── GET /api/schedule/:id/revisions ─────────────────────────────────
+// Version history for a post, newest-first. Company-scoped via the parent
+// post's scopeByRole check (so a caller can only see revisions for posts
+// they're allowed to see).
+router.get('/:id/revisions', async (req, res) => {
+  try {
+    // Scope-check the parent post first
+    let postQuery = supabase
+      .from('scheduled_posts')
+      .select('id')
+      .eq('id', req.params.id);
+    postQuery = scopeByRole(req)(postQuery);
+    const { data: post, error: postErr } = await postQuery.single();
+    if (postErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    const { data, error } = await supabase
+      .from('post_revisions')
+      .select('*, users:changed_by(email, full_name)')
+      .eq('scheduled_post_id', req.params.id)
+      .order('revision_number', { ascending: false });
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ revisions: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch revisions' });
+  }
+});
+
 // ── PUT /api/schedule/:id ───────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
@@ -375,12 +403,71 @@ router.put('/:id', async (req, res) => {
       if (mediaError) return res.status(400).json({ error: mediaError });
     }
 
+    // ── Version control: snapshot the PRE-edit state ──────────────────────────
+    // Before applying the update, fetch the current row. If post_text or media
+    // changed, append a post_revisions row capturing the OLD state (append-only).
+    // Best-effort: a revision-write failure must NEVER block the edit.
+    let preEdit = null;
+    try {
+      let curQuery = supabase
+        .from('scheduled_posts')
+        .select('post_text, post_media_url, post_media_type, company_id')
+        .eq('id', req.params.id);
+      curQuery = scopeByRole(req)(curQuery);
+      const { data: cur } = await curQuery.single();
+      preEdit = cur || null;
+    } catch (snapFetchErr) {
+      console.warn('[SCHEDULE] Pre-edit snapshot fetch failed (continuing):', snapFetchErr.message);
+    }
+
     let query = supabase.from('scheduled_posts').update(updates).eq('id', req.params.id);
     query = scopeByRole(req)(query);
 
     const { data: updated, error } = await query.select().single();
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
+
+    // ── Append revision snapshot (best-effort, after responding) ──────────────
+    if (preEdit) {
+      const textChanged = updates.post_text !== undefined && updates.post_text !== preEdit.post_text;
+      const mediaUrlChanged = updates.post_media_url !== undefined && updates.post_media_url !== preEdit.post_media_url;
+      const mediaTypeChanged = updates.post_media_type !== undefined && updates.post_media_type !== preEdit.post_media_type;
+      if (textChanged || mediaUrlChanged || mediaTypeChanged) {
+        (async () => {
+          try {
+            // revision_number = (current max for this post) + 1
+            const { data: lastRev } = await supabase
+              .from('post_revisions')
+              .select('revision_number')
+              .eq('scheduled_post_id', req.params.id)
+              .order('revision_number', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const nextRevision = (lastRev?.revision_number || 0) + 1;
+
+            const { error: revErr } = await supabase
+              .from('post_revisions')
+              .insert({
+                scheduled_post_id: req.params.id,
+                company_id: preEdit.company_id || null,
+                revision_number: nextRevision,
+                post_text: preEdit.post_text,
+                post_media_url: preEdit.post_media_url,
+                post_media_type: preEdit.post_media_type,
+                changed_by: req.user.id,
+                change_reason: req.body.change_reason || null,
+              });
+            if (revErr) {
+              console.warn('[SCHEDULE] Revision snapshot insert failed (edit succeeded):', revErr.message);
+            } else {
+              console.log(`[SCHEDULE] Snapshotted revision ${nextRevision} for post ${req.params.id}`);
+            }
+          } catch (revWriteErr) {
+            console.warn('[SCHEDULE] Revision snapshot error (edit succeeded):', revWriteErr.message);
+          }
+        })();
+      }
+    }
 
     // Update the linked Google Calendar event if one exists
     if (updated?.google_event_id) {

@@ -342,6 +342,93 @@ router.put('/:id/request-changes', async (req, res) => {
   }
 });
 
+// ── GET /api/review/:id/comments ─────────────────────────────────────────────────
+// Return the feedback/comment thread for a post, oldest-first, company-scoped.
+// (Mirrors the comments payload of GET /:id but without re-fetching the post.)
+router.get('/:id/comments', async (req, res) => {
+  try {
+    // Scope-check the parent post
+    let fetchQuery = supabase
+      .from('scheduled_posts')
+      .select('id')
+      .eq('id', req.params.id);
+    fetchQuery = scopeByRole(req)(fetchQuery);
+    const { data: post, error: fetchErr } = await fetchQuery.single();
+    if (fetchErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    const { data: comments, error } = await supabase
+      .from('post_comments')
+      .select('*, users(email, full_name)')
+      .eq('scheduled_post_id', post.id)
+      .order('created_at', { ascending: true });
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ comments: comments || [] });
+  } catch (err) {
+    console.error('[REVIEW] GET /:id/comments error:', err);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+// ── POST /api/review/:id/request-feedback ─────────────────────────────────────────
+// Flag a post as needing feedback so it surfaces in the feedback/review view,
+// WITHOUT gating publishing. This sets review_status='pending_review' ONLY and
+// leaves `status` untouched (so the cron predicate status='scheduled' is
+// unaffected — an already-scheduled post keeps publishing on time). Optionally
+// records an initial note comment. Company-scoped, authenticated.
+router.post('/:id/request-feedback', async (req, res) => {
+  try {
+    // Scope-check
+    let fetchQuery = supabase
+      .from('scheduled_posts')
+      .select('id, company_id, review_status')
+      .eq('id', req.params.id);
+    fetchQuery = scopeByRole(req)(fetchQuery);
+    const { data: post, error: fetchErr } = await fetchQuery.single();
+    if (fetchErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    const now = new Date().toISOString();
+
+    // Surface in the feedback view WITHOUT touching `status` (no publish gate).
+    const { data, error } = await supabase
+      .from('scheduled_posts')
+      .update({
+        review_status: 'pending_review',
+        // status intentionally NOT changed — must not gate publishing.
+        review_requested_at: now,
+        updated_at: now,
+      })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Optional initial note (best-effort; must not fail the request)
+    const note = String(req.body?.body || req.body?.comment || '').trim();
+    if (note) {
+      try {
+        await supabase.from('post_comments').insert({
+          scheduled_post_id: post.id,
+          company_id: post.company_id,
+          author_user_id: req.user.id,
+          author_name: req.user.full_name || null,
+          author_email: req.user.email || null,
+          body: note,
+          comment_type: 'note',
+        });
+      } catch (noteErr) {
+        console.warn('[REVIEW] request-feedback note insert failed (continuing):', noteErr.message);
+      }
+    }
+
+    res.json({ post: data });
+  } catch (err) {
+    console.error('[REVIEW] POST /:id/request-feedback error:', err);
+    res.status(500).json({ error: 'Failed to request feedback' });
+  }
+});
+
 // ── POST /api/review/:id/comment ────────────────────────────────────────────────
 // Insert an internal comment from an authenticated user.
 router.post('/:id/comment', async (req, res) => {
