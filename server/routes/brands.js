@@ -809,6 +809,13 @@ router.delete('/:id/ci-doc', async (req, res) => {
 // references across generations instead of re-uploading a one-off each time.
 // Stored in the brand-logos bucket under assets/<brandId>/.
 const MAX_ASSETS_PER_BRAND = 12;
+// Typed asset kinds (Justin's brand_assets.kind). Validated here rather than via
+// a DB CHECK to stay flexible. 'reference' is the generic default.
+const ASSET_KINDS = [
+  'logo-primary', 'logo-mono-light', 'logo-mono-dark', 'logo-symbol',
+  'sub-brand-lockup', 'icon-set', 'watermark', 'pattern', 'motif',
+  'photo', 'illustration', 'template', 'reference', 'other',
+];
 
 // GET /api/brands/:id/assets — list a brand's reference images
 router.get('/:id/assets', async (req, res) => {
@@ -818,7 +825,7 @@ router.get('/:id/assets', async (req, res) => {
     }
     const { data, error } = await supabase
       .from('brand_assets')
-      .select('id, storage_url, label, created_at')
+      .select('id, storage_url, label, kind, usage_note, created_at')
       .eq('brand_id', req.params.id)
       .order('created_at', { ascending: true });
     if (error) return res.status(400).json({ error: error.message });
@@ -832,8 +839,9 @@ router.get('/:id/assets', async (req, res) => {
 // POST /api/brands/:id/assets — upload a reference image to the library
 router.post('/:id/assets', async (req, res) => {
   try {
-    const { base64, mimeType, label } = req.body;
+    const { base64, mimeType, label, kind, usage_note } = req.body;
     if (!base64) return res.status(400).json({ error: 'No image data provided' });
+    const assetKind = ASSET_KINDS.includes(kind) ? kind : 'reference';
 
     // Verify ownership BEFORE the storage upload so an attacker can't push
     // files against an arbitrary brand id.
@@ -862,8 +870,10 @@ router.post('/:id/assets', async (req, res) => {
         user_id:    req.user.id,
         storage_url: publicUrl,
         label: (label || '').toString().slice(0, 120) || null,
+        kind: assetKind,
+        usage_note: (usage_note || '').toString().slice(0, 240) || null,
       })
-      .select('id, storage_url, label, created_at')
+      .select('id, storage_url, label, kind, usage_note, created_at')
       .single();
     if (error) return res.status(400).json({ error: error.message });
 

@@ -78,6 +78,7 @@ export default function BrandsView() {
 
   // Brand asset library (edit mode only — assets attach to a saved brand).
   const [assets, setAssets] = useState([]);
+  const [assetKind, setAssetKind] = useState('reference');
   const [assetUploading, setAssetUploading] = useState(false);
   const [assetError, setAssetError] = useState('');
   const assetInputRef = useRef(null);
@@ -197,7 +198,7 @@ export default function BrandsView() {
       const res = await fetch(`/api/brands/${editingId}/assets`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, mimeType: file.type || 'image/png', label: file.name }),
+        body: JSON.stringify({ base64, mimeType: file.type || 'image/png', label: file.name, kind: assetKind }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
@@ -1118,7 +1119,12 @@ export default function BrandsView() {
                   <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     {assets.map((a) => (
                       <div key={a.id} style={{ position: 'relative', width: 84, height: 84, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                        <img src={a.storage_url} alt={a.label || ''} title={a.label || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        <img src={a.storage_url} alt={a.label || ''} title={`${a.label || ''}${a.kind ? ` · ${a.kind}` : ''}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        {a.kind && a.kind !== 'reference' && (
+                          <span style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 8.5, lineHeight: '13px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                            {a.kind.replace(/-/g, ' ')}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => deleteAsset(a.id)}
@@ -1127,14 +1133,33 @@ export default function BrandsView() {
                         >×</button>
                       </div>
                     ))}
-                    <button
-                      type="button"
-                      onClick={() => assetInputRef.current?.click()}
-                      disabled={assetUploading || assets.length >= 12}
-                      style={{ width: 84, height: 84, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', cursor: (assetUploading || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--text-muted, #888)', fontSize: 12 }}
-                    >
-                      {assetUploading ? '…' : assets.length >= 12 ? 'Full' : '+ Add'}
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', width: 84 }}>
+                      <select
+                        className="wizard-context-select"
+                        value={assetKind}
+                        onChange={(e) => setAssetKind(e.target.value)}
+                        title="What kind of asset is this?"
+                        style={{ fontSize: 10, padding: '2px 4px' }}
+                      >
+                        <option value="reference">Reference</option>
+                        <option value="logo-primary">Logo</option>
+                        <option value="logo-symbol">Logo symbol</option>
+                        <option value="watermark">Watermark</option>
+                        <option value="pattern">Pattern</option>
+                        <option value="motif">Motif</option>
+                        <option value="icon-set">Icon set</option>
+                        <option value="photo">Photo</option>
+                        <option value="illustration">Illustration</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => assetInputRef.current?.click()}
+                        disabled={assetUploading || assets.length >= 12}
+                        style={{ width: 84, height: 56, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', cursor: (assetUploading || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--text-muted, #888)', fontSize: 12 }}
+                      >
+                        {assetUploading ? '…' : assets.length >= 12 ? 'Full' : '+ Add'}
+                      </button>
+                    </div>
                     <input
                       ref={assetInputRef}
                       type="file"
