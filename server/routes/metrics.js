@@ -30,10 +30,11 @@ router.get('/posts', async (req, res) => {
       .order(sortColumn, { ascending, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
-    // Scope by role
-    if (req.user.role === 'user') {
-      query = query.eq('scheduled_posts.user_id', req.user.id);
-    } else if (req.user.role === 'admin') {
+    // Scope by role. post_metrics has company_id (not user_id), so we MUST scope
+    // on the base table — filtering on the embedded scheduled_posts table does
+    // not restrict the top-level post_metrics rows in PostgREST and would leak
+    // every company's metrics to any user.
+    if (req.user.role === 'user' || req.user.role === 'admin') {
       query = query.eq('company_id', req.user.company_id);
     }
 
@@ -128,12 +129,18 @@ router.post('/:postId/manual', async (req, res) => {
   try {
     const { impressions, reactions, comments, shares, clicks, is_boosted, boost_spend } = req.body;
 
-    // Get the scheduled post to find brand_id and company_id
-    const { data: post } = await supabase
+    // Get the scheduled post to find brand_id and company_id. Scope the lookup
+    // to the caller's company so a user can't write/overwrite metrics on another
+    // company's post by guessing its id (IDOR).
+    let postQuery = supabase
       .from('scheduled_posts')
       .select('brand_id, company_id')
-      .eq('id', req.params.postId)
-      .single();
+      .eq('id', req.params.postId);
+    if (req.user.role === 'user' || req.user.role === 'admin') {
+      postQuery = postQuery.eq('company_id', req.user.company_id);
+    }
+    const { data: post } = await postQuery.single();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
 
     const engagementTotal = (reactions || 0) + (comments || 0) + (shares || 0);
     const engagementRate = impressions > 0 ? (engagementTotal / impressions * 100) : 0;
