@@ -17,10 +17,45 @@ const imageLimiter = rateLimit({
   message: { error: 'Image generation rate limit exceeded. Please wait a moment.' },
 });
 
+// Kind-specific instruction for a typed brand asset attached as a reference
+// image. Mirrors Justin's per-kind handling: logos are placed (exact pixels),
+// watermarks/patterns/motifs are woven into the background (never pasted as a
+// cut-out), everything else is a style reference.
+function assetInstruction(kind, note) {
+  const map = {
+    'logo-primary':     'EXACT BRAND LOGO: place it cleanly in a corner (top-left preferred) at a modest size. Use the exact pixels — do NOT recolour, distort, crop, or redraw it.',
+    'logo-symbol':      'EXACT BRAND SYMBOL/MARK: place small in a corner. Exact pixels; do not redraw.',
+    'logo-mono-light':  'EXACT BRAND LOGO (light/mono): for use on darker areas — small, in a corner. Exact pixels.',
+    'logo-mono-dark':   'EXACT BRAND LOGO (dark/mono): for use on lighter areas — small, in a corner. Exact pixels.',
+    'sub-brand-lockup': 'EXACT SUB-BRAND LOCKUP: place small in a corner. Exact pixels; do not redraw.',
+    'watermark':        'BRAND WATERMARK: weave subtly into the background at low opacity. NEVER paste it as a visible rectangle, box, or cut-out.',
+    'pattern':          'BRAND PATTERN: use as a subtle background texture integrated into the composition. Do NOT paste it as a rectangle — weave it in.',
+    'motif':            'BRAND MOTIF: incorporate this signature graphic device subtly (e.g. a corner, low opacity). Integrate it; do not paste as a cut-out.',
+    'icon-set':         'BRAND ICON STYLE: if icons appear, match this iconography style. Reference only — do not paste.',
+    'photo':            'PHOTOGRAPHY STYLE REFERENCE: match this mood/treatment. Do not copy literally.',
+    'illustration':     'ILLUSTRATION STYLE REFERENCE: match this style. Do not copy literally.',
+    'template':         'LAYOUT REFERENCE: echo this composition/structure. Do not copy literally.',
+  };
+  const base = map[kind] || 'STYLE REFERENCE: use for visual style, mood, and palette inspiration; do not copy literally.';
+  return note ? `${base} Note: ${note}` : base;
+}
+
+// Build Gemini parts for typed brand assets: [{ base64, mimeType, kind, usage_note }].
+// Each asset becomes an image part + a kind-specific instruction part.
+function buildBrandAssetParts(brandAssets) {
+  const parts = [];
+  for (const a of (Array.isArray(brandAssets) ? brandAssets : []).slice(0, 6)) {
+    if (!a?.base64) continue;
+    parts.push({ inline_data: { mime_type: a.mimeType || 'image/png', data: a.base64 } });
+    parts.push({ text: assetInstruction(a.kind, a.usage_note) });
+  }
+  return parts;
+}
+
 // ── POST /api/generate-image ────────────────────────────────────────
 router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
   try {
-    const { prompt, logoBase64, referenceImageBase64, referenceImageMimeType } = req.body;
+    const { prompt, logoBase64, referenceImageBase64, referenceImageMimeType, brandAssets } = req.body;
     if (!prompt) return res.status(400).json({ success: false, error: 'No prompt provided' });
 
     const creditCheck = await checkCredits(req.user.company_id, 'generate_image');
@@ -30,7 +65,14 @@ router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
 
     console.log(`[IMAGE] Single generation: ${prompt.substring(0, 80)}...${referenceImageBase64 ? ' (with reference image)' : ''}`);
 
-    let parts = buildImageParts(prompt, logoBase64);
+    // Typed brand assets (logo / watermark / pattern / motif …) attached with
+    // kind-specific instructions. If an asset logo is present, it supersedes the
+    // generic logoBase64 (avoid a double logo).
+    const assetParts = buildBrandAssetParts(brandAssets);
+    const hasAssetLogo = Array.isArray(brandAssets)
+      && brandAssets.some((a) => typeof a?.kind === 'string' && (a.kind.startsWith('logo') || a.kind === 'sub-brand-lockup'));
+
+    let parts = buildImageParts(prompt, hasAssetLogo ? null : logoBase64);
     // Inject the reference image at the start with an instruction so Gemini
     // treats it as style/composition inspiration rather than a literal source.
     if (referenceImageBase64) {
@@ -45,12 +87,17 @@ router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
         ...parts,
       ];
     }
+    // Brand asset parts go first so the model treats them as authoritative brand
+    // inputs (logo to place, watermark/pattern to weave in).
+    if (assetParts.length) parts = [...assetParts, ...parts];
+
     const result = await geminiImageWithParts(parts);
 
     if (result.success) {
       await deductCredits(req.user.id, req.user.company_id, 'generate_image', 1, {
         prompt: prompt.substring(0, 200),
         has_reference_image: !!referenceImageBase64,
+        brand_asset_kinds: Array.isArray(brandAssets) ? brandAssets.map((a) => a?.kind).filter(Boolean) : [],
       });
     }
 
