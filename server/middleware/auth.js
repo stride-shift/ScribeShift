@@ -160,13 +160,14 @@ export function requireRole(...roles) {
 // Returns a function that applies WHERE clauses to a Supabase query
 export function scopeByRole(req) {
   const { role, id, company_id } = req.user;
-  if (role === 'super_admin') {
-    return (query) => query; // No restriction
-  }
-  if (role === 'admin') {
+  // super_admin + admin are scoped to their OWN company in feature views.
+  // Cross-org visibility is ONLY via the /api/admin/* routes (the Admin
+  // Dashboard does its own cross-org queries) — feature views (Brands, Content
+  // Types, History, Schedule, Analytics) must never leak other orgs' data.
+  if ((role === 'super_admin' || role === 'admin') && company_id) {
     return (query) => query.eq('company_id', company_id);
   }
-  // Regular user
+  // Regular user, or any role without a company → own rows only.
   return (query) => query.eq('user_id', id);
 }
 

@@ -11,10 +11,10 @@ import { PLANNER_IDEAS_PROMPT } from '../config/skills.js';
 // teammate's pillars from the rest of the org, and onboarding would force
 // every new teammate to recreate the same pillar set.
 //
-// Super admins see everything across companies. Users without a company yet
-// (edge case during initial signup) fall back to their own user_id.
+// Org-scoped for EVERYONE, including super_admins — the Content Types view must
+// show only this org's pillars/pieces, never other orgs'. Cross-org belongs in
+// the admin area. Users without a company yet fall back to their own user_id.
 function scopePlanner(req, query) {
-  if (req.user.role === 'super_admin') return query;
   if (req.user.company_id) return query.eq('company_id', req.user.company_id);
   return query.eq('user_id', req.user.id);
 }

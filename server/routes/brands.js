@@ -37,7 +37,9 @@ router.use(verifyToken);
 // regular users to their own user_id, which would silo a brand to a single
 // teammate and hide it from the rest of the org.
 function scopeBrands(req, query) {
-  if (req.user.role === 'super_admin') return query;
+  // Org-scoped for EVERYONE, including super_admins — the Brands view must show
+  // only this org's brands, never other orgs' subscriptions. (Cross-org belongs
+  // in the admin area, not feature views.)
   if (req.user.company_id) return query.eq('company_id', req.user.company_id);
   // Edge case: user without a company → show only their personal brands.
   return query.eq('user_id', req.user.id);
