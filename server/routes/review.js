@@ -67,10 +67,42 @@ router.get('/queue', verifyToken, async (req, res) => {
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
 
-    // Annotate each post with a comment count for the UI
-    const posts = (data || []).map(p => {
+    let rows = data || [];
+
+    // Regular users are scoped to their OWN posts — but a post can be assigned to
+    // them for feedback by a teammate. Merge those in. Guarded so it's a no-op if
+    // the review_assigned_to column isn't present yet (migration not applied).
+    if (req.user.role === 'user') {
+      try {
+        const { data: assigned } = await supabase
+          .from('scheduled_posts')
+          .select(`*, users!user_id(email, full_name), post_comments(id)`)
+          .in('review_status', ['pending_review', 'changes_requested'])
+          .eq('review_assigned_to', req.user.id);
+        for (const r of assigned || []) {
+          if (!rows.some((x) => x.id === r.id)) rows.push(r);
+        }
+      } catch { /* column missing → no assignment feature yet */ }
+    }
+
+    // Resolve assignee display names (best-effort; only when the column exists).
+    const assigneeIds = [...new Set(rows.map((p) => p.review_assigned_to).filter(Boolean))];
+    let assigneeMap = {};
+    if (assigneeIds.length) {
+      try {
+        const { data: us } = await supabase.from('users').select('id, full_name, email').in('id', assigneeIds);
+        assigneeMap = Object.fromEntries((us || []).map((u) => [u.id, u]));
+      } catch { /* ignore */ }
+    }
+
+    // Annotate each post with a comment count + assignee for the UI
+    const posts = rows.map((p) => {
       const { post_comments, ...rest } = p;
-      return { ...rest, comment_count: Array.isArray(post_comments) ? post_comments.length : 0 };
+      return {
+        ...rest,
+        comment_count: Array.isArray(post_comments) ? post_comments.length : 0,
+        assignee: p.review_assigned_to ? (assigneeMap[p.review_assigned_to] || null) : null,
+      };
     });
 
     res.json({ posts, total: count, limit, offset });
@@ -258,6 +290,26 @@ router.get('/unread-count', async (req, res) => {
   }
 });
 
+// ── GET /api/review/team-members ──────────────────────────────────────────────
+// Org members the caller can send a post to for feedback. Any company member
+// may list their teammates (id + name + email). Excludes the caller.
+// MUST be declared before GET /:id so it isn't captured as an :id.
+router.get('/team-members', async (req, res) => {
+  try {
+    if (!req.user.company_id) return res.json({ members: [] });
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, email')
+      .eq('company_id', req.user.company_id)
+      .order('full_name', { ascending: true });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ members: (data || []).filter((m) => m.id !== req.user.id) });
+  } catch (err) {
+    console.error('[REVIEW] team-members error:', err);
+    res.status(500).json({ error: 'Failed to load team members' });
+  }
+});
+
 // ── GET /api/review/:id ─────────────────────────────────────────────────────────
 // Fetch a single post + its comments, scoped by role.
 router.get('/:id', async (req, res) => {
@@ -440,6 +492,25 @@ router.post('/:id/request-feedback', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
+
+    // Optional: assign to a specific teammate (validated same-company). Guarded
+    // follow-up update so the base feedback request still works if the
+    // review_assigned_to column isn't present yet.
+    const assignedTo = req.body?.assignedTo;
+    if (assignedTo) {
+      try {
+        const { data: member } = await supabase
+          .from('users').select('id')
+          .eq('id', assignedTo).eq('company_id', post.company_id).maybeSingle();
+        if (member) {
+          await supabase.from('scheduled_posts')
+            .update({ review_assigned_to: member.id })
+            .eq('id', post.id);
+        }
+      } catch (assignErr) {
+        console.warn('[REVIEW] assign-to failed (continuing):', assignErr.message);
+      }
+    }
 
     // Optional initial note (best-effort; must not fail the request)
     const note = String(req.body?.body || req.body?.comment || '').trim();

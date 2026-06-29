@@ -169,3 +169,15 @@ export function scopeByRole(req) {
   // Regular user
   return (query) => query.eq('user_id', id);
 }
+
+// Like scopeByRole, but honours an explicit ?scope=mine|org toggle when present:
+//   'mine' → the caller's own rows only
+//   'org'  → the caller's whole company (any member may view the org's posts/
+//            history for feedback + showcase purposes)
+// Falls back to role-based scoping when scope is absent/unrecognised.
+export function scopeBySelection(req, scope) {
+  const { id, company_id } = req.user;
+  if (scope === 'mine') return (query) => query.eq('user_id', id);
+  if (scope === 'org' && company_id) return (query) => query.eq('company_id', company_id);
+  return scopeByRole(req);
+}

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../config/supabase.js';
-import { verifyToken, scopeByRole } from '../middleware/auth.js';
+import { verifyToken, scopeByRole, scopeBySelection } from '../middleware/auth.js';
 import { processPost } from '../services/scheduler.js';
 import { sendEmail } from '../services/email.js';
 import { scheduleConfirmationEmail, approvalRequestEmail } from '../templates/emails.js';
@@ -324,7 +324,8 @@ router.get('/', async (req, res) => {
       .order('scheduled_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
-    query = scopeByRole(req)(query);
+    // ?scope=mine|org lets the picker toggle between personal + org posts.
+    query = scopeBySelection(req, req.query.scope)(query);
 
     if (status) query = query.eq('status', status);
     if (platform) query = query.eq('platform', platform);

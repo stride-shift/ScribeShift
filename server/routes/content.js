@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../config/supabase.js';
-import { verifyToken, scopeByRole } from '../middleware/auth.js';
+import { verifyToken, scopeByRole, scopeBySelection } from '../middleware/auth.js';
 
 const router = Router();
 router.use(verifyToken);
@@ -8,7 +8,7 @@ router.use(verifyToken);
 // ── GET /api/content ────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const { type, search, pinned, pillar, tone, status, limit = 50, offset = 0 } = req.query;
+    const { type, search, pinned, pillar, tone, status, scope, limit = 50, offset = 0 } = req.query;
 
     let query = supabase
       .from('generated_content')
@@ -16,7 +16,8 @@ router.get('/', async (req, res) => {
       .order('created_at', { ascending: false })
       .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-    query = scopeByRole(req)(query);
+    // ?scope=mine|org toggles between personal history + the org's history.
+    query = scopeBySelection(req, scope)(query);
 
     if (type) query = query.eq('content_type', type);
     if (search) query = query.ilike('title', `%${search}%`);
