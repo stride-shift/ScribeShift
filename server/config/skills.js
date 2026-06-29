@@ -892,6 +892,47 @@ ${bodyText}`;
   return { systemPrompt, userText };
 }
 
+// Brand profile extraction from a CI / brand-guide DOCUMENT (the plain text we
+// pulled out of an uploaded PDF). Returns { systemPrompt, userText } for
+// extractStructuredJSON. Same structured shape the deck-style-lock consumes —
+// this is ScribeShift's equivalent of Justin's brand-guide-import extraction,
+// run on the already-extracted document text (no pixel work).
+export function BRAND_PROFILE_FROM_TEXT_PROMPT(docText) {
+  const systemPrompt = `You are a brand-system analyst. Read the brand / corporate-identity document text the user provides and extract the brand's design system as a single JSON object.
+
+# Output schema — return EXACTLY this shape, no extras, no comments
+{
+  "brand_guidelines": "2-4 sentences on voice/tone/positioning + key rules. Empty string if not derivable.",
+  "tone_descriptors": ["3-6 short voice adjectives"],
+  "palette": {
+    "primary": { "bg": "#rrggbb", "text": "#rrggbb", "accent": "#rrggbb", "gradient_start": "#rrggbb", "gradient_end": "#rrggbb" },
+    "secondary": [ { "hex": "#rrggbb", "label": "short label" } ],
+    "accent": "#rrggbb",
+    "neutral_light": "#rrggbb",
+    "neutral_dark": "#rrggbb",
+    "forbidden_pairings": [["#hex1","#hex2"]],
+    "never_in_text": ["#hex"]
+  },
+  "typography": {
+    "display": { "family": "...", "weights": [700], "usage": "headlines" },
+    "body":    { "family": "...", "weights": [400], "usage": "body" },
+    "accent":  { "family": "...", "weights": [500], "usage": "callouts" }
+  },
+  "motif_description": "one line describing the signature visual motif, or empty string",
+  "do_donts": { "do": ["..."], "dont": ["..."] },
+  "cover_formula": "optional title/cover formula, or empty string"
+}
+
+Rules:
+- Strict JSON only. No markdown fences, no commentary.
+- All colour fields MUST be exact 6-digit hex (#rrggbb). Brand books usually state exact hex/Pantone/CMYK — use the hex when present; do NOT invent colours you can't find.
+- typography: only name a font family the document actually specifies. Omit sub-objects you can't find.
+- Omit any optional field you cannot derive; use "" for strings and [] for arrays.`;
+
+  const userText = `# Brand / CI document text\n${(docText || '').slice(0, 18000)}`;
+  return { systemPrompt, userText };
+}
+
 // AI-generated post ideas, grounded in the team's brand + recent topics.
 // Interpolates the assembled context block built by the /api/planner/ideas route.
 export function PLANNER_IDEAS_PROMPT(ctx) {

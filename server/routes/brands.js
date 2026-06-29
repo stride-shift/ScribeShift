@@ -5,7 +5,7 @@ import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
 import { verifyToken } from '../middleware/auth.js';
 import { extractStructuredJSON } from '../services/openai-client.js';
-import { BRAND_EXTRACTION_PROMPT } from '../config/skills.js';
+import { BRAND_EXTRACTION_PROMPT, BRAND_PROFILE_FROM_TEXT_PROMPT } from '../config/skills.js';
 
 // Node's built-in fetch can hang on TCP connect when DNS returns an IPv6
 // address that times out (common on dev machines without working v6
@@ -732,12 +732,39 @@ router.post('/:id/ci-doc', async (req, res) => {
       console.warn('[BRANDS] CI text extraction failed:', err.message);
     }
 
+    // Structured profile extraction from the CI text (Justin-style): pull
+    // palette / typography / motif / do-don'ts so the brand-guide PDF populates
+    // the same fields a URL extraction does. Best-effort — never blocks the
+    // upload, and only fills fields the model actually returns.
+    const structuredUpdate = {};
+    let profileExtracted = false;
+    if (extractedText && extractedText.trim().length > 40) {
+      try {
+        const { systemPrompt, userText } = BRAND_PROFILE_FROM_TEXT_PROMPT(extractedText);
+        const prof = await extractStructuredJSON(systemPrompt, userText, { maxRetries: 2 });
+        if (prof && typeof prof === 'object') {
+          if (prof.palette && typeof prof.palette === 'object') structuredUpdate.brand_palette = prof.palette;
+          if (prof.typography && typeof prof.typography === 'object') structuredUpdate.typography = prof.typography;
+          if (prof.motif_description) structuredUpdate.motif_description = String(prof.motif_description).trim() || null;
+          if (prof.do_donts && typeof prof.do_donts === 'object') structuredUpdate.do_donts = prof.do_donts;
+          if (prof.cover_formula) structuredUpdate.cover_formula = String(prof.cover_formula).trim() || null;
+          if (prof.brand_guidelines && String(prof.brand_guidelines).trim()) {
+            structuredUpdate.brand_guidelines = String(prof.brand_guidelines).trim();
+          }
+          profileExtracted = Object.keys(structuredUpdate).length > 0;
+        }
+      } catch (profErr) {
+        console.warn('[BRANDS] CI structured profile extraction failed (continuing):', profErr.message);
+      }
+    }
+
     const { error: updateError } = await scopeBrands(req, supabase
       .from('brands')
       .update({
         ci_document_url: publicUrl,
         ci_document_name: safeName,
         ci_document_text: extractedText,
+        ...structuredUpdate,
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.params.id));
@@ -749,6 +776,8 @@ router.post('/:id/ci-doc', async (req, res) => {
       ci_document_name: safeName,
       extracted: !!extractedText,
       extracted_text_length: extractedText ? extractedText.length : 0,
+      profile_extracted: profileExtracted,
+      profile_fields: Object.keys(structuredUpdate),
     });
   } catch (err) {
     console.error('[BRANDS] CI doc upload error:', err.message);
