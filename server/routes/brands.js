@@ -4,7 +4,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { supabase } from '../config/supabase.js';
 import { uploadBase64 } from '../config/storage.js';
 import { verifyToken } from '../middleware/auth.js';
-import { extractStructuredJSON } from '../services/openai-client.js';
+import { extractStructuredJSON, isolateAssetImage } from '../services/openai-client.js';
 import { BRAND_EXTRACTION_PROMPT, BRAND_PROFILE_FROM_TEXT_PROMPT } from '../config/skills.js';
 
 // Node's built-in fetch can hang on TCP connect when DNS returns an IPv6
@@ -881,6 +881,70 @@ router.post('/:id/assets', async (req, res) => {
   } catch (err) {
     console.error('[BRANDS] Asset upload error:', err.message);
     res.status(500).json({ error: 'Failed to upload asset' });
+  }
+});
+
+// POST /api/brands/:id/assets/isolate — extract ONE asset from a source image
+// (e.g. a logo off a busy page) via gpt-image edits, then save it as a typed
+// asset. Logos/symbols/icons come back on a transparent background; watermarks
+// /patterns keep their context. Mirrors Justin's brand-asset-isolate.
+// Requires the OpenAI image API on the key — returns a clear error otherwise.
+const ISOLATE_LOGO_KINDS = ['logo-primary', 'logo-mono-light', 'logo-mono-dark', 'logo-symbol', 'sub-brand-lockup', 'icon-set'];
+router.post('/:id/assets/isolate', async (req, res) => {
+  try {
+    const { base64, mimeType, depicts } = req.body;
+    if (!base64) return res.status(400).json({ error: 'No source image provided' });
+    const kind = ASSET_KINDS.includes(req.body.kind) ? req.body.kind : 'logo-primary';
+
+    if (!(await findOwnedBrand(req, req.params.id))) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+    const { count } = await supabase
+      .from('brand_assets')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', req.params.id);
+    if ((count || 0) >= MAX_ASSETS_PER_BRAND) {
+      return res.status(400).json({ error: `Asset limit reached (${MAX_ASSETS_PER_BRAND}). Delete one to add another.` });
+    }
+
+    const isLogoLike = ISOLATE_LOGO_KINDS.includes(kind);
+    const what = (depicts || '').toString().trim() || (isLogoLike ? 'brand logo / mark' : 'brand graphic');
+    const instruction = isLogoLike
+      ? `Extract ONLY the ${what} from this image. Output just that element, cleanly isolated on a fully transparent background. Remove all other content, text, and surrounding background. Do NOT redraw, restyle, or recolour — preserve the original shapes and colours exactly.`
+      : `Extract the ${what} from this image, keeping its immediate visual context/texture. Remove unrelated surrounding content. Do NOT redraw or restyle it.`;
+
+    let isolatedB64;
+    try {
+      isolatedB64 = await isolateAssetImage({
+        base64, mimeType: mimeType || 'image/png', instruction, transparent: isLogoLike,
+      });
+    } catch (aiErr) {
+      console.warn('[BRANDS] asset isolate failed:', aiErr.message);
+      return res.status(502).json({ error: `Could not isolate the asset: ${aiErr.message}. (Needs OpenAI image-API access on the key.)` });
+    }
+
+    const filePath = `assets/${req.params.id}/isolated-${randomUUID()}.png`;
+    const publicUrl = await uploadBase64('brand-logos', filePath, isolatedB64, 'image/png');
+
+    const { data, error } = await supabase
+      .from('brand_assets')
+      .insert({
+        brand_id:   req.params.id,
+        company_id: req.user.company_id || null,
+        user_id:    req.user.id,
+        storage_url: publicUrl,
+        label: what.slice(0, 120),
+        kind,
+        usage_note: depicts ? String(depicts).slice(0, 240) : null,
+      })
+      .select('id, storage_url, label, kind, usage_note, created_at')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ success: true, asset: data });
+  } catch (err) {
+    console.error('[BRANDS] Asset isolate error:', err.message);
+    res.status(500).json({ error: 'Failed to isolate asset' });
   }
 });
 

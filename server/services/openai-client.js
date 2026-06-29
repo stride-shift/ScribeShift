@@ -7,6 +7,7 @@
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || 'gpt-5.5';
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 
 if (!OPENAI_API_KEY) {
   console.warn('[OPENAI] Missing OPENAI_API_KEY — brand extraction disabled until set');
@@ -108,4 +109,42 @@ export async function extractStructuredJSON(systemPrompt, userText, { maxRetries
   }
 
   throw lastErr ?? new Error('OpenAI extraction failed after all retries');
+}
+
+/**
+ * Isolate / crop a single brand asset out of a source image via gpt-image edits
+ * (mirrors Justin's brand-asset-isolate edge function). Logos/symbols come back
+ * on a transparent background; watermarks/patterns keep their context.
+ *
+ * Requires the OpenAI image API to be enabled on the key. Env-overridable model
+ * via OPENAI_IMAGE_MODEL (default 'gpt-image-1').
+ *
+ * @param {{ base64: string, mimeType?: string, instruction: string,
+ *           transparent?: boolean, size?: string }} opts
+ * @returns {Promise<string>} base64 PNG of the isolated asset.
+ */
+export async function isolateAssetImage({ base64, mimeType = 'image/png', instruction, transparent = true, size = '1024x1024' }) {
+  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+  if (!base64) throw new Error('No source image provided');
+
+  const form = new FormData();
+  form.append('model', OPENAI_IMAGE_MODEL);
+  form.append('image', new Blob([Buffer.from(base64, 'base64')], { type: mimeType }), 'source.png');
+  form.append('prompt', instruction);
+  form.append('size', size);
+  if (transparent) form.append('background', 'transparent');
+
+  const resp = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: form,
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error(`OpenAI images/edits ${resp.status}: ${t.substring(0, 300)}`);
+  }
+  const data = await resp.json();
+  const b64 = data?.data?.[0]?.b64_json;
+  if (!b64) throw new Error('OpenAI images/edits: no image returned');
+  return b64;
 }

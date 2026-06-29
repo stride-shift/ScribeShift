@@ -80,6 +80,8 @@ export default function BrandsView() {
   const [assets, setAssets] = useState([]);
   const [assetKind, setAssetKind] = useState('reference');
   const [assetUploading, setAssetUploading] = useState(false);
+  const [isolating, setIsolating] = useState(false);
+  const isolateInputRef = useRef(null);
   const [assetError, setAssetError] = useState('');
   const assetInputRef = useRef(null);
 
@@ -208,6 +210,38 @@ export default function BrandsView() {
     } finally {
       setAssetUploading(false);
       if (assetInputRef.current) assetInputRef.current.value = '';
+    }
+  };
+
+  // Isolate a single asset (e.g. a logo) out of an uploaded source image via
+  // gpt-image edits, then save it as a typed asset of the selected kind.
+  const handleIsolateFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingId) return;
+    if (file.size > 5 * 1024 * 1024) { setAssetError('Image must be under 5MB'); return; }
+    setIsolating(true);
+    setAssetError('');
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const base64 = String(dataUrl).split(',')[1];
+      const res = await fetch(`/api/brands/${editingId}/assets/isolate`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mimeType: file.type || 'image/png', kind: assetKind, depicts: file.name.replace(/\.[^.]+$/, '') }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Isolate failed');
+      setAssets((prev) => [...prev, data.asset]);
+    } catch (err) {
+      setAssetError(err.message);
+    } finally {
+      setIsolating(false);
+      if (isolateInputRef.current) isolateInputRef.current.value = '';
     }
   };
 
@@ -1154,10 +1188,19 @@ export default function BrandsView() {
                       <button
                         type="button"
                         onClick={() => assetInputRef.current?.click()}
-                        disabled={assetUploading || assets.length >= 12}
-                        style={{ width: 84, height: 56, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', cursor: (assetUploading || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--text-muted, #888)', fontSize: 12 }}
+                        disabled={assetUploading || isolating || assets.length >= 12}
+                        style={{ width: 84, height: 32, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', cursor: (assetUploading || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--text-muted, #888)', fontSize: 12 }}
                       >
                         {assetUploading ? '…' : assets.length >= 12 ? 'Full' : '+ Add'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => isolateInputRef.current?.click()}
+                        disabled={assetUploading || isolating || assets.length >= 12}
+                        title="Upload a busy image (e.g. a screenshot containing the logo) and AI extracts just the selected-kind asset — logos come back on a transparent background."
+                        style={{ width: 84, height: 24, borderRadius: 8, border: 'none', background: 'transparent', cursor: (isolating || assets.length >= 12) ? 'not-allowed' : 'pointer', color: 'var(--accent, #3b82f6)', fontSize: 11 }}
+                      >
+                        {isolating ? 'Isolating…' : '✨ Isolate'}
                       </button>
                     </div>
                     <input
@@ -1165,6 +1208,13 @@ export default function BrandsView() {
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
                       onChange={handleAssetFile}
+                      style={{ display: 'none' }}
+                    />
+                    <input
+                      ref={isolateInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleIsolateFile}
                       style={{ display: 'none' }}
                     />
                   </div>
