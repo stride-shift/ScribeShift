@@ -157,6 +157,7 @@ export default function ContentHistory() {
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid');
   const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [scope, setScope] = useState('mine');   // 'mine' | 'org'
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState(null);
   // 'native' = render the content as it'd appear on the actual social platform / preview.
@@ -204,7 +205,7 @@ export default function ContentHistory() {
 
   const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
 
-  useEffect(() => { loadContent(); }, [typeFilter, pillarFilter, toneFilter, statusFilter, pinnedOnly, offset]);
+  useEffect(() => { loadContent(); }, [typeFilter, pillarFilter, toneFilter, statusFilter, pinnedOnly, offset, scope]);
   useEffect(() => { loadFacets(); }, []);
 
   const loadFacets = async () => {
@@ -233,6 +234,7 @@ export default function ContentHistory() {
       if (statusFilter) params.set('status', statusFilter);
       if (pinnedOnly) params.set('pinned', 'true');
       if (search.trim()) params.set('search', search.trim());
+      params.set('scope', scope);   // 'mine' | 'org'
 
       const res = await fetch(`/api/content?${params}`, { headers: getAuthHeaders() });
       const data = await res.json();
@@ -530,6 +532,22 @@ export default function ContentHistory() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Personal vs organization history */}
+          <div className="flex items-center gap-1 p-1 border border-[var(--border)] rounded-md bg-[var(--bg-card)]">
+            <button
+              type="button"
+              onClick={() => { setOffset(0); setScope('mine'); }}
+              aria-pressed={scope === 'mine'}
+              className={`px-2.5 py-1.5 rounded text-[12px] font-semibold transition-colors ${scope === 'mine' ? 'text-white bg-[var(--primary,#3b82f6)]' : 'text-[var(--text-secondary)] hover:text-[var(--text)]'}`}
+            >My history</button>
+            <button
+              type="button"
+              onClick={() => { setOffset(0); setScope('org'); }}
+              aria-pressed={scope === 'org'}
+              title="Show content created by everyone in your organization"
+              className={`px-2.5 py-1.5 rounded text-[12px] font-semibold transition-colors ${scope === 'org' ? 'text-white bg-[var(--primary,#3b82f6)]' : 'text-[var(--text-secondary)] hover:text-[var(--text)]'}`}
+            >Showcase the org's history</button>
+          </div>
           <div data-tour="history-view-modes" className="flex items-center gap-1 p-1 border border-[var(--border)] rounded-md bg-[var(--bg-card)]">
             {VIEW_MODES.map(vm => {
               const active = viewMode === vm.value;

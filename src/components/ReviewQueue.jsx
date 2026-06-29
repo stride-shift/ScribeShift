@@ -771,12 +771,15 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState('mine');     // 'mine' | 'org'
+  const [members, setMembers] = useState([]);
+  const [recipient, setRecipient] = useState(''); // assigned reviewer (optional)
 
-  const loadMyPosts = useCallback(async () => {
+  const loadPosts = useCallback(async (which) => {
     setPostsLoading(true);
     setPostsError('');
     try {
-      const res = await fetch('/api/schedule?limit=50', { headers: getAuthHeaders() });
+      const res = await fetch(`/api/schedule?limit=50&scope=${which}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (!res.ok) { setPostsError(data.error || 'Failed to load posts'); return; }
       setMyPosts(data.posts || []);
@@ -787,10 +790,29 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
     }
   }, [getAuthHeaders]);
 
+  const loadMembers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/review/team-members', { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setMembers(data.members || []);
+    } catch { /* non-fatal */ }
+  }, [getAuthHeaders]);
+
+  const switchScope = (which) => {
+    if (which === scope) return;
+    setScope(which);
+    setSelectedPostId('');
+    loadPosts(which);
+  };
+
   const handleOpen = () => {
     const next = !open;
     setOpen(next);
-    if (next && myPosts.length === 0) loadMyPosts();
+    if (next) {
+      loadPosts(scope);
+      if (members.length === 0) loadMembers();
+    }
   };
 
   const handleSend = async (e) => {
@@ -799,7 +821,9 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
     setSending(true);
     setSendError('');
     try {
-      const body = note.trim() ? { body: note.trim() } : {};
+      const body = {};
+      if (note.trim()) body.body = note.trim();
+      if (recipient) body.assignedTo = recipient;
       const res = await fetch(`/api/review/${selectedPostId}/request-feedback`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -809,6 +833,7 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
       if (!res.ok) { setSendError(data.error || 'Failed to send for feedback'); return; }
       setSelectedPostId('');
       setNote('');
+      setRecipient('');
       setOpen(false);
       onSent();
     } catch {
@@ -880,6 +905,32 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
           {postsError && <p style={{ margin: 0, fontSize: 12, color: 'var(--danger)' }}>{postsError}</p>}
           {!postsLoading && (
             <>
+              {/* Scope toggle (my posts vs the org's) + quick add-new affordance */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  {[['mine', 'My posts'], ['org', 'Organization']].map(([val, lbl]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => switchScope(val)}
+                      style={{
+                        padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        background: scope === val ? 'var(--primary, #3b82f6)' : 'transparent',
+                        color: scope === val ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >{lbl}</button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { window.location.hash = 'create'; }}
+                  className="sched-action-btn"
+                  style={{ marginLeft: 'auto', fontSize: 12 }}
+                  title="Create or upload a new post, then come back to send it for feedback"
+                >+ New post</button>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   Select a post
@@ -911,7 +962,31 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
                 </select>
                 {!postsLoading && myPosts.length === 0 && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                    No scheduled posts found.
+                    {scope === 'org' ? 'No posts found in the organization.' : 'No scheduled posts found.'}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Send to <span style={{ fontWeight: 400 }}>(optional)</span>
+                </label>
+                <select
+                  value={recipient}
+                  onChange={(e) => setRecipient(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
+                    background: 'var(--bg-raised)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="">Anyone on the team</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                  ))}
+                </select>
+                {members.length === 0 && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                    No teammates to assign — it'll surface to the whole team.
                   </p>
                 )}
               </div>
