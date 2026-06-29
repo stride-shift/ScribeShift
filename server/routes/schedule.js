@@ -341,6 +341,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ── POST /api/schedule/clear-failed ─────────────────────────────────
+// Bulk-remove failed posts (the "clear out" action on the Failed filter).
+// Scope-aware (?scope=mine|org via body). Declared before /:id routes.
+router.post('/clear-failed', async (req, res) => {
+  try {
+    let q = supabase.from('scheduled_posts').delete({ count: 'exact' }).eq('status', 'failed');
+    q = scopeBySelection(req, req.body?.scope)(q);
+    const { error, count } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true, cleared: count || 0 });
+  } catch (err) {
+    console.error('[SCHEDULE] clear-failed error:', err.message);
+    res.status(500).json({ error: 'Failed to clear failed posts' });
+  }
+});
+
 // ── GET /api/schedule/:id ───────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
