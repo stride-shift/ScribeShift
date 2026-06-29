@@ -158,6 +158,8 @@ export default function ContentHistory() {
   const [viewMode, setViewMode] = useState('grid');
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [scope, setScope] = useState('mine');   // 'mine' | 'org'
+  // Real totals across the whole scoped dataset (not the loaded page).
+  const [realStats, setRealStats] = useState({ total: 0, pinned: 0, pillarCounts: {} });
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState(null);
   // 'native' = render the content as it'd appear on the actual social platform / preview.
@@ -207,6 +209,15 @@ export default function ContentHistory() {
 
   useEffect(() => { loadContent(); }, [typeFilter, pillarFilter, toneFilter, statusFilter, pinnedOnly, offset, scope]);
   useEffect(() => { loadFacets(); }, []);
+  useEffect(() => { loadStats(); }, [scope]);
+
+  const loadStats = async () => {
+    try {
+      const res = await fetch(`/api/content/stats?scope=${scope}`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      setRealStats(await res.json());
+    } catch { /* non-fatal — cards fall back to page-derived */ }
+  };
 
   const loadFacets = async () => {
     try {
@@ -276,6 +287,7 @@ export default function ContentHistory() {
       });
       if (res.ok) {
         setItems(prev => prev.map(i => i.id === id ? { ...i, pinned: !currentPinned } : i));
+        loadStats(); // keep the Pinned card accurate
       }
     } catch {
       setError('Failed to update pin');
@@ -307,29 +319,30 @@ export default function ContentHistory() {
 
   // Derived insights
   const stats = useMemo(() => {
-    const pinnedCount = items.filter(i => i.pinned).length;
+    // Pinned + gaps + top pillar come from the WHOLE scoped dataset (realStats),
+    // not just the loaded page — so the cards are accurate.
+    const pinnedCount = realStats.pinned ?? items.filter(i => i.pinned).length;
     const allPillars = PILLARS.filter(p => p.value).map(p => p.value);
-    const presentPillars = new Set(items.map(i => i.pillar).filter(Boolean));
+    const pillarCounts = (realStats.pillarCounts && Object.keys(realStats.pillarCounts).length)
+      ? realStats.pillarCounts
+      : items.reduce((acc, i) => { if (i.pillar) acc[i.pillar] = (acc[i.pillar] || 0) + 1; return acc; }, {});
+    const presentPillars = new Set(Object.keys(pillarCounts));
     const gapsCount = allPillars.filter(p => !presentPillars.has(p)).length;
 
-    // Top pillar & top type from loaded items
-    const pillarCounts = {};
+    // Top type still from loaded items (cheap, page-level is fine for this hint).
     const typeCounts = {};
-    items.forEach(i => {
-      if (i.pillar) pillarCounts[i.pillar] = (pillarCounts[i.pillar] || 0) + 1;
-      if (i.content_type) typeCounts[i.content_type] = (typeCounts[i.content_type] || 0) + 1;
-    });
+    items.forEach(i => { if (i.content_type) typeCounts[i.content_type] = (typeCounts[i.content_type] || 0) + 1; });
     const topPillar = Object.entries(pillarCounts).sort((a, b) => b[1] - a[1])[0];
     const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
 
     return {
-      total,
+      total: realStats.total || total,
       pinnedCount,
       gapsCount,
       topPillar: topPillar ? { key: topPillar[0], count: topPillar[1] } : null,
       topType: topType ? { key: topType[0], count: topType[1] } : null,
     };
-  }, [items, total]);
+  }, [items, total, realStats]);
 
   // Filter items for current tab + apply client-side date filter + sort
   // (tone/status/pillar/type are filtered server-side)

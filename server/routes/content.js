@@ -35,6 +35,31 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ── GET /api/content/stats ──────────────────────────────────────────
+// Real totals across the WHOLE scoped dataset (not just the loaded page), so
+// the Content Bank cards (Total / Pinned / Content Gaps / top pillar) are
+// accurate instead of page-derived. ?scope=mine|org honours the toggle.
+router.get('/stats', async (req, res) => {
+  try {
+    const { scope } = req.query;
+    const scoped = (q) => scopeBySelection(req, scope)(q);
+
+    const [{ count: total }, { count: pinned }, { data: pillarRows }] = await Promise.all([
+      scoped(supabase.from('generated_content').select('id', { count: 'exact', head: true })),
+      scoped(supabase.from('generated_content').select('id', { count: 'exact', head: true }).eq('pinned', true)),
+      scoped(supabase.from('generated_content').select('pillar').not('pillar', 'is', null).limit(5000)),
+    ]);
+
+    const pillarCounts = {};
+    (pillarRows || []).forEach((r) => { if (r.pillar) pillarCounts[r.pillar] = (pillarCounts[r.pillar] || 0) + 1; });
+
+    res.json({ total: total || 0, pinned: pinned || 0, pillarCounts });
+  } catch (err) {
+    console.error('[CONTENT] stats error:', err.message);
+    res.status(500).json({ error: 'Failed to load stats' });
+  }
+});
+
 // ── GET /api/content/facets ─────────────────────────────────────────
 // Returns distinct pillar/tone/status values the current user has actually
 // produced, so dropdowns can show only the options that are meaningful.
