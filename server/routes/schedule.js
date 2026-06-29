@@ -120,6 +120,22 @@ router.post('/', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
+    // ── Capture v1 "Original" for version control (best-effort, never blocks) ──
+    if (data?.id) {
+      supabase.from('post_revisions').upsert({
+        scheduled_post_id: data.id,
+        company_id: data.company_id || null,
+        revision_number: 1,
+        post_text: data.post_text,
+        post_media_url: data.post_media_url,
+        post_media_type: data.post_media_type,
+        changed_by: req.user.id,
+        change_reason: 'Original',
+      }, { onConflict: 'scheduled_post_id,revision_number' })
+        .then(({ error: e }) => { if (e) console.warn('[SCHEDULE] v1 capture failed:', e.message); })
+        .catch(() => {});
+    }
+
     // ── Insert multi-target rows for LinkedIn (Wave 2) ───────────────────────
     // Only when the caller explicitly supplies linkedin_targets (platform=linkedin).
     // Absent → no target rows → scheduler uses the legacy single-publish path.
@@ -444,47 +460,9 @@ router.put('/:id', async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
 
-    // ── Append revision snapshot (best-effort, after responding) ──────────────
-    if (preEdit) {
-      const textChanged = updates.post_text !== undefined && updates.post_text !== preEdit.post_text;
-      const mediaUrlChanged = updates.post_media_url !== undefined && updates.post_media_url !== preEdit.post_media_url;
-      const mediaTypeChanged = updates.post_media_type !== undefined && updates.post_media_type !== preEdit.post_media_type;
-      if (textChanged || mediaUrlChanged || mediaTypeChanged) {
-        (async () => {
-          try {
-            // revision_number = (current max for this post) + 1
-            const { data: lastRev } = await supabase
-              .from('post_revisions')
-              .select('revision_number')
-              .eq('scheduled_post_id', req.params.id)
-              .order('revision_number', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            const nextRevision = (lastRev?.revision_number || 0) + 1;
-
-            const { error: revErr } = await supabase
-              .from('post_revisions')
-              .insert({
-                scheduled_post_id: req.params.id,
-                company_id: preEdit.company_id || null,
-                revision_number: nextRevision,
-                post_text: preEdit.post_text,
-                post_media_url: preEdit.post_media_url,
-                post_media_type: preEdit.post_media_type,
-                changed_by: req.user.id,
-                change_reason: req.body.change_reason || null,
-              });
-            if (revErr) {
-              console.warn('[SCHEDULE] Revision snapshot insert failed (edit succeeded):', revErr.message);
-            } else {
-              console.log(`[SCHEDULE] Snapshotted revision ${nextRevision} for post ${req.params.id}`);
-            }
-          } catch (revWriteErr) {
-            console.warn('[SCHEDULE] Revision snapshot error (edit succeeded):', revWriteErr.message);
-          }
-        })();
-      }
-    }
+    // Versioning is now EXPLICIT via the Save button (POST /:id/save-version) +
+    // the v1/v2/v3 rolling slots, so we no longer auto-append a revision on every
+    // edit. (preEdit is still fetched above for other potential uses.)
 
     // Update the linked Google Calendar event if one exists
     if (updated?.google_event_id) {
@@ -648,6 +626,100 @@ router.post('/:id/retry', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retry post' });
+  }
+});
+
+// ── POST /api/schedule/:id/save-version ─────────────────────────────
+// Explicit "Save" of the post's CURRENT content into the rolling version slots:
+//   v1 = Original (locked once captured), v2 = previous saved, v3 = latest saved.
+// Save rolls: 1st save -> v2, 2nd -> v3, thereafter v3 demotes to v2 + new -> v3.
+// v1 is captured at post creation going forward; for legacy posts (no v1) it's
+// backfilled from the current content on first save.
+router.post('/:id/save-version', async (req, res) => {
+  try {
+    let fq = supabase
+      .from('scheduled_posts')
+      .select('id, company_id, post_text, post_media_url, post_media_type')
+      .eq('id', req.params.id);
+    fq = scopeByRole(req)(fq);
+    const { data: post, error: fErr } = await fq.single();
+    if (fErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    const { data: revs } = await supabase
+      .from('post_revisions')
+      .select('revision_number, post_text, post_media_url, post_media_type')
+      .eq('scheduled_post_id', post.id)
+      .in('revision_number', [1, 2, 3]);
+    const slot = {};
+    (revs || []).forEach((r) => { slot[r.revision_number] = r; });
+
+    const now = new Date().toISOString();
+    const current = { post_text: post.post_text, post_media_url: post.post_media_url, post_media_type: post.post_media_type };
+    const writeSlot = (n, c, reason) => supabase.from('post_revisions').upsert({
+      scheduled_post_id: post.id,
+      company_id: post.company_id || null,
+      revision_number: n,
+      post_text: c.post_text,
+      post_media_url: c.post_media_url,
+      post_media_type: c.post_media_type,
+      changed_by: req.user.id,
+      change_reason: reason || null,
+      created_at: now,
+    }, { onConflict: 'scheduled_post_id,revision_number' });
+
+    if (!slot[1]) await writeSlot(1, current, 'Original'); // backfill legacy original
+    if (!slot[2]) {
+      await writeSlot(2, current, 'Saved');
+    } else if (!slot[3]) {
+      await writeSlot(3, current, 'Saved');
+    } else {
+      // Demote current v3 -> v2, then write the new content as v3.
+      await writeSlot(2, slot[3], 'Saved');
+      await writeSlot(3, current, 'Saved');
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[SCHEDULE] save-version error:', err.message);
+    res.status(500).json({ error: 'Failed to save version' });
+  }
+});
+
+// ── POST /api/schedule/:id/restore-version/:n ───────────────────────
+// Restore version slot n (1|2|3) back onto the live post.
+router.post('/:id/restore-version/:n', async (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    if (![1, 2, 3].includes(n)) return res.status(400).json({ error: 'Invalid version' });
+
+    let fq = supabase.from('scheduled_posts').select('id').eq('id', req.params.id);
+    fq = scopeByRole(req)(fq);
+    const { data: post, error: fErr } = await fq.single();
+    if (fErr || !post) return res.status(404).json({ error: 'Post not found' });
+
+    const { data: rev } = await supabase
+      .from('post_revisions')
+      .select('post_text, post_media_url, post_media_type')
+      .eq('scheduled_post_id', post.id)
+      .eq('revision_number', n)
+      .maybeSingle();
+    if (!rev) return res.status(404).json({ error: 'Version not found' });
+
+    const { error: upErr } = await supabase
+      .from('scheduled_posts')
+      .update({
+        post_text: rev.post_text,
+        post_media_url: rev.post_media_url,
+        post_media_type: rev.post_media_type,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', post.id);
+    if (upErr) return res.status(400).json({ error: upErr.message });
+
+    res.json({ success: true, restored: n });
+  } catch (err) {
+    console.error('[SCHEDULE] restore-version error:', err.message);
+    res.status(500).json({ error: 'Failed to restore version' });
   }
 });
 

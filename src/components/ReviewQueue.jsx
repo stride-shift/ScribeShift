@@ -306,12 +306,17 @@ function MessageInput({ postId, getAuthHeaders, onCommentAdded }) {
 }
 
 // ── Version history panel ─────────────────────────────────────────
-function VersionHistory({ postId, getAuthHeaders, currentText }) {
+// Version slot labels — v1 is the locked original; v2/v3 roll on each Save.
+const VERSION_LABEL = { 1: 'Original', 2: 'Previous', 3: 'Latest' };
+
+function VersionHistory({ postId, getAuthHeaders, currentText, onChanged }) {
   const [open, setOpen] = useState(false);
   const [revisions, setRevisions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [restoring, setRestoring] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -334,6 +339,39 @@ function VersionHistory({ postId, getAuthHeaders, currentText }) {
     if (next && revisions.length === 0) load();
   };
 
+  // Save the post's CURRENT content into the rolling v1→v2→v3 slots.
+  const handleSaveVersion = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/schedule/${postId}/save-version`, { method: 'POST', headers: getAuthHeaders() });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Failed to save version'); return; }
+      if (!open) setOpen(true);
+      await load();
+    } catch {
+      setError('Failed to save version');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Restore a version slot back onto the live post.
+  const handleRestore = async (n) => {
+    if (!window.confirm(`Restore ${VERSION_LABEL[n] || `v${n}`} as the live post content?`)) return;
+    setRestoring(n);
+    setError('');
+    try {
+      const res = await fetch(`/api/schedule/${postId}/restore-version/${n}`, { method: 'POST', headers: getAuthHeaders() });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Failed to restore'); return; }
+      await load();
+      if (onChanged) onChanged();
+    } catch {
+      setError('Failed to restore');
+    } finally {
+      setRestoring(null);
+    }
+  };
+
   const formatDate = (ds) =>
     new Date(ds).toLocaleString(undefined, {
       month: 'short',
@@ -345,29 +383,39 @@ function VersionHistory({ postId, getAuthHeaders, currentText }) {
 
   return (
     <div style={{ paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-      <button
-        onClick={handleToggle}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: 12,
-          fontWeight: 600,
-          color: 'var(--text-secondary)',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: 0,
-          fontFamily: 'inherit',
-        }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="12 8 12 12 14 14" />
-          <path d="M3.05 11a9 9 0 1 0 .5-4" />
-          <polyline points="3 3 3 7 7 7" />
-        </svg>
-        Edit History {open ? '▲' : '▼'}
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <button
+          onClick={handleToggle}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            color: 'var(--text-secondary)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            fontFamily: 'inherit',
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="12 8 12 12 14 14" />
+            <path d="M3.05 11a9 9 0 1 0 .5-4" />
+            <polyline points="3 3 3 7 7 7" />
+          </svg>
+          Versions {open ? '▲' : '▼'}
+        </button>
+        <button
+          onClick={handleSaveVersion}
+          disabled={saving}
+          title="Save the current content as a version. v1 Original is kept; each save rolls v2 → v3."
+          style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--primary, #3b82f6)', color: 'var(--primary, #3b82f6)', background: 'transparent', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+        >
+          {saving ? 'Saving…' : 'Save version'}
+        </button>
+      </div>
 
       {open && (
         <div style={{ marginTop: 10 }}>
@@ -426,7 +474,7 @@ function VersionHistory({ postId, getAuthHeaders, currentText }) {
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        v{rev.revision_number}
+                        v{rev.revision_number}{VERSION_LABEL[rev.revision_number] ? ` · ${VERSION_LABEL[rev.revision_number]}` : ''}
                       </span>
                       <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
                         {editor} &middot; {formatDate(rev.created_at)}
@@ -474,6 +522,16 @@ function VersionHistory({ postId, getAuthHeaders, currentText }) {
                             No text recorded for this revision.
                           </p>
                         )}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRestore(rev.revision_number); }}
+                            disabled={restoring === rev.revision_number}
+                            title="Make this version the live post content"
+                            style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg-card)', cursor: 'pointer', fontFamily: 'inherit' }}
+                          >
+                            {restoring === rev.revision_number ? 'Restoring…' : 'Restore this version'}
+                          </button>
+                        </div>
                       </div>
                     )}
                     {!isOpen && rev.post_text && (
