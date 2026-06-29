@@ -257,6 +257,53 @@ export function scheduleConfirmationEmail({ platform, scheduledAt, preview, time
   };
 }
 
+// ── Daily post reminder ─────────────────────────────────────────────
+/**
+ * Sent each morning (07:00 UTC cron) to the owner of every post scheduled to
+ * go out that day. One email per post.
+ *
+ * @param {{ userName?: string, post: { platform?: string, post_text?: string,
+ *           scheduled_at?: string } }} opts
+ */
+export function postReminderEmail({ userName, post } = {}) {
+  const PLATFORM_LABELS = { linkedin: 'LinkedIn', twitter: 'Twitter / X', facebook: 'Facebook', instagram: 'Instagram' };
+  const platform = post?.platform || '';
+  const platformLabel = PLATFORM_LABELS[platform] || platform || 'social';
+
+  // Time-of-day in UTC — we don't have the user's tz in the cron context, so
+  // show UTC explicitly rather than a misleading server-local time.
+  let when = '';
+  try {
+    when = new Date(post?.scheduled_at).toLocaleString('en-US', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+    }) + ' UTC';
+  } catch { when = ''; }
+
+  const greeting = userName ? `Hi ${esc(userName.split(' ')[0])},` : 'Hi there,';
+  const snippet = (post?.post_text || '').slice(0, 280);
+  const dashboardUrl = `${FRONTEND_URL}/schedule`;
+
+  const body = `
+    <h1 style="margin:0 0 10px;font-size:24px;font-weight:700;color:${TEXT_PRIMARY};letter-spacing:-0.015em;line-height:1.25;">
+      A post goes out today
+    </h1>
+    <p style="margin:0 0 22px;font-size:15px;color:${TEXT_SECONDARY};line-height:1.65;">
+      ${greeting} this is a heads-up that your <strong style="color:${TEXT_PRIMARY};">${esc(platformLabel)}</strong> post is
+      scheduled to publish${when ? ` today at <strong style="color:${TEXT_PRIMARY};">${esc(when)}</strong>` : ' today'}.
+    </p>
+    ${snippet
+      ? `<div style="margin:0 0 24px;padding:18px 20px;background:#f8fafc;border-left:3px solid ${BRAND_COLOR};border-radius:8px;font-size:14px;color:${TEXT_SECONDARY};white-space:pre-wrap;line-height:1.55;">${esc(snippet)}${post.post_text.length > 280 ? '…' : ''}</div>`
+      : ''}
+    <div style="margin:0 0 24px;">${button(dashboardUrl, 'Review in ScribeShift')}</div>
+    ${infoCallout('Nothing to do if it looks good — it will publish automatically. Open ScribeShift if you want to edit or reschedule it before then.')}
+  `;
+  return {
+    subject: `Reminder: your ${platformLabel} post goes out today`,
+    html: frame({ preheader: `Your ${platformLabel} post is scheduled to publish today`, heroTitle: 'Reminder', bodyHtml: body }),
+    attachments: logoAttachment(),
+  };
+}
+
 // ── Approval request ────────────────────────────────────────────────
 /**
  * Email sent to company users when a post enters pending_review.
