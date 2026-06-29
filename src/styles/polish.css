@@ -1,0 +1,79 @@
+/* polish.css — cross-cutting UI polish loaded after app.css.
+   Kept separate from the large app.css so these fixes are easy to find + own.
+   Three things: (1) modals/popups never clip, (2) day-mode footer, (3) motion. */
+
+/* ── 1. Modals never cut off ───────────────────────────────────────────────
+   Any full-screen overlay scrolls and top-aligns once its content is taller
+   than the viewport, so the header/top is never clipped behind the navbar.
+   Targets the app's overlay classes + a generic fallback. */
+.brand-modal-overlay,
+.pillar-modal-overlay,
+.spm-overlay,
+[class*="modal-overlay"] {
+  overflow-y: auto !important;
+  align-items: flex-start !important;
+  padding-top: 4vh;
+  padding-bottom: 4vh;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The modal panels themselves cap at the viewport and scroll internally. */
+.brand-modal,
+.pillar-modal,
+.spm-modal,
+.sched-modal {
+  max-height: 92vh;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* ── 2. Day-mode sidebar footer ────────────────────────────────────────────
+   The "Powered by StrideShift" footer carried a dark band in light mode. */
+[data-theme="light"] .sidebar-footer,
+[data-theme="light"] .app-sidebar .sidebar-footer {
+  background: transparent;
+  border-top: 1px solid var(--border, #e6eaf2);
+}
+[data-theme="light"] .sidebar-footer-text {
+  color: var(--text-muted, #64748b);
+}
+
+/* ── 3. Motion: smooth buttons + view/tab transitions ──────────────────────
+   Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  .btn,
+  .view-nav-btn,
+  .sched-action-btn,
+  [role="button"],
+  a {
+    transition: background-color .16s ease, color .16s ease, border-color .16s ease,
+                box-shadow .16s ease, transform .08s ease, opacity .16s ease;
+  }
+  button:active,
+  .btn:active,
+  .view-nav-btn:active,
+  .sched-action-btn:active {
+    transform: translateY(1px);
+  }
+
+  /* Subtle entrance when the main view content changes (keyed in App.jsx). */
+  .main-content > * {
+    animation: ss-view-in .22s ease both;
+  }
+  @keyframes ss-view-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* Modal pop-in. */
+  .brand-modal,
+  .pillar-modal,
+  .spm-modal {
+    animation: ss-modal-in .18s ease both;
+  }
+  @keyframes ss-modal-in {
+    from { opacity: 0; transform: translateY(8px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+}
