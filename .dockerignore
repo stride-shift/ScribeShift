@@ -1,0 +1,15 @@
+# Keep the Cloud Build upload small — only package*.json + server/ are needed.
+node_modules
+.git
+dist
+src
+public
+uploads
+playwright-data
+generated
+.vercel
+.claude
+supabase/.temp
+*.md
+.env
+.env.*
