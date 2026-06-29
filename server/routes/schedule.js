@@ -320,7 +320,7 @@ router.get('/', async (req, res) => {
 
     let query = supabase
       .from('scheduled_posts')
-      .select('*, users(email, full_name), scheduled_post_targets(target_type, target_label, target_urn, status, external_post_url, error_message)', { count: 'exact' })
+      .select('*, users!user_id(email, full_name), scheduled_post_targets(target_type, target_label, target_urn, status, external_post_url, error_message)', { count: 'exact' })
       .order('scheduled_at', { ascending: true })
       .range(offset, offset + limit - 1);
 

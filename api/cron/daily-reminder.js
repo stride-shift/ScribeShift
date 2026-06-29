@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     const { data: posts, error } = await supabase
       .from('scheduled_posts')
-      .select('id, user_id, platform, post_text, scheduled_at, status, users(email, full_name)')
+      .select('id, user_id, platform, post_text, scheduled_at, status, users!user_id(email, full_name)')
       .eq('status', 'scheduled')
       .gte('scheduled_at', dayStart)
       .lte('scheduled_at', dayEnd)

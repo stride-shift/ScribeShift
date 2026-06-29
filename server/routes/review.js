@@ -52,7 +52,9 @@ router.get('/queue', verifyToken, async (req, res) => {
     let query = supabase
       .from('scheduled_posts')
       .select(
-        `*, users(email, full_name),
+        // users!user_id disambiguates: scheduled_posts has TWO FKs to users
+        // (user_id = owner, reviewed_by = approver). Embed the owner.
+        `*, users!user_id(email, full_name),
          post_comments(id)`,
         { count: 'exact' }
       )
