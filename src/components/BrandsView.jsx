@@ -24,7 +24,12 @@ const EMPTY_DRAFT = {
   default_audience: '',
   default_image_styles: [],
   source_url: null,
-  brand_palette: null,  // read-only, populated from API on edit — never sent to server
+  brand_palette: null,  // structured palette (AI-extracted); now persisted on save
+  // Justin-style profile fields — AI-extracted, editable, feed the deck-style-lock
+  typography: null,         // { display:{family}, body:{family} }
+  motif_description: '',
+  do_donts: null,           // { do:[], dont:[] }
+  cover_formula: '',
   // CI document fields — local pending state for upload, saved fields on edit
   ci_document_url: null,
   ci_document_name: null,
@@ -126,6 +131,10 @@ export default function BrandsView() {
       default_image_styles: Array.isArray(brand.default_image_styles) ? brand.default_image_styles : [],
       source_url: brand.source_url || null,
       brand_palette: brand.brand_palette ?? null,
+      typography: brand.typography ?? null,
+      motif_description: brand.motif_description || '',
+      do_donts: brand.do_donts ?? null,
+      cover_formula: brand.cover_formula || '',
       ci_document_url: brand.ci_document_url || null,
       ci_document_name: brand.ci_document_name || null,
       ci_document_text: brand.ci_document_text || null,
@@ -277,6 +286,13 @@ export default function BrandsView() {
         logoPreview: prev.logoBase64
           ? prev.logoPreview
           : (prev.logoPreview || d.logo_url || null),
+        // Structured profile from extraction — always take the fresh extraction
+        // (it's the whole point of re-extracting). Falls back to existing.
+        brand_palette: d.brand_palette ?? prev.brand_palette,
+        typography: d.typography ?? prev.typography,
+        motif_description: d.motif_description || prev.motif_description || '',
+        do_donts: d.do_donts ?? prev.do_donts,
+        cover_formula: d.cover_formula || prev.cover_formula || '',
         source_url: d.source_url || trimmed,
       }));
       setExtractedFrom(d.source_url || trimmed);
@@ -335,8 +351,10 @@ export default function BrandsView() {
     try {
       // Strip local-only fields before sending to the JSON endpoint — files
       // upload separately to dedicated endpoints to avoid the 1MB JSON cap.
+      // brand_palette + typography/motif/do_donts/cover_formula ARE sent now
+      // (the allowlist accepts them) so the extracted/edited profile persists.
       // eslint-disable-next-line no-unused-vars
-      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ciDocPending, brand_palette: _brandPalette, ...payload } = draft;
+      const { logoBase64, logoPreview, logoMimeType, logo_url: draftLogoUrl, ciDocPending, ...payload } = draft;
 
       // If user explicitly cleared the logo (preview is null but the brand
       // had a logo before), forward that as null so the backend wipes it.
@@ -832,6 +850,78 @@ export default function BrandsView() {
                   Re-extract from a website URL to generate a full palette.
                 </div>
               ) : null}
+
+              {/* ── Visual identity (advanced) — AI-extracted, editable; feeds image gen ── */}
+              <div className="wizard-context-block" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <label className="wizard-context-label">Visual identity (advanced)</label>
+                <p className="card-subtitle" style={{ marginTop: 0, marginBottom: '0.6rem' }}>
+                  Extracted by AI and used to keep generated images on-brand. Edit to fine-tune.
+                </p>
+
+                <div className="brands-editor-row">
+                  <div className="wizard-context-block" style={{ flex: 1 }}>
+                    <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Display font</label>
+                    <input
+                      className="wizard-context-input"
+                      placeholder="e.g. Red Hat Display"
+                      value={draft.typography?.display?.family || ''}
+                      onChange={(e) => setDraft(prev => ({ ...prev, typography: { ...(prev.typography || {}), display: { ...(prev.typography?.display || {}), family: e.target.value } } }))}
+                    />
+                  </div>
+                  <div className="wizard-context-block" style={{ flex: 1 }}>
+                    <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Body font</label>
+                    <input
+                      className="wizard-context-input"
+                      placeholder="e.g. Inter"
+                      value={draft.typography?.body?.family || ''}
+                      onChange={(e) => setDraft(prev => ({ ...prev, typography: { ...(prev.typography || {}), body: { ...(prev.typography?.body || {}), family: e.target.value } } }))}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Signature motif</label>
+                  <input
+                    className="wizard-context-input"
+                    placeholder="e.g. thin hexagon line-art at low opacity in a corner"
+                    value={draft.motif_description || ''}
+                    onChange={(e) => setDraft({ ...draft, motif_description: e.target.value })}
+                  />
+                </div>
+
+                <div className="brands-editor-row" style={{ marginTop: '0.75rem' }}>
+                  <div className="wizard-context-block" style={{ flex: 1 }}>
+                    <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Do (one per line)</label>
+                    <textarea
+                      className="wizard-textarea"
+                      rows={3}
+                      placeholder={'Lead with outcomes\nUse generous whitespace'}
+                      value={(draft.do_donts?.do || []).join('\n')}
+                      onChange={(e) => setDraft(prev => ({ ...prev, do_donts: { ...(prev.do_donts || {}), do: e.target.value.split('\n') } }))}
+                    />
+                  </div>
+                  <div className="wizard-context-block" style={{ flex: 1 }}>
+                    <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Don't (one per line)</label>
+                    <textarea
+                      className="wizard-textarea"
+                      rows={3}
+                      placeholder={'No stock-photo clichés\nNever use jargon'}
+                      value={(draft.do_donts?.dont || []).join('\n')}
+                      onChange={(e) => setDraft(prev => ({ ...prev, do_donts: { ...(prev.do_donts || {}), dont: e.target.value.split('\n') } }))}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Cover / title formula (optional)</label>
+                  <input
+                    className="wizard-context-input"
+                    placeholder="e.g. [Customer] // Sales Enablement"
+                    value={draft.cover_formula || ''}
+                    onChange={(e) => setDraft({ ...draft, cover_formula: e.target.value })}
+                  />
+                </div>
+              </div>
 
               <div className="wizard-context-block" style={{ marginTop: '1rem' }}>
                 <label className="wizard-context-label">Ideal Customer Profile</label>
