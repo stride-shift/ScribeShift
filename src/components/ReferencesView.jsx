@@ -24,6 +24,12 @@ export default function ReferencesView() {
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/references', { headers: getAuthHeaders() });
+      // A non-JSON body means the request hit the SPA fallback — the
+      // /api/references route isn't loaded yet (restart the API server).
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        throw new Error('References API not loaded yet — restart your API server (node server/index.js), then refresh.');
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load references');
       setRefs(data.references || []);
