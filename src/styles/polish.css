@@ -27,6 +27,20 @@
   margin-bottom: auto;
 }
 
+/* ── 1b. Undefined surface vars → theme-aware (were falling back to white) ──
+   Several inline styles use var(--surface-alt) / var(--bg-secondary), which were
+   never defined, so they fell back to a hardcoded light colour and showed a
+   white box (with invisible text) in dark mode — e.g. the "Generate images this
+   run" row. Alias them to the theme-aware --bg-input. */
+:root, [data-theme="light"], [data-theme="dark"] {
+  --surface-alt: var(--bg-input);
+  --bg-secondary: var(--bg-input);
+}
+
+/* ── 1c. Dropdowns / popovers must sit above sibling cards ─────────────────── */
+.brand-picker { position: relative; z-index: 60; }
+.brand-picker-menu { z-index: 1000; }
+
 /* ── 2. Day-mode sidebar footer ────────────────────────────────────────────
    The "Powered by StrideShift" footer carried a dark band in light mode. */
 [data-theme="light"] .sidebar-footer,
