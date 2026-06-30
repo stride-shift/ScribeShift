@@ -70,36 +70,31 @@ export async function deductCredits(userId, companyId, action, creditsUsed, meta
   });
 
   if (deductError) {
-    console.warn(`[CREDITS] RPC deduct_credits failed, using atomic fallback:`, deductError.message);
-    // Atomic fallback: use raw SQL to decrement in a single operation (no read-then-write race)
-    const { error: updateError } = await supabase.rpc('raw_sql', {
-      query: `UPDATE companies SET credit_balance = GREATEST(0, credit_balance - $1) WHERE id = $2`,
-      params: [creditsUsed, companyId],
-    }).catch(() => ({ error: { message: 'raw_sql RPC not available' } }));
+    console.warn(`[CREDITS] RPC deduct_credits failed, using optimistic-lock fallback:`, deductError.message);
+    // Fallback: read-then-write with an optimistic lock. We deliberately do NOT
+    // use a generic raw_sql RPC here — shipping an arbitrary-SQL primitive is a
+    // standing injection surface. Use the dedicated deduct_credits RPC above and
+    // this scoped UPDATE as the only fallback.
+    const { data: company } = await supabase
+      .from('companies')
+      .select('credit_balance')
+      .eq('id', companyId)
+      .single();
 
-    // If raw_sql RPC also unavailable, use the Supabase filter approach
-    if (updateError) {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('credit_balance')
-        .eq('id', companyId)
-        .single();
+    if (!company) {
+      console.error(`[CREDITS] Fallback deduction failed — company ${companyId} not found`);
+      throw new Error('Failed to deduct credits. Please try again.');
+    }
 
-      if (!company) {
-        console.error(`[CREDITS] Fallback deduction failed — company ${companyId} not found`);
-        throw new Error('Failed to deduct credits. Please try again.');
-      }
+    const { error: fallbackError } = await supabase
+      .from('companies')
+      .update({ credit_balance: Math.max(0, company.credit_balance - creditsUsed) })
+      .eq('id', companyId)
+      .eq('credit_balance', company.credit_balance); // Optimistic lock: only update if balance hasn't changed
 
-      const { error: fallbackError } = await supabase
-        .from('companies')
-        .update({ credit_balance: Math.max(0, company.credit_balance - creditsUsed) })
-        .eq('id', companyId)
-        .eq('credit_balance', company.credit_balance); // Optimistic lock: only update if balance hasn't changed
-
-      if (fallbackError) {
-        console.error(`[CREDITS] Fallback update failed for company ${companyId}:`, fallbackError.message);
-        throw new Error('Failed to deduct credits. Please try again.');
-      }
+    if (fallbackError) {
+      console.error(`[CREDITS] Fallback update failed for company ${companyId}:`, fallbackError.message);
+      throw new Error('Failed to deduct credits. Please try again.');
     }
   }
 

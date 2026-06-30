@@ -81,7 +81,7 @@ export async function exchangeCodeForTokens(code, codeVerifier) {
 }
 
 // ── Refresh access token ────────────────────────────────────────────
-export async function refreshAccessToken(refreshToken) {
+async function refreshAccessToken(refreshToken) {
   const basicAuth = Buffer.from(`${TWITTER_CLIENT_ID}:${TWITTER_CLIENT_SECRET}`).toString('base64');
 
   const res = await fetch(TWITTER_TOKEN_URL, {
@@ -256,8 +256,10 @@ export async function getValidAccessToken(userId) {
 
 // ── Upload media to Twitter ─────────────────────────────────────────
 async function uploadMedia(accessToken, imageUrl) {
-  // Download image from URL
-  const imgRes = await fetch(imageUrl);
+  // Download image from URL. Bound it with a timeout — a slow/hanging host must
+  // not block the publish path indefinitely (which would leave the post stuck
+  // in 'posting' and burn the cron's time budget).
+  const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
   if (!imgRes.ok) throw new Error(`Failed to download image: ${imgRes.status}`);
   const buffer = Buffer.from(await imgRes.arrayBuffer());
   const contentType = imgRes.headers.get('content-type') || 'image/png';

@@ -29,10 +29,12 @@ function foldLine(line) {
   return parts.join('\r\n');
 }
 
-export function buildIcsEvent({ id, platform, postText, scheduledAt, durationMinutes = 15, url }) {
+const PLATFORM_LABELS = { linkedin: 'LinkedIn', twitter: 'Twitter / X', facebook: 'Facebook', instagram: 'Instagram' };
+
+function buildIcsEvent({ id, platform, postText, scheduledAt, durationMinutes = 15, url }) {
   const start = new Date(scheduledAt);
   const end = new Date(start.getTime() + durationMinutes * 60_000);
-  const summary = `ScribeShift: ${platform} post`;
+  const summary = `ScribeShift: ${PLATFORM_LABELS[platform] || platform} post`;
   const description = (postText || '').slice(0, 400);
 
   const lines = [

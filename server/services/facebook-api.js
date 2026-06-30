@@ -147,7 +147,7 @@ export async function getUserPages(userAccessToken) {
 }
 
 // ── Get user profile ────────────────────────────────────────────────
-export async function getUserProfile(accessToken) {
+async function getUserProfile(accessToken) {
   const res = await fetch(`${FB_API_BASE}/me?fields=id,name,email,picture`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

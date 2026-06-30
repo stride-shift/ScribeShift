@@ -3,6 +3,17 @@
 This file is loaded automatically at the start of every Claude Code conversation.
 Follow it without exception.
 
+## Documentation system
+
+This project uses the three-tier `.org` documentation + audit system.
+**Read `README.org` first** for project orientation, then `ARCHITECTURE.org`.
+The doc standard + procedure live in `DOCUMENTATION.org`; bootstrap/portability
+in `SETUP.org`; sub-agent dispatch in `SUBAGENT_PLAYBOOK.org`; audit choreography
+in `AGENT_AUDIT_WORKFLOW.org`. The tier rules and the canonical **Model
+Selection** block are imported below.
+
+@.claude/CLAUDE.md
+
 ## Pre-push secret-scanning checklist
 
 **Before any `git commit` or `git push`, do these in order:**
