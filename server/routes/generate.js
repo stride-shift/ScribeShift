@@ -25,6 +25,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
     const brandData = JSON.parse(req.body.brandData || '{}');
     const videoUrls = JSON.parse(req.body.videoUrls || '[]');
     const textPrompt = req.body.textPrompt || '';
+    const referenceIds = JSON.parse(req.body.referenceIds || '[]');
 
     // Process YouTube / video URLs (file uploads are processed above; the
     // orchestrator itself stays file-less).
@@ -71,6 +72,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
       contentTypes,
       options,
       brandData,
+      referenceIds,
       userId: req.user.id,
       companyId: req.user.company_id,
       parallel: true,
@@ -102,7 +104,7 @@ router.post('/', verifyToken, upload.array('files', 20), async (req, res) => {
 // reference/YouTube URLs (file uploads still use the synchronous route above).
 router.post('/enqueue', verifyToken, async (req, res) => {
   try {
-    const { contentTypes = [], options = {}, brandData = {}, textPrompt = '', videoUrls = [] } = req.body || {};
+    const { contentTypes = [], options = {}, brandData = {}, textPrompt = '', videoUrls = [], referenceIds = [] } = req.body || {};
     if (!Array.isArray(contentTypes) || contentTypes.length === 0) {
       return res.status(400).json({ error: 'No content types selected' });
     }
@@ -113,7 +115,7 @@ router.post('/enqueue', verifyToken, async (req, res) => {
         company_id: req.user.company_id || null,
         status: 'pending',
         content_types: contentTypes,
-        input: { contentTypes, options, brandData, textPrompt, videoUrls },
+        input: { contentTypes, options, brandData, textPrompt, videoUrls, referenceIds },
       })
       .select('id')
       .single();

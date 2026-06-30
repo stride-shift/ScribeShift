@@ -58,6 +58,7 @@ async function processJob(job) {
       contentTypes: input.contentTypes || [],
       options: input.options || {},
       brandData: input.brandData || {},
+      referenceIds: input.referenceIds || [],
       userId: job.user_id,
       companyId: job.company_id,
       onProgress: (p) => setJob(job.id, { progress: p }),

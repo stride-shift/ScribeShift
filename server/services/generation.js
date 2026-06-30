@@ -78,14 +78,45 @@ export const stripNulls = (s) => typeof s === 'string' ? s.replace(NULL_BYTE, ''
 // parallel=false (default, used by the worker): sequential with progress.
 // parallel=true (used by the sync route): independent types run concurrently —
 //   but the blog still completes first because video/newsletter derive from it.
-export async function runGeneration({ allInput, contentTypes = [], options = {}, brandData = {}, userId, companyId, onProgress = () => {}, parallel = false }) {
+// Build a VOICE/TONE/STYLE block from the user's picked document references
+// (ai_references with extracted text). Scoped to the caller; returns '' on any
+// issue so generation never breaks.
+async function buildReferenceContext(referenceIds, userId) {
+  if (!Array.isArray(referenceIds) || referenceIds.length === 0 || !userId) return '';
+  try {
+    const { data: refs } = await supabase
+      .from('ai_references')
+      .select('extracted_text, filename, purposes')
+      .in('id', referenceIds)
+      .eq('user_id', userId)
+      .not('extracted_text', 'is', null);
+    const blocks = (refs || [])
+      .filter((r) => r.extracted_text && r.extracted_text.trim())
+      .map((r) => {
+        const purp = Array.isArray(r.purposes) && r.purposes.length ? ` (use for: ${r.purposes.join(', ')})` : '';
+        return `--- Reference: ${r.filename || 'document'}${purp} ---\n${r.extracted_text.slice(0, 4000)}`;
+      });
+    if (!blocks.length) return '';
+    return `\n\nREFERENCE MATERIAL — study the VOICE, TONE, and STYLE of the following the user provided, and write in that same register. Absorb the style; do NOT copy it verbatim or repeat its specifics unless relevant:\n${blocks.join('\n\n')}`;
+  } catch (e) {
+    console.warn('[GENERATION] reference context failed (continuing):', e.message);
+    return '';
+  }
+}
+
+export async function runGeneration({ allInput, contentTypes = [], options = {}, brandData = {}, userId, companyId, referenceIds = [], onProgress = () => {}, parallel = false }) {
   if (!allInput || !allInput.trim()) return { ok: false, code: 400, error: 'No content provided.' };
 
   const textTypes = contentTypes.filter(t => t !== 'images');
   const creditCheck = await checkCredits(companyId, 'generate_text', textTypes.length);
   if (!creditCheck.allowed) return { ok: false, code: 402, error: creditCheck.error };
 
-  const brandDirectives = buildStyleDirectives(options) + buildVoiceContext(brandData);
+  // Reference material: pull the extracted text of the user's picked doc/PDF
+  // references so the model can match their VOICE/TONE/STYLE. Scoped to the
+  // caller. Best-effort — never blocks generation.
+  const referenceContext = await buildReferenceContext(referenceIds, userId);
+
+  const brandDirectives = buildStyleDirectives(options) + buildVoiceContext(brandData) + referenceContext;
   const results = {};
   const total = textTypes.length;
   let done = 0;
