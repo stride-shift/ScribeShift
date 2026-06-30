@@ -446,6 +446,14 @@ export default function ContentHistory() {
         onClick={() => setExpanded(expanded === item.id ? null : item.id)}
       >
         {/* Platform line */}
+        {item.image_url && (
+          <img
+            src={item.image_url}
+            alt={item.title || 'Generated image'}
+            loading="lazy"
+            className="w-full h-32 object-cover rounded-md mb-2 border border-[var(--border)]"
+          />
+        )}
         <div className="flex items-center gap-2 mb-2">
           <span
             className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white"
@@ -1025,6 +1033,13 @@ export default function ContentHistory() {
               {/* Modal body — scrollable. Renders native platform preview when
                   available, falls back to raw text view otherwise. */}
               <div className="flex-1 overflow-y-auto px-6 py-4">
+                {item.image_url && (
+                  <img
+                    src={item.image_url}
+                    alt={item.title || 'Generated image'}
+                    className="w-full rounded-lg border border-[var(--border)] mb-4"
+                  />
+                )}
                 {canPreviewNative && previewMode === 'native' ? (
                   isSocial ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

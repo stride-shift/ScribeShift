@@ -4,8 +4,29 @@ import { geminiImageWithParts, buildImageParts } from '../services/gemini-client
 import { IMAGE_STYLE_MAP, IMAGE_STYLE_BRAND_ALIGNED, injectBrand, composeBrandGuardrails } from '../config/skills.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkCredits, deductCredits } from '../services/credits.js';
+import { supabase } from '../config/supabase.js';
 
 const router = Router();
+
+// Persist a generated image as a content record so it shows up in History (the
+// Content Bank). Best-effort — never blocks the image response. content_type
+// 'image' + image_url; the prompt becomes the title/body for searchability.
+async function saveImageToHistory({ userId, companyId, prompt, imageUrl }) {
+  if (!imageUrl) return;
+  try {
+    await supabase.from('generated_content').insert({
+      user_id: userId,
+      company_id: companyId || null,
+      content_type: 'image',
+      title: (prompt || 'Generated image').split('\n')[0].slice(0, 120),
+      body: (prompt || '').slice(0, 2000),
+      image_url: imageUrl,
+      source_summary: 'AI-generated image',
+    });
+  } catch (e) {
+    console.warn('[IMAGE] save-to-history failed (non-fatal):', e.message);
+  }
+}
 
 // Image generation rate limiter (10/min) — applied per-route here so it
 // doesn't accidentally catch unrelated /api/* requests at the mount point.
@@ -99,6 +120,8 @@ router.post('/generate-image', imageLimiter, verifyToken, async (req, res) => {
         has_reference_image: !!referenceImageBase64,
         brand_asset_kinds: Array.isArray(brandAssets) ? brandAssets.map((a) => a?.kind).filter(Boolean) : [],
       });
+      // Persist to History so created images show in the Content Bank.
+      await saveImageToHistory({ userId: req.user.id, companyId: req.user.company_id, prompt, imageUrl: result.publicUrl });
     }
 
     res.json(result);
