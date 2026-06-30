@@ -14,6 +14,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ConnectedAccounts from './components/ConnectedAccounts';
 import ContentPillarGraph from './components/ContentPillarGraph';
 import BrandsView from './components/BrandsView';
+import ReferencesView from './components/ReferencesView';
 import OnboardingFlow from './components/OnboardingFlow';
 import TourProvider, { useTour } from './components/tour/TourProvider';
 import { SidebarShapes } from './components/ui/sidebar-shapes';
@@ -46,6 +47,7 @@ const NAV_VIEWS = [
   { id: 'planner', label: 'Content Types', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['user', 'admin', 'super_admin'] },
   { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'brands', label: 'Brands', icon: 'M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01', roles: ['user', 'admin', 'super_admin'] },
+  { id: 'references', label: 'References', icon: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'settings', label: 'Settings', icon: 'M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z', roles: ['user', 'admin', 'super_admin'] },
   { id: 'admin', label: 'Admin', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', roles: ['admin', 'super_admin'] },
 ];
@@ -385,6 +387,7 @@ function AppShell() {
       case 'analytics': return <ErrorBoundary label="Analytics"><AnalyticsDashboard /></ErrorBoundary>;
       case 'history': return <ErrorBoundary label="History"><ContentHistory /></ErrorBoundary>;
       case 'brands': return <ErrorBoundary label="Brands"><BrandsView /></ErrorBoundary>;
+      case 'references': return <ErrorBoundary label="References"><ReferencesView /></ErrorBoundary>;
       case 'settings': return <ErrorBoundary label="Settings"><ConnectedAccounts /></ErrorBoundary>;
       case 'admin': return <ErrorBoundary label="Admin"><AdminDashboard /></ErrorBoundary>;
       case 'create':
