@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useGeneration } from './GenerationContext';
 import ResultsPanel from './ResultsPanel';
+import StyledSelect from './ui/StyledSelect';
 
 /* ─── Content type definitions with icons ─── */
 const CONTENT_TYPES = [
@@ -724,40 +725,56 @@ export default function CreateView() {
           <div className="wizard-options-row">
             <div className="wizard-option-group">
               <label>Audience</label>
-              <select value={options.audience} onChange={(e) => set('audience', e.target.value)}>
-                <option value="general">General</option>
-                <option value="executives">Executives</option>
-                <option value="technical">Technical</option>
-                <option value="educators">Educators</option>
-              </select>
+              <StyledSelect
+                value={options.audience}
+                onChange={(v) => set('audience', v)}
+                options={[
+                  { value: 'general', label: 'General' },
+                  { value: 'executives', label: 'Executives' },
+                  { value: 'technical', label: 'Technical' },
+                  { value: 'educators', label: 'Educators' },
+                ]}
+              />
             </div>
             <div className="wizard-option-group">
               <label>Length</label>
-              <select value={options.length} onChange={(e) => set('length', e.target.value)}>
-                <option value="short">Short</option>
-                <option value="standard">Standard</option>
-                <option value="long">Long</option>
-              </select>
+              <StyledSelect
+                value={options.length}
+                onChange={(v) => set('length', v)}
+                options={[
+                  { value: 'short', label: 'Short' },
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'long', label: 'Long' },
+                ]}
+              />
             </div>
             <div className="wizard-option-group">
               <label>Goal</label>
-              <select value={options.goal || 'none'} onChange={(e) => set('goal', e.target.value)}>
-                <option value="none">No specific goal</option>
-                <option value="engagement">Engagement</option>
-                <option value="lead_generation">Lead generation</option>
-                <option value="authority">Build authority</option>
-                <option value="awareness">Brand awareness</option>
-                <option value="signups">Drive signups</option>
-              </select>
+              <StyledSelect
+                value={options.goal || 'none'}
+                onChange={(v) => set('goal', v)}
+                options={[
+                  { value: 'none', label: 'No specific goal' },
+                  { value: 'engagement', label: 'Engagement' },
+                  { value: 'lead_generation', label: 'Lead generation' },
+                  { value: 'authority', label: 'Build authority' },
+                  { value: 'awareness', label: 'Brand awareness' },
+                  { value: 'signups', label: 'Drive signups' },
+                ]}
+              />
             </div>
             <div className="wizard-option-group">
               <label>Edit level</label>
-              <select value={options.polish || 'natural'} onChange={(e) => set('polish', e.target.value)}>
-                <option value="raw">Raw</option>
-                <option value="natural">Natural</option>
-                <option value="balanced">Balanced</option>
-                <option value="polished">Polished</option>
-              </select>
+              <StyledSelect
+                value={options.polish || 'natural'}
+                onChange={(v) => set('polish', v)}
+                options={[
+                  { value: 'raw', label: 'Raw' },
+                  { value: 'natural', label: 'Natural' },
+                  { value: 'balanced', label: 'Balanced' },
+                  { value: 'polished', label: 'Polished' },
+                ]}
+              />
             </div>
           </div>
 

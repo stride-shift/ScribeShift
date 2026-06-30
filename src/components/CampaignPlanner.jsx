@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from './AuthProvider';
+import StyledSelect from './ui/StyledSelect';
 
 const GOAL_OPTIONS = [
   { value: 'engagement', label: 'Engagement / Comments' },
@@ -127,15 +128,11 @@ export default function CampaignPlanner({ onClose }) {
           <div className="campaign-form-row">
             <div className="campaign-form-group">
               <label>Goal</label>
-              <select value={goal} onChange={e => setGoal(e.target.value)} className="campaign-select">
-                {GOAL_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
-              </select>
+              <StyledSelect value={goal} onChange={(v) => setGoal(v)} options={GOAL_OPTIONS} className="campaign-select" />
             </div>
             <div className="campaign-form-group">
               <label>Duration</label>
-              <select value={duration} onChange={e => setDuration(e.target.value)} className="campaign-select">
-                {DURATION_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
+              <StyledSelect value={duration} onChange={(v) => setDuration(v)} options={DURATION_OPTIONS} className="campaign-select" />
             </div>
             <div className="campaign-form-group">
               <label>Brand (optional)</label>

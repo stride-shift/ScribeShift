@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useGeneration } from './GenerationContext';
+import StyledSelect from './ui/StyledSelect';
 
 // Onboarding gates new users into the app. The order matches what Shanne
 // asked for (May 2026 SM check-in): set up company → brand voice → content
@@ -474,19 +475,20 @@ export default function OnboardingFlow({ onComplete }) {
               </div>
               <div className="wizard-context-block" style={{ flex: 1 }}>
                 <label className="wizard-context-label">Industry</label>
-                <select
+                <StyledSelect
                   className="wizard-context-select"
                   value={brand.industry}
-                  onChange={(e) => setBrand({ ...brand, industry: e.target.value })}
-                >
-                  <option value="general">General</option>
-                  <option value="tech">Tech</option>
-                  <option value="marketing">Marketing</option>
-                  <option value="healthcare">Healthcare</option>
-                  <option value="finance">Finance</option>
-                  <option value="education">Education</option>
-                  <option value="other">Other</option>
-                </select>
+                  onChange={(v) => setBrand({ ...brand, industry: v })}
+                  options={[
+                    { value: 'general', label: 'General' },
+                    { value: 'tech', label: 'Tech' },
+                    { value: 'marketing', label: 'Marketing' },
+                    { value: 'healthcare', label: 'Healthcare' },
+                    { value: 'finance', label: 'Finance' },
+                    { value: 'education', label: 'Education' },
+                    { value: 'other', label: 'Other' },
+                  ]}
+                />
               </div>
             </div>
 

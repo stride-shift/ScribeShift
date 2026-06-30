@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthProvider';
+import StyledSelect from './ui/StyledSelect';
 
 const PLATFORM_COLORS = {
   linkedin: '#0A66C2',
@@ -993,10 +994,10 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   Select a post
                 </label>
-                <select
+                <StyledSelect
                   value={selectedPostId}
-                  onChange={(e) => setSelectedPostId(e.target.value)}
-                  required
+                  onChange={(v) => setSelectedPostId(v)}
+                  placeholder="— Choose a post —"
                   style={{
                     width: '100%',
                     padding: '8px 10px',
@@ -1008,16 +1009,17 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
                     fontFamily: 'inherit',
                     boxSizing: 'border-box',
                   }}
-                >
-                  <option value="">— Choose a post —</option>
-                  {myPosts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      [{PLATFORM_SHORT[p.platform] || p.platform?.toUpperCase() || '?'}]&nbsp;
-                      {p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' : ''}
-                      {truncate(p.post_text, 60)}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: '— Choose a post —' },
+                    ...myPosts.map((p) => ({
+                      value: p.id,
+                      label:
+                        `[${PLATFORM_SHORT[p.platform] || p.platform?.toUpperCase() || '?'}] ` +
+                        (p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' : '') +
+                        truncate(p.post_text, 60),
+                    })),
+                  ]}
+                />
                 {!postsLoading && myPosts.length === 0 && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                     {scope === 'org' ? 'No posts found in the organization.' : 'No scheduled posts found.'}
@@ -1029,19 +1031,19 @@ function SendForFeedback({ getAuthHeaders, onSent }) {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   Send to <span style={{ fontWeight: 400 }}>(optional)</span>
                 </label>
-                <select
+                <StyledSelect
                   value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
+                  onChange={(v) => setRecipient(v)}
+                  placeholder="Anyone on the team"
                   style={{
                     width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
                     background: 'var(--bg-raised)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box',
                   }}
-                >
-                  <option value="">Anyone on the team</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Anyone on the team' },
+                    ...members.map((m) => ({ value: m.id, label: m.full_name || m.email })),
+                  ]}
+                />
                 {members.length === 0 && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                     No teammates to assign — it'll surface to the whole team.

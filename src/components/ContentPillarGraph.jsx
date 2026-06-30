@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthProvider';
 import { DonutChart, TreeChart, RadarChart } from './PillarCharts';
 import SchedulePostModal from './SchedulePostModal';
+import StyledSelect from './ui/StyledSelect';
 
 const PRESET_COLORS = ['#8b5cf6', '#3b82f6', '#f59f0a', '#10b981', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#06b6d4'];
 const PLATFORM_OPTIONS = ['LinkedIn', 'Twitter/X', 'Facebook', 'Instagram', 'Blog', 'Newsletter', 'YouTube', 'TikTok'];
@@ -479,10 +480,8 @@ export default function ContentPillarGraph() {
       <div className="pillar-content-section-header">
         <h3>Content Pieces</h3>
         <div className="pillar-content-section-actions">
-          <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-            <option value="all">All Content Types</option>
-            {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
+          <StyledSelect className="admin-select" value={contentFilter} onChange={v => setContentFilter(v)}
+            options={[{ value: 'all', label: 'All Content Types' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]} />
           <input type="text" className="pillar-input" placeholder="Search..." value={contentSearch} onChange={e => setContentSearch(e.target.value)} style={{ maxWidth: '200px' }} />
           <button className="admin-btn" onClick={() => { setShowAddContent(true); setNewContent(prev => ({ ...prev, pillarId: contentFilter !== 'all' ? contentFilter : (selectedPillar || pillars[0]?.id || '') })); }}>+ Add Content</button>
         </div>
@@ -773,10 +772,8 @@ export default function ContentPillarGraph() {
       {!isEmpty && viewMode === 'timeline' && (
         <div className="pillar-timeline-view">
           <div className="pillar-timeline-header">
-            <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-              <option value="all">All Content Types</option>
-              {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
+            <StyledSelect className="admin-select" value={contentFilter} onChange={v => setContentFilter(v)}
+              options={[{ value: 'all', label: 'All Content Types' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]} />
             <button className="admin-btn" onClick={() => { setShowAddContent(true); setNewContent(prev => ({ ...prev, pillarId: contentFilter !== 'all' ? contentFilter : (pillars[0]?.id || '') })); }}>+ Add Content</button>
           </div>
           <div className="pillar-timeline-track">
@@ -831,10 +828,8 @@ export default function ContentPillarGraph() {
       {viewMode === 'board' && (
         <div className="pillar-board-view">
           <div className="pillar-board-filters">
-            <select className="admin-select" value={contentFilter} onChange={e => setContentFilter(e.target.value)}>
-              <option value="all">All Content Types</option>
-              {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
+            <StyledSelect className="admin-select" value={contentFilter} onChange={v => setContentFilter(v)}
+              options={[{ value: 'all', label: 'All Content Types' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]} />
             <input type="text" className="pillar-input" placeholder="Search content..." value={contentSearch} onChange={e => setContentSearch(e.target.value)} style={{ maxWidth: '220px' }} />
             <button className="admin-btn" onClick={() => { setShowAddContent(true); setNewContent(prev => ({ ...prev, pillarId: contentFilter !== 'all' ? contentFilter : (pillars[0]?.id || '') })); }}>+ Add Content</button>
           </div>
@@ -879,22 +874,20 @@ export default function ContentPillarGraph() {
                           }}
                         />
                         <div className="pillar-board-quick-selects">
-                          <select
+                          <StyledSelect
                             value={quickAddBoardPillar}
-                            onChange={e => setQuickAddBoardPillar(e.target.value)}
+                            onChange={v => setQuickAddBoardPillar(v)}
                             className="pillar-board-quick-select"
-                          >
-                            <option value="">No content type</option>
-                            {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                          </select>
-                          <select
+                            placeholder="No content type"
+                            options={[{ value: '', label: 'No content type' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]}
+                          />
+                          <StyledSelect
                             value={quickAddBoardType}
-                            onChange={e => setQuickAddBoardType(e.target.value)}
+                            onChange={v => setQuickAddBoardType(v)}
                             className="pillar-board-quick-select"
-                          >
-                            <option value="">Type</option>
-                            {CONTENT_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
+                            placeholder="Type"
+                            options={[{ value: '', label: 'Type' }, ...CONTENT_TYPE_OPTIONS.map(t => ({ value: t, label: t }))]}
+                          />
                         </div>
                         <div className="pillar-board-quick-actions">
                           <button className="pillar-board-quick-btn confirm" onClick={() => handleQuickAddBoard(col.id)} disabled={!quickAddBoardTitle.trim()}>
@@ -1040,32 +1033,28 @@ export default function ContentPillarGraph() {
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
                   <label>Content Type</label>
-                  <select value={newContent.pillarId} onChange={e => setNewContent(p => ({ ...p, pillarId: e.target.value }))} className="pillar-input">
-                    <option value="">No pillar</option>
-                    {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+                  <StyledSelect value={newContent.pillarId} onChange={v => setNewContent(p => ({ ...p, pillarId: v }))} className="pillar-input"
+                    placeholder="No pillar"
+                    options={[{ value: '', label: 'No pillar' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]} />
                 </div>
                 <div className="pillar-modal-field">
                   <label>Status</label>
-                  <select value={newContent.status} onChange={e => setNewContent(p => ({ ...p, status: e.target.value }))} className="pillar-input">
-                    {STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
+                  <StyledSelect value={newContent.status} onChange={v => setNewContent(p => ({ ...p, status: v }))} className="pillar-input"
+                    options={STATUS_OPTIONS.map(s => ({ value: s.id, label: s.label }))} />
                 </div>
               </div>
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
                   <label>Platform</label>
-                  <select value={newContent.platform} onChange={e => setNewContent(p => ({ ...p, platform: e.target.value }))} className="pillar-input">
-                    <option value="">Any / Not decided</option>
-                    {PLATFORM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  <StyledSelect value={newContent.platform} onChange={v => setNewContent(p => ({ ...p, platform: v }))} className="pillar-input"
+                    placeholder="Any / Not decided"
+                    options={[{ value: '', label: 'Any / Not decided' }, ...PLATFORM_OPTIONS.map(p => ({ value: p, label: p }))]} />
                 </div>
                 <div className="pillar-modal-field">
                   <label>Content Type</label>
-                  <select value={newContent.contentType} onChange={e => setNewContent(p => ({ ...p, contentType: e.target.value }))} className="pillar-input">
-                    <option value="">Any / Not decided</option>
-                    {CONTENT_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <StyledSelect value={newContent.contentType} onChange={v => setNewContent(p => ({ ...p, contentType: v }))} className="pillar-input"
+                    placeholder="Any / Not decided"
+                    options={[{ value: '', label: 'Any / Not decided' }, ...CONTENT_TYPE_OPTIONS.map(t => ({ value: t, label: t }))]} />
                 </div>
               </div>
               <label>Notes</label>
@@ -1094,32 +1083,28 @@ export default function ContentPillarGraph() {
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
                   <label>Content Type</label>
-                  <select value={editingContent.pillarId} onChange={e => setEditingContent(p => ({ ...p, pillarId: e.target.value }))} className="pillar-input">
-                    <option value="">Unassigned</option>
-                    {pillars.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+                  <StyledSelect value={editingContent.pillarId} onChange={v => setEditingContent(p => ({ ...p, pillarId: v }))} className="pillar-input"
+                    placeholder="Unassigned"
+                    options={[{ value: '', label: 'Unassigned' }, ...pillars.map(p => ({ value: p.id, label: p.label }))]} />
                 </div>
                 <div className="pillar-modal-field">
                   <label>Status</label>
-                  <select value={editingContent.status} onChange={e => setEditingContent(p => ({ ...p, status: e.target.value }))} className="pillar-input">
-                    {STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
+                  <StyledSelect value={editingContent.status} onChange={v => setEditingContent(p => ({ ...p, status: v }))} className="pillar-input"
+                    options={STATUS_OPTIONS.map(s => ({ value: s.id, label: s.label }))} />
                 </div>
               </div>
               <div className="pillar-modal-row">
                 <div className="pillar-modal-field">
                   <label>Platform</label>
-                  <select value={editingContent.platform || ''} onChange={e => setEditingContent(p => ({ ...p, platform: e.target.value }))} className="pillar-input">
-                    <option value="">Any</option>
-                    {PLATFORM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  <StyledSelect value={editingContent.platform || ''} onChange={v => setEditingContent(p => ({ ...p, platform: v }))} className="pillar-input"
+                    placeholder="Any"
+                    options={[{ value: '', label: 'Any' }, ...PLATFORM_OPTIONS.map(p => ({ value: p, label: p }))]} />
                 </div>
                 <div className="pillar-modal-field">
                   <label>Content Type</label>
-                  <select value={editingContent.contentType || ''} onChange={e => setEditingContent(p => ({ ...p, contentType: e.target.value }))} className="pillar-input">
-                    <option value="">Any</option>
-                    {CONTENT_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <StyledSelect value={editingContent.contentType || ''} onChange={v => setEditingContent(p => ({ ...p, contentType: v }))} className="pillar-input"
+                    placeholder="Any"
+                    options={[{ value: '', label: 'Any' }, ...CONTENT_TYPE_OPTIONS.map(t => ({ value: t, label: t }))]} />
                 </div>
               </div>
               <label>Notes</label>

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useGeneration } from './GenerationContext';
+import StyledSelect from './ui/StyledSelect';
 
 const PLAN_LABELS = {
   free: 'Free',
@@ -728,19 +729,20 @@ export default function BrandsView() {
               <div className="brands-editor-row" style={{ marginTop: '1rem' }}>
                 <div className="wizard-context-block" style={{ flex: 1 }}>
                   <label className="wizard-context-label">Industry</label>
-                  <select
+                  <StyledSelect
                     className="wizard-context-select"
                     value={draft.industry}
-                    onChange={(e) => setDraft({ ...draft, industry: e.target.value })}
-                  >
-                    <option value="general">General</option>
-                    <option value="tech">Tech</option>
-                    <option value="marketing">Marketing</option>
-                    <option value="healthcare">Healthcare</option>
-                    <option value="finance">Finance</option>
-                    <option value="education">Education</option>
-                    <option value="other">Other</option>
-                  </select>
+                    onChange={(v) => setDraft({ ...draft, industry: v })}
+                    options={[
+                      { value: 'general', label: 'General' },
+                      { value: 'tech', label: 'Tech' },
+                      { value: 'marketing', label: 'Marketing' },
+                      { value: 'healthcare', label: 'Healthcare' },
+                      { value: 'finance', label: 'Finance' },
+                      { value: 'education', label: 'Education' },
+                      { value: 'other', label: 'Other' },
+                    ]}
+                  />
                 </div>
                 <div className="wizard-color-picker">
                   <label className="wizard-context-label">Primary colour</label>
@@ -1103,15 +1105,12 @@ export default function BrandsView() {
 
                 <div style={{ marginTop: '0.75rem' }}>
                   <label className="wizard-context-label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Default audience</label>
-                  <select
+                  <StyledSelect
                     className="wizard-context-select"
                     value={draft.default_audience}
-                    onChange={(e) => setDraft({ ...draft, default_audience: e.target.value })}
-                  >
-                    {AUDIENCE_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                    onChange={(v) => setDraft({ ...draft, default_audience: v })}
+                    options={AUDIENCE_OPTIONS}
+                  />
                 </div>
 
                 <div style={{ marginTop: '0.85rem' }}>
@@ -1168,23 +1167,24 @@ export default function BrandsView() {
                       </div>
                     ))}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', width: 84 }}>
-                      <select
+                      <StyledSelect
                         className="wizard-context-select"
                         value={assetKind}
-                        onChange={(e) => setAssetKind(e.target.value)}
-                        title="What kind of asset is this?"
+                        onChange={(v) => setAssetKind(v)}
+                        ariaLabel="What kind of asset is this?"
                         style={{ fontSize: 10, padding: '2px 4px' }}
-                      >
-                        <option value="reference">Reference</option>
-                        <option value="logo-primary">Logo</option>
-                        <option value="logo-symbol">Logo symbol</option>
-                        <option value="watermark">Watermark</option>
-                        <option value="pattern">Pattern</option>
-                        <option value="motif">Motif</option>
-                        <option value="icon-set">Icon set</option>
-                        <option value="photo">Photo</option>
-                        <option value="illustration">Illustration</option>
-                      </select>
+                        options={[
+                          { value: 'reference', label: 'Reference' },
+                          { value: 'logo-primary', label: 'Logo' },
+                          { value: 'logo-symbol', label: 'Logo symbol' },
+                          { value: 'watermark', label: 'Watermark' },
+                          { value: 'pattern', label: 'Pattern' },
+                          { value: 'motif', label: 'Motif' },
+                          { value: 'icon-set', label: 'Icon set' },
+                          { value: 'photo', label: 'Photo' },
+                          { value: 'illustration', label: 'Illustration' },
+                        ]}
+                      />
                       <button
                         type="button"
                         onClick={() => assetInputRef.current?.click()}

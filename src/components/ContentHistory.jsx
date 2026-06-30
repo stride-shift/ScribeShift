@@ -4,6 +4,7 @@ import { StatCard } from './ui/stat-card';
 import { Tabs } from './ui/tabs';
 import { RailPanel, EmptyPanel } from './ui/empty-panel';
 import { PostPreview } from './SchedulePreviews';
+import StyledSelect from './ui/StyledSelect';
 
 const CONTENT_TYPES = [
   { value: '', label: 'All Types' },
@@ -777,23 +778,12 @@ export default function ContentHistory() {
         />
         <div className="flex-1" />
         <span className="text-[12px] text-[var(--text-secondary)]">Sort by:</span>
-        <div className="relative inline-flex">
-          <button
-            type="button"
-            className="px-3 py-1.5 text-[12px] font-medium rounded-md border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] flex items-center gap-1 pointer-events-none"
-          >
-            {SORT_OPTIONS.find(s => s.value === sortBy)?.label || 'Newest first'}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <select
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value)}
-            aria-label="Sort order"
-          >
-            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
+        <StyledSelect
+          value={sortBy}
+          onChange={(v) => setSortBy(v)}
+          options={SORT_OPTIONS}
+          ariaLabel="Sort order"
+        />
       </div>
 
       {error && (
@@ -1117,16 +1107,11 @@ export default function ContentHistory() {
               <div className="border-t border-[var(--border)] px-6 py-3 flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <label className="text-[12px] font-medium text-[var(--text-secondary)]">Content Type:</label>
-                  <select
-                    className="text-[12px] px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text)]"
+                  <StyledSelect
                     value={item.pillar || ''}
-                    onChange={e => handleSetPillar(item.id, e.target.value)}
-                  >
-                    <option value="">None</option>
-                    {PILLARS.filter(p => p.value).map(p => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
+                    onChange={(v) => handleSetPillar(item.id, v)}
+                    options={[{ value: '', label: 'None' }, ...PILLARS.filter(p => p.value)]}
+                  />
                 </div>
                 <div className="flex-1" />
                 <button

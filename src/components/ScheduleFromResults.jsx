@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from './AuthProvider';
 import { parsePosts, stripImageTags } from './SocialPreview';
+import StyledSelect from './ui/StyledSelect';
 
 const PLATFORMS = [
   {
@@ -761,16 +762,15 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
           {pillars.length > 0 && (
             <div className="spm-section">
               <label className="spm-label">Also save to content type (optional)</label>
-              <select
+              <StyledSelect
                 className="spm-datetime"
                 value={selectedPillar}
-                onChange={e => setSelectedPillar(e.target.value)}
-              >
-                <option value="">Don't save to a content type</option>
-                {pillars.map(p => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
+                onChange={(v) => setSelectedPillar(v)}
+                options={[
+                  { value: '', label: "Don't save to a content type" },
+                  ...pillars.map(p => ({ value: p.id, label: p.label })),
+                ]}
+              />
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
                 Tag these posts in the Content Types planner. Posts are still scheduled — this is in addition.
               </div>

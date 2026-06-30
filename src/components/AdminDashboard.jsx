@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthProvider';
+import StyledSelect from './ui/StyledSelect';
 
 export default function AdminDashboard() {
   const { user, getAuthHeaders, isSuperAdmin } = useAuth();
@@ -507,18 +508,12 @@ export default function AdminDashboard() {
                   onChange={e => setNewUser(p => ({ ...p, full_name: e.target.value }))} />
               </div>
               <div className="admin-form-row">
-                <select value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}>
-                  {roleOptions.map(r => (
-                    <option key={r} value={r}>{r.replace('_', ' ')}</option>
-                  ))}
-                </select>
-                <select value={newUser.company_id}
-                  onChange={e => setNewUser(p => ({ ...p, company_id: e.target.value }))}>
-                  <option value="">No company</option>
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <StyledSelect value={newUser.role} onChange={v => setNewUser(p => ({ ...p, role: v }))}
+                  options={roleOptions.map(r => ({ value: r, label: r.replace('_', ' ') }))} />
+                <StyledSelect value={newUser.company_id}
+                  onChange={v => setNewUser(p => ({ ...p, company_id: v }))}
+                  placeholder="No company"
+                  options={[{ value: '', label: 'No company' }, ...companies.map(c => ({ value: c.id, label: c.name }))]} />
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                   <input type="checkbox" checked={newUser.is_active}
                     onChange={e => setNewUser(p => ({ ...p, is_active: e.target.checked }))} />
@@ -543,19 +538,13 @@ export default function AdminDashboard() {
                   onChange={e => setEditingUser(p => ({ ...p, email: e.target.value }))} />
               </div>
               <div className="admin-form-row">
-                <select value={editingUser.role} onChange={e => setEditingUser(p => ({ ...p, role: e.target.value }))}>
-                  {roleOptions.map(r => (
-                    <option key={r} value={r}>{r.replace('_', ' ')}</option>
-                  ))}
-                </select>
+                <StyledSelect value={editingUser.role} onChange={v => setEditingUser(p => ({ ...p, role: v }))}
+                  options={roleOptions.map(r => ({ value: r, label: r.replace('_', ' ') }))} />
                 {isSuperAdmin && (
-                  <select value={editingUser.company_id || ''}
-                    onChange={e => setEditingUser(p => ({ ...p, company_id: e.target.value }))}>
-                    <option value="">No company</option>
-                    {companies.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <StyledSelect value={editingUser.company_id || ''}
+                    onChange={v => setEditingUser(p => ({ ...p, company_id: v }))}
+                    placeholder="No company"
+                    options={[{ value: '', label: 'No company' }, ...companies.map(c => ({ value: c.id, label: c.name }))]} />
                 )}
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                   <input type="checkbox" checked={editingUser.is_active}
@@ -592,16 +581,13 @@ export default function AdminDashboard() {
                       <td>{u.full_name || '—'}</td>
                       <td>{u.email}</td>
                       <td>
-                        <select
+                        <StyledSelect
                           className="admin-select"
                           value={u.role}
-                          onChange={e => handleRoleChange(u.id, e.target.value)}
+                          onChange={v => handleRoleChange(u.id, v)}
                           disabled={u.id === user.id}
-                        >
-                          {roleOptions.map(r => (
-                            <option key={r} value={r}>{r.replace('_', ' ')}</option>
-                          ))}
-                        </select>
+                          options={roleOptions.map(r => ({ value: r, label: r.replace('_', ' ') }))}
+                        />
                       </td>
                       {isSuperAdmin && <td>{u.companies?.name || '—'}</td>}
                       <td>
@@ -662,24 +648,24 @@ export default function AdminDashboard() {
               style={{ flex: '1 1 240px', minWidth: 200 }}
               className="admin-input"
             />
-            <select
+            <StyledSelect
               value={inviteForm.role}
-              onChange={e => setInviteForm(f => ({ ...f, role: e.target.value }))}
+              onChange={v => setInviteForm(f => ({ ...f, role: v }))}
               className="admin-input"
-            >
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-              {isSuperAdmin && <option value="super_admin">Super Admin</option>}
-            </select>
+              options={[
+                { value: 'user', label: 'User' },
+                { value: 'admin', label: 'Admin' },
+                ...(isSuperAdmin ? [{ value: 'super_admin', label: 'Super Admin' }] : []),
+              ]}
+            />
             {isSuperAdmin && (
-              <select
+              <StyledSelect
                 value={inviteForm.company_id}
-                onChange={e => setInviteForm(f => ({ ...f, company_id: e.target.value }))}
+                onChange={v => setInviteForm(f => ({ ...f, company_id: v }))}
                 className="admin-input"
-              >
-                <option value="">No company</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+                placeholder="No company"
+                options={[{ value: '', label: 'No company' }, ...companies.map(c => ({ value: c.id, label: c.name }))]}
+              />
             )}
             <button className="btn btn-primary" onClick={handleCreateInvite} disabled={inviteBusy}>
               {inviteBusy ? 'Sending…' : 'Send invite'}
@@ -760,12 +746,13 @@ export default function AdminDashboard() {
               <div className="admin-form-row">
                 <input placeholder="Company name" value={newCompany.name}
                   onChange={e => setNewCompany(p => ({ ...p, name: e.target.value }))} />
-                <select value={newCompany.plan} onChange={e => setNewCompany(p => ({ ...p, plan: e.target.value }))}>
-                  <option value="free">Free (1 brand)</option>
-                  <option value="starter">Starter (3 brands)</option>
-                  <option value="agency">Agency (10 brands)</option>
-                  <option value="enterprise">Enterprise (50 brands)</option>
-                </select>
+                <StyledSelect value={newCompany.plan} onChange={v => setNewCompany(p => ({ ...p, plan: v }))}
+                  options={[
+                    { value: 'free', label: 'Free (1 brand)' },
+                    { value: 'starter', label: 'Starter (3 brands)' },
+                    { value: 'agency', label: 'Agency (10 brands)' },
+                    { value: 'enterprise', label: 'Enterprise (50 brands)' },
+                  ]} />
                 {newCompany.credit_monthly_limit !== -1 && (
                   <input type="number" placeholder="Credits" value={newCompany.credit_balance}
                     onChange={e => setNewCompany(p => ({ ...p, credit_balance: Number(e.target.value) }))} />
@@ -793,12 +780,13 @@ export default function AdminDashboard() {
               <div className="admin-form-row">
                 <input placeholder="Company name" value={editingCompany.name}
                   onChange={e => setEditingCompany(p => ({ ...p, name: e.target.value }))} />
-                <select value={editingCompany.plan} onChange={e => setEditingCompany(p => ({ ...p, plan: e.target.value }))}>
-                  <option value="free">Free (1 brand)</option>
-                  <option value="starter">Starter (3 brands)</option>
-                  <option value="agency">Agency (10 brands)</option>
-                  <option value="enterprise">Enterprise (50 brands)</option>
-                </select>
+                <StyledSelect value={editingCompany.plan} onChange={v => setEditingCompany(p => ({ ...p, plan: v }))}
+                  options={[
+                    { value: 'free', label: 'Free (1 brand)' },
+                    { value: 'starter', label: 'Starter (3 brands)' },
+                    { value: 'agency', label: 'Agency (10 brands)' },
+                    { value: 'enterprise', label: 'Enterprise (50 brands)' },
+                  ]} />
                 {editingCompany.credit_monthly_limit !== -1 && (
                   <>
                     <input type="number" placeholder="Credits" value={editingCompany.credit_balance}
