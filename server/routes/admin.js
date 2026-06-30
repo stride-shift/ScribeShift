@@ -393,6 +393,41 @@ router.get('/companies', requireRole('super_admin'), async (req, res) => {
   }
 });
 
+// ── GET /api/admin/org-overview ─────────────────────────────────────
+// Super-admin showcase of every org's activity: members + content + posts.
+// Cross-org visibility lives ONLY here (feature views are org-scoped).
+router.get('/org-overview', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { data: companies, error } = await supabase
+      .from('companies')
+      .select('id, name, plan, created_at')
+      .order('name', { ascending: true });
+    if (error) return res.status(400).json({ error: error.message });
+
+    // One grouped count query per table (cheap), tallied in JS.
+    const tally = async (table) => {
+      const { data } = await supabase.from(table).select('company_id');
+      const m = new Map();
+      for (const r of data || []) { if (r.company_id) m.set(r.company_id, (m.get(r.company_id) || 0) + 1); }
+      return m;
+    };
+    const [members, content, posts] = await Promise.all([
+      tally('users'), tally('generated_content'), tally('scheduled_posts'),
+    ]);
+
+    const orgs = (companies || []).map((c) => ({
+      id: c.id, name: c.name, plan: c.plan, created_at: c.created_at,
+      members: members.get(c.id) || 0,
+      content: content.get(c.id) || 0,
+      posts: posts.get(c.id) || 0,
+    }));
+    res.json({ orgs });
+  } catch (err) {
+    console.error('[ADMIN] org-overview error:', err.message);
+    res.status(500).json({ error: 'Failed to load org overview' });
+  }
+});
+
 // ── POST /api/admin/companies ───────────────────────────────────────
 router.post('/companies', requireRole('super_admin'), async (req, res) => {
   try {

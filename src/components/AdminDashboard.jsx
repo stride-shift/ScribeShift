@@ -5,6 +5,7 @@ export default function AdminDashboard() {
   const { user, getAuthHeaders, isSuperAdmin } = useAuth();
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [orgOverview, setOrgOverview] = useState([]);
   const [usage, setUsage] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -380,9 +381,21 @@ export default function AdminDashboard() {
     { id: 'overview', label: 'Overview' },
     { id: 'users', label: 'Users' },
     { id: 'invitations', label: 'Invitations' },
+    ...(isSuperAdmin ? [{ id: 'organizations', label: 'Organizations' }] : []),
     ...(isSuperAdmin ? [{ id: 'companies', label: 'Companies' }] : []),
     { id: 'usage', label: 'Usage' },
   ];
+
+  // Load the cross-org showcase lazily when the super-admin opens the tab.
+  useEffect(() => {
+    if (!isSuperAdmin || tab !== 'organizations' || orgOverview.length) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/org-overview', { headers: getAuthHeaders() });
+        if (res.ok) setOrgOverview((await res.json()).orgs || []);
+      } catch { /* non-fatal */ }
+    })();
+  }, [tab, isSuperAdmin, orgOverview.length, getAuthHeaders]);
 
   if (loading) {
     return (
@@ -694,6 +707,38 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* Organizations showcase (Super Admin only) — cross-org activity */}
+      {tab === 'organizations' && isSuperAdmin && (
+        <div className="admin-section">
+          <div className="admin-section-header">
+            <h3>Organizations ({orgOverview.length})</h3>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Activity across every org — only super-admins see this.</span>
+          </div>
+          {orgOverview.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', padding: '1rem' }}>Loading organizations…</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.85rem' }}>
+              {orgOverview.map((o) => (
+                <div key={o.id} className="card" style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 15 }}>{o.name || 'Unnamed org'}</strong>
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '2px 7px', borderRadius: 99, background: 'var(--surface-2, rgba(148,163,184,0.18))', color: 'var(--text-secondary)' }}>{o.plan || 'free'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '1.1rem', marginTop: '0.75rem' }}>
+                    {[['Members', o.members], ['Content', o.content], ['Posts', o.posts]].map(([label, val]) => (
+                      <div key={label}>
+                        <div style={{ fontSize: 20, fontWeight: 700 }}>{val}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
