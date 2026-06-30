@@ -6,6 +6,15 @@ import { refreshAll, refreshAccountMetrics } from '../services/metrics-sync.js';
 const router = Router();
 router.use(verifyToken);
 
+// Analytics + connected accounts are PERSONAL — every user sees only their own,
+// regardless of role (no teammate/cross-org bleed). account_metrics,
+// account_metrics_history and social_oauth_tokens carry user_id directly;
+// post_metrics doesn't, so we scope it via the caller's own scheduled_posts ids.
+async function ownPostIds(userId) {
+  const { data } = await supabase.from('scheduled_posts').select('id').eq('user_id', userId);
+  return (data || []).map((r) => r.id);
+}
+
 // ── GET /api/metrics/posts ──────────────────────────────────────────
 // The key table Shanne wants: per-post metrics sortable by engagement
 router.get('/posts', async (req, res) => {
@@ -30,13 +39,11 @@ router.get('/posts', async (req, res) => {
       .order(sortColumn, { ascending, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
-    // Scope by role. post_metrics has company_id (not user_id), so we MUST scope
-    // on the base table — filtering on the embedded scheduled_posts table does
-    // not restrict the top-level post_metrics rows in PostgREST and would leak
-    // every company's metrics to any user.
-    if (req.user.role === 'user' || req.user.role === 'admin') {
-      query = query.eq('company_id', req.user.company_id);
-    }
+    // Own posts only (personal analytics). post_metrics has no user_id, so scope
+    // via the caller's own scheduled_posts ids.
+    const myIds = await ownPostIds(req.user.id);
+    if (myIds.length === 0) return res.json({ metrics: [], total: 0, limit, offset });
+    query = query.in('scheduled_post_id', myIds);
 
     if (platform) query = query.eq('platform', platform);
     if (is_boosted !== undefined) query = query.eq('is_boosted', is_boosted === 'true');
@@ -66,10 +73,8 @@ router.get('/trends', async (req, res) => {
       .gte('captured_at', since)
       .order('captured_at', { ascending: true });
 
-    // Same scoping rule as /posts — scope on the base table's company_id.
-    if (req.user.role === 'user' || req.user.role === 'admin') {
-      query = query.eq('company_id', req.user.company_id);
-    }
+    // Personal — own account history only (account_metrics_history has user_id).
+    query = query.eq('user_id', req.user.id);
     if (req.query.platform) query = query.eq('platform', req.query.platform);
 
     const { data, error } = await query;
@@ -88,12 +93,12 @@ router.get('/summary', async (req, res) => {
       .from('post_metrics')
       .select('impressions, reactions, comments, shares, clicks, is_boosted');
 
-    // post_metrics has company_id but not user_id, so scope manually
-    if (req.user.role === 'admin') {
-      query = query.eq('company_id', req.user.company_id);
-    } else if (req.user.role === 'user') {
-      query = query.eq('company_id', req.user.company_id);
+    // Own posts only (personal analytics).
+    const myIds = await ownPostIds(req.user.id);
+    if (myIds.length === 0) {
+      return res.json({ summary: { total_posts: 0, total_impressions: 0, total_reactions: 0, total_comments: 0, total_shares: 0, total_clicks: 0, avg_engagement_rate: 0 } });
     }
+    query = query.in('scheduled_post_id', myIds);
 
     const { data, error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -124,9 +129,13 @@ router.get('/boosted-vs-organic', async (req, res) => {
       .from('post_metrics')
       .select('impressions, reactions, comments, shares, clicks, is_boosted, boost_spend');
 
-    if (req.user.role === 'admin' || req.user.role === 'user') {
-      query = query.eq('company_id', req.user.company_id);
+    // Own posts only (personal analytics).
+    const myIds = await ownPostIds(req.user.id);
+    if (myIds.length === 0) {
+      const empty = { count: 0, impressions: 0, reactions: 0, comments: 0, shares: 0, clicks: 0, total_spend: 0 };
+      return res.json({ organic: empty, boosted: { ...empty } });
     }
+    query = query.in('scheduled_post_id', myIds);
 
     const { data, error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -210,9 +219,8 @@ router.get('/account-overview', async (req, res) => {
       .select('*')
       .order('platform');
 
-    if (req.user.role === 'admin' || req.user.role === 'user') {
-      query = query.eq('user_id', req.user.id);
-    }
+    // Personal — own connected accounts only, for every role.
+    query = query.eq('user_id', req.user.id);
 
     const { data, error } = await query;
     if (error) return res.status(400).json({ error: error.message });
@@ -227,10 +235,8 @@ router.get('/account-overview', async (req, res) => {
     let connQuery = supabase
       .from('social_oauth_tokens')
       .select('platform, platform_user_name')
-      .eq('is_active', true);
-    if (req.user.role === 'admin' || req.user.role === 'user') {
-      connQuery = connQuery.eq('user_id', req.user.id);
-    }
+      .eq('is_active', true)
+      .eq('user_id', req.user.id);   // own connections only, every role
     const { data: conns } = await connQuery;
     const pending = [];
     for (const c of conns || []) {
@@ -309,9 +315,8 @@ router.get('/scribeshift-stats', async (req, res) => {
     let generatedQ = supabase
       .from('generated_content')
       .select('content_type, created_at, brand_id', { count: 'exact' })
-      .gte('created_at', since);
-    if (req.user.role === 'user') generatedQ = generatedQ.eq('user_id', req.user.id);
-    else generatedQ = generatedQ.eq('company_id', req.user.company_id);
+      .gte('created_at', since)
+      .eq('user_id', req.user.id);   // personal activity — own only
     const { data: generated, count: generatedCount, error: genErr } = await generatedQ;
     if (genErr) return res.status(400).json({ error: genErr.message });
 
@@ -326,9 +331,8 @@ router.get('/scribeshift-stats', async (req, res) => {
     let scheduledQ = supabase
       .from('scheduled_posts')
       .select('id, status, platform, posted_at, scheduled_at, retry_count')
-      .gte('created_at', since);
-    if (req.user.role === 'user') scheduledQ = scheduledQ.eq('user_id', req.user.id);
-    else scheduledQ = scheduledQ.eq('company_id', req.user.company_id);
+      .gte('created_at', since)
+      .eq('user_id', req.user.id);   // personal activity — own only
     const { data: scheduled, error: schedErr } = await scheduledQ;
     if (schedErr) return res.status(400).json({ error: schedErr.message });
 
