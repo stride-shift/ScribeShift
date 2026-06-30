@@ -105,29 +105,73 @@ function pillarLabel(value) {
 
 // Native-select-backed chip that displays as a pill button.
 // The select is invisibly stacked on top so clicks open the OS dropdown.
+// Custom app-styled dropdown (replaces the native <select>, which rendered the
+// OS popup that didn't match the app). Themed popover + hover + selected check.
 function FilterChip({ label, value, onChange, options }) {
-  const display = value || label;
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
   const active = !!value;
+  const display = value || label;
+  const currentValue = options.find(o => o.label === value)?.value || '';
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
   return (
-    <div className="relative inline-flex">
+    <div className="relative inline-flex" ref={ref}>
       <button
         type="button"
-        className={`px-3 py-1.5 text-[12px] font-medium rounded-md border flex items-center gap-1 pointer-events-none ${
+        onClick={() => setOpen(o => !o)}
+        className={`px-3 py-1.5 text-[12px] font-medium rounded-md border flex items-center gap-1 transition-colors ${
           active
             ? 'bg-[var(--primary-glow)] border-[var(--primary)]/40 text-[var(--primary)]'
-            : 'bg-[var(--bg-card)] border-[var(--border)] text-[var(--text-secondary)]'
+            : 'bg-[var(--bg-card)] border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)]'
         }`}
       >
         {display}
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
       </button>
-      <select
-        className="absolute inset-0 opacity-0 cursor-pointer"
-        value={options.find(o => o.label === value)?.value || ''}
-        onChange={e => onChange(e.target.value)}
-      >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 z-[200] min-w-[190px] max-h-72 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl py-1"
+          role="listbox"
+          style={{ animation: 'ss-view-in .14s ease both' }}
+        >
+          {options.map(o => {
+            const selected = o.value === currentValue;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => { onChange(o.value); setOpen(false); }}
+                className={`w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 transition-colors ${
+                  selected
+                    ? 'bg-[var(--primary-glow)] text-[var(--primary)] font-semibold'
+                    : 'text-[var(--text)] hover:bg-[var(--bg-input)]'
+                }`}
+              >
+                <span className="w-3.5 inline-flex justify-center">
+                  {selected && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </span>
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
