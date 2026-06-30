@@ -69,6 +69,27 @@ function clearViewSeen(userId, viewId) {
   try { window.localStorage.removeItem(viewSeenKey(userId, viewId)); } catch {}
 }
 
+// Belt-and-suspenders for main-tour completion. The server persists it in the
+// users table, but if that column write/read ever fails (e.g. migration not
+// applied) the tour would re-nag every session — testers hit exactly this. A
+// localStorage flag makes "I already did the tour" stick regardless.
+function mainSeenKey(userId, role) {
+  return `scribeshift-tour-main-${userId}-${role}`;
+}
+function isMainSeen(userId, role) {
+  if (!userId || typeof window === 'undefined') return false;
+  try { return window.localStorage.getItem(mainSeenKey(userId, role)) === '1'; }
+  catch { return false; }
+}
+function markMainSeen(userId, role) {
+  if (!userId || typeof window === 'undefined') return;
+  try { window.localStorage.setItem(mainSeenKey(userId, role), '1'); } catch {}
+}
+function clearMainSeen(userId, role) {
+  if (!userId || typeof window === 'undefined') return;
+  try { window.localStorage.removeItem(mainSeenKey(userId, role)); } catch {}
+}
+
 export default function TourProvider({ activeView, setActiveView, children }) {
   const { user, getAuthHeaders, refreshUser } = useAuth();
   const role = user?.role || 'user';
@@ -104,6 +125,7 @@ export default function TourProvider({ activeView, setActiveView, children }) {
 
   // ── Persistence helpers ─────────────────────────────────────────────
   const markMainCompleted = useCallback(async () => {
+    if (user?.id) markMainSeen(user.id, role); // local fallback first — never re-nag
     try {
       await fetch('/api/auth/tour-complete', {
         method: 'POST',
@@ -112,9 +134,10 @@ export default function TourProvider({ activeView, setActiveView, children }) {
       });
       refreshUser?.();
     } catch {}
-  }, [getAuthHeaders, refreshUser, role]);
+  }, [getAuthHeaders, refreshUser, role, user?.id]);
 
   const resetMainCompleted = useCallback(async () => {
+    if (user?.id) clearMainSeen(user.id, role); // allow replays from the Help menu
     try {
       await fetch('/api/auth/tour-reset', {
         method: 'POST',
@@ -122,13 +145,13 @@ export default function TourProvider({ activeView, setActiveView, children }) {
         body: JSON.stringify({ role }),
       });
     } catch {}
-  }, [getAuthHeaders, role]);
+  }, [getAuthHeaders, role, user?.id]);
 
   // ── Auto-start logic ────────────────────────────────────────────────
   useEffect(() => {
     if (!user || mainAutoStartedRef.current) return;
     const completedKey = completedKeyForRole(role);
-    if (user[completedKey]) return;
+    if (user[completedKey] || isMainSeen(user.id, role)) return;
     mainAutoStartedRef.current = true;
     const t = setTimeout(() => {
       setMode('main');
@@ -139,23 +162,11 @@ export default function TourProvider({ activeView, setActiveView, children }) {
     return () => clearTimeout(t);
   }, [user, role]);
 
-  // First-visit per-tab tour (only auto-shown after main tour is done, and
-  // not when a sequential tour is already running).
-  useEffect(() => {
-    if (!user || run) return;
-    const mainDone = !!user[completedKeyForRole(role)];
-    if (!mainDone) return;
-    if (!activeView || !tourForView(activeView)) return;
-    if (isViewSeen(user.id, activeView)) return;
-
-    const t = setTimeout(() => {
-      setMode('view');
-      setCurrentTourView(activeView);
-      setStepIndex(0);
-      setRun(true);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [activeView, user, role, run]);
+  // NOTE: per-tab tours used to auto-pop the first time you landed on each tab.
+  // Testers (Shanne, Johannes) found that "pops up the entire time" while
+  // clicking through tabs — too naggy. Per-tab tours are now opt-in only via the
+  // Help menu (startViewTour / "Walk through all tabs"). The main tour still
+  // auto-runs once. If you want the first-visit hints back, restore this effect.
 
   // ── Public starters ─────────────────────────────────────────────────
   const startViewTour = useCallback(

@@ -417,6 +417,15 @@ function AppShell() {
         <div className="navbar-actions">
           <span className="navbar-user-info">
             {user?.full_name || user?.email?.split('@')[0]}
+            {user?.company?.name && (
+              <span
+                className="navbar-company-badge"
+                title="Signed-in workspace"
+                style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 6, background: 'var(--surface-2, rgba(148,163,184,0.18))', fontSize: '0.72rem', fontWeight: 600 }}
+              >
+                {user.company.name}
+              </span>
+            )}
             <span className="navbar-role-badge">{user?.role?.replace('_', ' ')}</span>
           </span>
           <FeedbackBell active={activeView === 'review'} onOpen={() => setActiveView('review')} />

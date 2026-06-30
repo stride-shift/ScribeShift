@@ -3,6 +3,7 @@ import { useAuth } from './AuthProvider';
 import { useBrandState } from '../hooks/useBrandState';
 import { useImageGeneration } from '../hooks/useImageGeneration';
 import { useTextGeneration } from '../hooks/useTextGeneration';
+import { getPersistedJob } from '../hooks/useGenerationJob';
 
 const GenerationContext = createContext(null);
 
@@ -45,6 +46,7 @@ export function GenerationProvider({ children }) {
     content, setContent,
     handleContentUpdate,
     generateText,
+    resumeText,
   } = useTextGeneration({ brand, setError });
 
   // H1 hoist: seed audience + image-style defaults from the active brand.
@@ -79,6 +81,27 @@ export function GenerationProvider({ children }) {
   const [progress, setProgress] = useState({ current: 0, total: 0, label: '' });
   const resultRef = useRef(null);
 
+  // Resume an in-flight background generation after a reload / reopened tab.
+  // The work runs server-side (Cloud Run worker), so it survived the tab being
+  // closed; here we re-attach to it and drop the finished content into `content`
+  // when it lands — "click away, come back, see your results."
+  useEffect(() => {
+    if (!getPersistedJob()?.jobId) return; // nothing to resume
+    let cancelled = false;
+    setIsGenerating(true);
+    setProgress({ current: 0, total: 1, label: 'Resuming your generation…' });
+    (async () => {
+      const r = await resumeText({ setProgress });
+      if (cancelled) return;
+      setIsGenerating(false);
+      if (r?.status === 'done') {
+        setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const canGenerate = (files.length > 0 || videoUrls.length > 0 || textPrompt.trim().length > 0) && selectedTypes.size > 0 && !isGenerating;
   const hasResults = Object.keys(content).length > 0 || images.length > 0;
 
@@ -107,7 +130,10 @@ export function GenerationProvider({ children }) {
         // setError is a constructor param to the hook (closure) — not passed here.
         // We pass only: the shared progress setter, the pre-derived authHeaders,
         // the text content types, and totalSteps for progress math.
-        const textResult = await generateText({ setProgress, authHeaders, textTypes, totalSteps });
+        // Reference picks (from the Create tickbox) — doc/PDF refs feed the
+        // text prompt for tone/voice; image refs feed image gen separately.
+        const referenceIds = (imageConfig.referencePicks || []).map((r) => r.id);
+        const textResult = await generateText({ setProgress, authHeaders, textTypes, totalSteps, referenceIds });
         if (!textResult.ok) return;
       }
 

@@ -107,7 +107,7 @@ function MediaBlock({ media, square = false, accentColor = '#3b82f6' }) {
 
 // ── LinkedIn preview ───────────────────────────────────────────────
 
-export function LinkedInPreview({ text, media, scheduledAt }) {
+function LinkedInPreview({ text, media, scheduledAt }) {
   const { name } = useDisplayIdentity();
   const [expanded, setExpanded] = useState(false);
   const limit = 210;
@@ -154,7 +154,7 @@ export function LinkedInPreview({ text, media, scheduledAt }) {
 
 // ── Twitter / X preview ────────────────────────────────────────────
 
-export function TwitterPreview({ text, media, scheduledAt }) {
+function TwitterPreview({ text, media, scheduledAt }) {
   const { name, handle } = useDisplayIdentity();
   const time = formatWhen(scheduledAt);
 
@@ -197,7 +197,7 @@ export function TwitterPreview({ text, media, scheduledAt }) {
 
 // ── Facebook preview ───────────────────────────────────────────────
 
-export function FacebookPreview({ text, media, scheduledAt }) {
+function FacebookPreview({ text, media, scheduledAt }) {
   const { name } = useDisplayIdentity();
   const [expanded, setExpanded] = useState(false);
   const limit = 125;
@@ -247,7 +247,7 @@ export function FacebookPreview({ text, media, scheduledAt }) {
 
 // ── Instagram preview ──────────────────────────────────────────────
 
-export function InstagramPreview({ text, media, scheduledAt }) {
+function InstagramPreview({ text, media, scheduledAt }) {
   // Instagram only accepts image/video. Surface the limitation if a doc was attached.
   const image = media?.type === 'image' ? media.url : null;
   const isVideo = media?.type === 'video';
@@ -303,7 +303,7 @@ export function InstagramPreview({ text, media, scheduledAt }) {
 
 // ── Blog preview (article layout) ──────────────────────────────────
 
-export function BlogPreview({ text, media, scheduledAt }) {
+function BlogPreview({ text, media, scheduledAt }) {
   const image = media?.type === 'image' ? media.url : null;
   const { name } = useDisplayIdentity();
   const html = { __html: marked.parse(text || '', { breaks: true }) };
@@ -324,7 +324,7 @@ export function BlogPreview({ text, media, scheduledAt }) {
 
 // ── Newsletter preview (email client) ──────────────────────────────
 
-export function NewsletterPreview({ text, media, scheduledAt }) {
+function NewsletterPreview({ text, media, scheduledAt }) {
   const image = media?.type === 'image' ? media.url : null;
   const { name, handle } = useDisplayIdentity();
   const lines = (text || '').split('\n');
@@ -354,7 +354,7 @@ export function NewsletterPreview({ text, media, scheduledAt }) {
 
 // ── Video script preview ───────────────────────────────────────────
 
-export function VideoScriptPreview({ text, scheduledAt }) {
+function VideoScriptPreview({ text, scheduledAt }) {
   // Highlight [SCENE]/[VISUAL]/[B-ROLL]/[TEXT ON SCREEN] tags as colored blocks.
   const parts = (text || '').split(/(\[[^\]]+\][^\n]*)/g).filter(Boolean);
   return (

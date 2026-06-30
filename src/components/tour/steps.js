@@ -84,13 +84,13 @@ const FAREWELL_STEP_SUPER = {
 };
 
 // ── Main tours per role ─────────────────────────────────────────────
-export const userSteps = [
+const userSteps = [
   WELCOME_STEP,
   ...NAV_VIEW_STEPS,
   FAREWELL_STEP_USER,
 ];
 
-export const adminSteps = [
+const adminSteps = [
   WELCOME_STEP,
   ...NAV_VIEW_STEPS,
   {
@@ -102,7 +102,7 @@ export const adminSteps = [
   FAREWELL_STEP_ADMIN,
 ];
 
-export const superAdminSteps = [
+const superAdminSteps = [
   WELCOME_STEP,
   ...NAV_VIEW_STEPS,
   {

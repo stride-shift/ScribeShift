@@ -62,6 +62,14 @@ const POSTED_RANGES = [
   { value: 'year',    label: 'This Year',   days: 365 },
 ];
 
+const IDEA_TAG_COLORS = {
+  'Hot Take': '#ef4444',
+  'Educational': '#3b82f6',
+  'Question': '#f59f0a',
+  'Contrarian': '#8b5cf6',
+  'Story': '#10b981',
+};
+
 export default function ScheduleView() {
   const { getAuthHeaders } = useAuth();
   const [posts, setPosts] = useState([]);
@@ -70,6 +78,8 @@ export default function ScheduleView() {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState('');
+  const [scope, setScope] = useState('mine');   // 'mine' | 'org'
+  const [clearingFailed, setClearingFailed] = useState(false);
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarMode, setCalendarMode] = useState('month'); // 'month' | 'week'
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -96,6 +106,13 @@ export default function ScheduleView() {
   const [postedRange, setPostedRange] = useState('week');
   const [showPostedPicker, setShowPostedPicker] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [ideas, setIdeas] = useState([
+    { tag: 'Hot Take', title: 'AI is making average people look like experts' },
+    { tag: 'Educational', title: 'How to build a daily AI habit that sticks' },
+    { tag: 'Question', title: "What's your biggest struggle with using AI right now?" },
+  ]);
+  const [ideasLoading, setIdeasLoading] = useState(false);
+  const [topPerformer, setTopPerformer] = useState(null); // { platform, engagement } from real metrics
   const postedPickerRef = useRef(null);
 
   useEffect(() => {
@@ -116,8 +133,43 @@ export default function ScheduleView() {
 
   const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
 
-  useEffect(() => { loadPosts(); }, [statusFilter]);
+  useEffect(() => { loadPosts(); }, [statusFilter, scope]);
   useEffect(() => { loadReusePool(); }, []);
+  useEffect(() => { loadIdeas(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Top Performer card — driven by real metrics (your best-performing post).
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/metrics/posts?sort_by=engagement_rate&order=desc&limit=1', { headers: getAuthHeaders() });
+        const data = await res.json();
+        const top = data.metrics?.[0];
+        if (top && (top.engagement_rate || top.reactions || top.impressions)) {
+          setTopPerformer({ platform: top.platform, engagement: top.engagement_rate });
+        }
+      } catch { /* leave null → card shows "No data yet" */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // AI-generated post ideas (Gemini). Excludes whatever's already shown so
+  // "Generate More Ideas" returns fresh ones each time.
+  const loadIdeas = async () => {
+    setIdeasLoading(true);
+    try {
+      const res = await fetch('/api/planner/ideas', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exclude: ideas.map(i => i.title) }),
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.ideas) && data.ideas.length) setIdeas(data.ideas);
+      else if (!res.ok) setError(data.error || 'Could not generate ideas');
+    } catch {
+      setError('Could not generate ideas');
+    } finally {
+      setIdeasLoading(false);
+    }
+  };
 
   const loadPosts = async (overrideFilter, { rethrow = false } = {}) => {
     setLoading(true);
@@ -131,6 +183,7 @@ export default function ScheduleView() {
       // When it's active, fetch all scheduled posts so we can narrow client-side.
       if (activeFilter && activeFilter !== 'overdue') params.set('status', activeFilter);
       else if (activeFilter === 'overdue') params.set('status', 'scheduled');
+      params.set('scope', scope);   // 'mine' | 'org'
       const res = await fetch(`/api/schedule?${params}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (!res.ok) {
@@ -237,10 +290,30 @@ export default function ScheduleView() {
     try {
       const res = await fetch(`/api/schedule/${id}/post-now`, { method: 'POST', headers: getAuthHeaders() });
       const data = await res.json();
-      if (res.ok) setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'posting' } : p));
+      // post-now now publishes synchronously and returns the real outcome.
+      if (res.ok) setPosts(prev => prev.map(p => p.id === id ? { ...p, status: data.status || 'posted', external_post_url: data.url || p.external_post_url } : p));
       else setError(data.error || 'Failed to post');
     } catch {
       setError('Failed to trigger post');
+    }
+  };
+
+  const handleClearFailed = async () => {
+    const failedCount = posts.filter(p => p.status === 'failed').length;
+    if (!window.confirm(`Clear ${failedCount || 'all'} failed post${failedCount === 1 ? '' : 's'}? This removes them permanently.`)) return;
+    setClearingFailed(true);
+    try {
+      const res = await fetch('/api/schedule/clear-failed', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope }),
+      });
+      if (res.ok) loadPosts();
+      else setError('Failed to clear failed posts');
+    } catch {
+      setError('Failed to clear failed posts');
+    } finally {
+      setClearingFailed(false);
     }
   };
 
@@ -560,6 +633,17 @@ export default function ScheduleView() {
     );
   };
 
+  // Suggestion card — derived from real state (failed posts → posting gap →
+  // otherwise nudge from the top AI idea), instead of hardcoded text.
+  const suggestion = (() => {
+    if (stats.failed > 0) return { value: `Fix ${stats.failed} failed`, subtext: 'Review delivery issues' };
+    if (stats.gapDays !== null && stats.gapDays >= 7) return { value: 'Post this week', subtext: `${stats.gapDays} days since your last post` };
+    const idea = ideas[0];
+    if (idea) return { value: `Try a ${idea.tag}`, subtext: idea.title.length > 42 ? idea.title.slice(0, 42) + '…' : idea.title };
+    return { value: 'Keep posting', subtext: 'Consistency compounds' };
+  })();
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -603,9 +687,9 @@ export default function ScheduleView() {
           tone="amber"
           icon={Icons.star}
           label="Top Performer"
-          value="Hot Takes"
-          trend={{ value: '25%', dir: 'up' }}
-          subtext="Above your average"
+          value={topPerformer ? cap(topPerformer.platform) : 'No data yet'}
+          trend={topPerformer?.engagement ? { value: `${topPerformer.engagement}%`, dir: 'up' } : undefined}
+          subtext={topPerformer ? 'Your best-performing post' : 'Sync analytics to see'}
           onClick={() => { window.location.hash = '#analytics'; }}
         />
         <StatCard
@@ -636,8 +720,8 @@ export default function ScheduleView() {
           tone="purple"
           icon={Icons.bulb}
           label="Suggestion"
-          value="Post 1 Educational"
-          subtext="+1 Contrarian this week"
+          value={suggestion.value}
+          subtext={suggestion.subtext}
           onClick={() => { window.location.hash = '#create'; }}
         />
 
@@ -700,6 +784,19 @@ export default function ScheduleView() {
 
       {/* Filters row */}
       <div className="flex items-center flex-wrap gap-2 mb-4">
+        {/* Personal vs organization scope */}
+        <div className="inline-flex rounded-md border border-[var(--border)] overflow-hidden mr-1">
+          {[['mine', 'My posts'], ['org', 'Organization']].map(([val, lbl]) => (
+            <button
+              key={val}
+              onClick={() => setScope(val)}
+              className={`px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                scope === val ? 'bg-[var(--primary,#3b82f6)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text)]'
+              }`}
+            >{lbl}</button>
+          ))}
+        </div>
+        <div className="w-px h-5 bg-[var(--border)] mx-1" />
         {STATUS_FILTERS.map(s => (
           <button
             key={s.value || 'all'}
@@ -713,6 +810,16 @@ export default function ScheduleView() {
             {s.label}
           </button>
         ))}
+        {statusFilter === 'failed' && (
+          <button
+            onClick={handleClearFailed}
+            disabled={clearingFailed}
+            className="px-3 py-1.5 text-[12px] font-semibold rounded-md border border-[var(--danger,#ef4444)] text-[var(--danger,#ef4444)] hover:bg-[var(--danger,#ef4444)] hover:text-white transition-colors"
+            title="Remove all failed posts"
+          >
+            {clearingFailed ? 'Clearing…' : 'Clear failed'}
+          </button>
+        )}
         <div className="w-px h-5 bg-[var(--border)] mx-1" />
         <button
           className={`px-3 py-1.5 text-[12px] font-medium rounded-md border transition-colors ${
@@ -968,28 +1075,28 @@ export default function ScheduleView() {
               title="Suggested Ideas"
               action={<span className="text-[10px] text-[var(--text-secondary)]">AI-powered ideas for your posts</span>}
             >
-              {[
-                { tag: 'Hot Take', color: '#ef4444', title: 'AI is making average people look like experts' },
-                { tag: 'Educational', color: '#3b82f6', title: 'How to build a daily AI habit that sticks' },
-                { tag: 'Question', color: '#f59f0a', title: 'What\'s your biggest struggle with using AI right now?' },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-md border border-[var(--border)] bg-[var(--bg-raised)] hover:border-[var(--primary)] cursor-pointer transition-colors"
-                  onClick={() => openNewPostModal(null, item.title)}
-                >
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: item.color }} />
-                    <span className="text-[10px] font-semibold uppercase" style={{ color: item.color }}>{item.tag}</span>
+              {ideas.map((item, i) => {
+                const color = IDEA_TAG_COLORS[item.tag] || '#64748b';
+                return (
+                  <div
+                    key={i}
+                    className="p-3 rounded-md border border-[var(--border)] bg-[var(--bg-raised)] hover:border-[var(--primary)] cursor-pointer transition-colors"
+                    onClick={() => openNewPostModal(null, item.title)}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                      <span className="text-[10px] font-semibold uppercase" style={{ color }}>{item.tag}</span>
+                    </div>
+                    <div className="text-[12px] font-medium text-[var(--text)] line-clamp-2">{item.title}</div>
                   </div>
-                  <div className="text-[12px] font-medium text-[var(--text)] line-clamp-2">{item.title}</div>
-                </div>
-              ))}
+                );
+              })}
               <button
-                className="w-full mt-2 px-3 py-2 text-[12px] font-medium text-[var(--primary)] border border-[var(--primary)]/30 rounded-md hover:bg-[var(--primary-glow)]"
-                onClick={() => window.location.hash = '#create'}
+                className="w-full mt-2 px-3 py-2 text-[12px] font-medium text-[var(--primary)] border border-[var(--primary)]/30 rounded-md hover:bg-[var(--primary-glow)] disabled:opacity-60"
+                onClick={loadIdeas}
+                disabled={ideasLoading}
               >
-                Generate More Ideas
+                {ideasLoading ? 'Generating…' : 'Generate More Ideas'}
               </button>
             </RailPanel>
           </div>

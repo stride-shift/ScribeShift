@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from './AuthProvider';
+import { parsePosts, stripImageTags } from './SocialPreview';
 
 const PLATFORMS = [
   {
@@ -62,15 +63,6 @@ function imageForPost(postImages, taggedImages, platform, idx) {
   return null;
 }
 
-// Convert a base64 string back into a Blob so we can re-upload it as a File
-// to /api/media/upload — same path the single-post modal uses.
-function base64ToBlob(base64, mimeType = 'image/png') {
-  const byteChars = atob(base64);
-  const byteArray = new Uint8Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-  return new Blob([byteArray], { type: mimeType });
-}
-
 export default function ScheduleFromResults({ content, postImages, taggedImages, onClose, onScheduled }) {
   const { getAuthHeaders } = useAuth();
 
@@ -83,9 +75,13 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
       if (!text) continue;
       const isSocial = PLATFORMS.some(p => p.key === type);
       if (isSocial) {
-        const posts = text.split(/\[POST \d+[^\]]*\]/i).filter(p => p.trim());
+        // Use SocialPreview's parser so our per-post index matches the keys
+        // used for postImages/taggedImages — otherwise generated images get
+        // attached to the wrong post (or a preamble fragment).
+        const posts = parsePosts(text);
         posts.forEach((post, i) => {
-          const cleaned = post.replace(/\(\d+ characters?\)/gi, '').trim();
+          // Strip [IMAGE: ...] tags so they never end up in the published post.
+          const cleaned = stripImageTags(post);
           if (cleaned) {
             items.push({
               id: `${type}-${i}`,
@@ -237,6 +233,41 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
     return null;
   };
 
+  // Precompute each item's media + display src ONCE per relevant-state change.
+  // Generated images are large base64 strings; rebuilding the `data:` URL inside
+  // the render map on every keystroke/checkbox toggle caused input lag.
+  const mediaByItem = useMemo(() => {
+    const map = {};
+    for (const item of allItems) {
+      const media = effectiveMedia(item);
+      map[item.id] = {
+        media,
+        src: media?.kind === 'base64'
+          ? `data:${media.mimeType};base64,${media.base64}`
+          : media?.kind === 'url' && media.mediaType === 'image'
+            ? media.mediaUrl
+            : null,
+      };
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, mediaOverrides, mediaRemoved, postImages, taggedImages]);
+
+  // Upload a File to /api/media/upload and return normalized media fields.
+  // Shared by the "replace media" control and the base64 re-upload at submit.
+  const uploadFile = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/media/upload', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    return { url: data.url, type: data.type, filename: data.original_filename || file.name };
+  };
+
   const removeMedia = (itemId) => {
     setMediaOverrides(prev => {
       const next = { ...prev };
@@ -255,22 +286,14 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
     setUploadingItem(itemId);
     setError('');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/media/upload', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      const up = await uploadFile(file);
       setMediaOverrides(prev => ({
         ...prev,
         [itemId]: {
           kind: 'url',
-          mediaUrl: data.url,
-          mediaType: data.type,
-          mediaFilename: data.original_filename || file.name,
+          mediaUrl: up.url,
+          mediaType: up.type,
+          mediaFilename: up.filename,
         },
       }));
       setMediaRemoved(prev => {
@@ -309,6 +332,13 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Close on Escape, matching the overlay-click behaviour.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const toggleSelect = (id) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -318,9 +348,16 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
     });
   };
 
+  // Is every post for this platform currently selected? Shared by the platform
+  // tile render and the bulk toggle so the derivation lives in one place.
+  const platformAllSelected = (platformKey) => {
+    const platformItems = allItems.filter(i => i.platform === platformKey);
+    return platformItems.length > 0 && platformItems.every(i => selected.has(i.id));
+  };
+
   const togglePlatformAll = (platformKey) => {
     const platformItems = allItems.filter(i => i.platform === platformKey);
-    const allSelected = platformItems.every(i => selected.has(i.id));
+    const allSelected = platformAllSelected(platformKey);
     setSelected(prev => {
       const next = new Set(prev);
       for (const it of platformItems) {
@@ -406,24 +443,22 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
               post_image_url: media.mediaType === 'image' ? media.mediaUrl : null,
             };
           } else if (media?.kind === 'base64') {
-            // Wrap base64 in a Blob/File and upload to /api/media/upload, same path as the single-post modal.
-            const blob = base64ToBlob(media.base64, media.mimeType);
+            // Let the browser decode the base64 natively (off the synchronous
+            // main-thread path) and upload via the shared helper, same path as
+            // the single-post modal.
+            const blob = await (await fetch(`data:${media.mimeType};base64,${media.base64}`)).blob();
             const file = new File([blob], `${item.id}-image.png`, { type: media.mimeType });
-            const fd = new FormData();
-            fd.append('file', file);
-            const upRes = await fetch('/api/media/upload', {
-              method: 'POST',
-              headers: getAuthHeaders(),
-              body: fd,
-            });
-            const upData = await upRes.json();
-            if (upRes.ok && upData.url) {
+            try {
+              const up = await uploadFile(file);
               mediaPayload = {
-                post_media_url: upData.url,
-                post_media_type: upData.type || 'image',
-                post_media_filename: upData.original_filename || file.name,
-                post_image_url: (upData.type || 'image') === 'image' ? upData.url : null,
+                post_media_url: up.url,
+                post_media_type: up.type || 'image',
+                post_media_filename: up.filename,
+                post_image_url: (up.type || 'image') === 'image' ? up.url : null,
               };
+            } catch {
+              // Leave mediaPayload null — schedule the post without media rather
+              // than failing the whole submit.
             }
           }
         }
@@ -436,6 +471,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
             platform: item.platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
             is_boosted: false,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             image_mode: itemMode,
             ...mediaPayload,
           }),
@@ -497,7 +533,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
       parts.push(`Schedule ${schedulableSelected.length}`);
     }
     if (selectedPillar) {
-      const targetCount = schedulableSelected.length > 0 ? selectedItems.length : selectedItems.length;
+      const targetCount = selectedItems.length;
       parts.push(parts.length ? `save ${targetCount} to content type` : `Save ${targetCount} to content type`);
     } else if (draftOnlySelected.length > 0 && schedulableSelected.length === 0) {
       parts.push(`Save ${draftOnlySelected.length} as draft${draftOnlySelected.length > 1 ? 's' : ''}`);
@@ -541,8 +577,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
                 {platformsWithContent.map(p => {
                   const account = connectedAccounts[p.key];
                   const connected = account?.connected && !account?.isExpired;
-                  const platformItems = allItems.filter(i => i.platform === p.key);
-                  const allOn = platformItems.every(i => selected.has(i.id));
+                  const allOn = platformAllSelected(p.key);
                   return (
                     <button
                       key={p.key}
@@ -577,12 +612,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
               {allItems.map(item => {
                 const platformMeta = PLATFORMS.find(p => p.key === item.platform);
                 const isSelected = selected.has(item.id);
-                const media = effectiveMedia(item);
-                const mediaSrc = media?.kind === 'base64'
-                  ? `data:${media.mimeType};base64,${media.base64}`
-                  : media?.kind === 'url' && media.mediaType === 'image'
-                    ? media.mediaUrl
-                    : null;
+                const mediaSrc = mediaByItem[item.id]?.src || null;
                 const isUploading = uploadingItem === item.id;
                 return (
                   <div
@@ -754,18 +784,7 @@ export default function ScheduleFromResults({ content, postImages, taggedImages,
           )}
 
           {error && <div className="spm-error">{error}</div>}
-          {success && (
-            <div style={{
-              padding: '0.65rem 1rem',
-              background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              borderRadius: 8,
-              color: '#22c55e',
-              fontSize: '0.85rem',
-            }}>
-              {success}
-            </div>
-          )}
+          {success && <div className="spm-success">{success}</div>}
         </div>
 
         {/* Footer */}

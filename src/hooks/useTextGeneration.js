@@ -18,7 +18,7 @@ import { useGenerationJob } from './useGenerationJob';
  *     if (!textResult.ok) return;   // images are skipped; finally resets isGenerating
  */
 export function useTextGeneration({ brand, setError }) {
-  const { runJob } = useGenerationJob();
+  const { runJob, resumeJob } = useGenerationJob();
 
   // ── Text cluster state ────────────────────────────────────────────────────
   const [files, setFiles] = useState([]);
@@ -57,7 +57,7 @@ export function useTextGeneration({ brand, setError }) {
    * setError is NOT a param — it is a constructor-param closure (same pattern as
    * useImageGeneration) so it is always in scope here.
    */
-  const generateText = useCallback(async ({ setProgress, authHeaders, textTypes, totalSteps }) => {
+  const generateText = useCallback(async ({ setProgress, authHeaders, textTypes, totalSteps, referenceIds = [] }) => {
     setProgress({ current: 0, total: totalSteps, label: 'Generating text content...' });
 
     const brandPayload = {
@@ -86,6 +86,7 @@ export function useTextGeneration({ brand, setError }) {
         brandData: brandPayload,
         textPrompt,
         videoUrls,
+        referenceIds,
         totalSteps,
         setProgress,
       });
@@ -111,6 +112,7 @@ export function useTextGeneration({ brand, setError }) {
       formData.append('options', JSON.stringify(options));
       formData.append('brandData', JSON.stringify(brandPayload));
       formData.append('videoUrls', JSON.stringify(videoUrls));
+      formData.append('referenceIds', JSON.stringify(referenceIds));
       if (textPrompt.trim()) formData.append('textPrompt', textPrompt.trim());
 
       const res = await fetch('/api/generate', {
@@ -145,6 +147,26 @@ export function useTextGeneration({ brand, setError }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand, files, videoUrls, textPrompt, options, setError, runJob]);
 
+  // ── resumeText — re-attach to a background job after a reload / reopened tab ──
+  // Called once on provider mount. Restores the generated text into `content`
+  // when the server-side job finishes (the whole point of "click away, come
+  // back, see results"). Returns the resume status so the provider can manage
+  // the generating spinner. status==='none' means there was nothing to resume.
+  const resumeText = useCallback(async ({ setProgress } = {}) => {
+    const r = await resumeJob({ setProgress });
+    if (r.status === 'done') {
+      setContent(r.content || {});
+      return { status: 'done' };
+    }
+    if (r.status === 'error') {
+      setError(r.error || 'Generation failed');
+      return { status: 'error' };
+    }
+    // 'timeout' (still running — try again later) or 'none'
+    return { status: r.status };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeJob, setError]);
+
   return {
     files,
     setFiles,
@@ -162,5 +184,6 @@ export function useTextGeneration({ brand, setError }) {
     setContent,
     handleContentUpdate,
     generateText,
+    resumeText,
   };
 }

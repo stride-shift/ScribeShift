@@ -215,6 +215,69 @@ function BrandPicker({ brands, activeBrandId, onChange }) {
   );
 }
 
+/* ─── References tickbox — pick saved references for the AI to use this run ─── */
+function ReferencePicker({ getAuthHeaders, picks, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const pickedIds = new Set(picks.map((p) => p.id));
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/references', { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (res.ok) setList(data.references || []);
+    } catch { /* ignore */ } finally { setLoading(false); }
+  };
+  const toggleOpen = () => { const n = !open; setOpen(n); if (n && list.length === 0) load(); };
+  const togglePick = (ref) =>
+    onChange(pickedIds.has(ref.id) ? picks.filter((p) => p.id !== ref.id) : [...picks, ref]);
+
+  return (
+    <div className="wizard-context-block" style={{ marginBottom: '1rem' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <input type="checkbox" checked={open} onChange={toggleOpen} />
+        <span style={{ fontWeight: 600 }}>Reference my uploads</span>
+        <span className="card-subtitle" style={{ margin: 0 }}>— let the AI look at your saved references for tone, look &amp; imagery</span>
+      </label>
+      {open && (
+        <div style={{ marginTop: '0.6rem' }}>
+          {loading ? (
+            <div className="loading-spinner" style={{ width: 16, height: 16 }} />
+          ) : list.length === 0 ? (
+            <p className="card-subtitle" style={{ margin: 0 }}>
+              No references yet. <a href="#references" style={{ color: 'var(--primary,#3b82f6)' }}>Add some in References →</a>
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {list.map((r) => {
+                  const on = pickedIds.has(r.id);
+                  return (
+                    <button key={r.id} type="button" onClick={() => togglePick(r)}
+                      title={`${r.filename || ''}${(r.purposes || []).length ? ` · ${r.purposes.join(', ')}` : ''}`}
+                      style={{ position: 'relative', width: 72, height: 72, borderRadius: 8, overflow: 'hidden', padding: 0, cursor: 'pointer',
+                        border: on ? '2px solid var(--primary,#3b82f6)' : '1px solid var(--border)', background: 'var(--surface-2,#f1f5f9)' }}>
+                      {r.kind === 'image' ? (
+                        <img src={r.storage_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted,#94a3b8)" strokeWidth="1.6" style={{ margin: '23px auto', display: 'block' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                      )}
+                      {on && <span style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: 8, background: 'var(--primary,#3b82f6)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center' }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <a href="#references" style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: 'var(--primary,#3b82f6)' }}>+ Upload more in References →</a>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateView() {
   const { getAuthHeaders } = useAuth();
   const {
@@ -613,6 +676,9 @@ export default function CreateView() {
                 />
                 <button className="btn" onClick={addUrl} type="button">Add</button>
               </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 0' }}>
+                YouTube links are auto-transcribed (beta — not every video has a transcript). Article/blog URLs are used as reference. Full video analysis for other platforms is coming soon.
+              </p>
               {videoUrls.length > 0 && (
                 <div className="wizard-url-list">
                   {videoUrls.map((url, i) => (
@@ -1004,6 +1070,12 @@ export default function CreateView() {
               </div>
             )}
           </div>
+
+          <ReferencePicker
+            getAuthHeaders={getAuthHeaders}
+            picks={imageConfig.referencePicks || []}
+            onChange={(next) => setImageConfig({ ...imageConfig, referencePicks: next })}
+          />
 
           {error && <div className="error-msg" style={{ marginBottom: '1rem' }}>{error}</div>}
 

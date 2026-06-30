@@ -45,11 +45,14 @@ export default function NewsletterPreview({ content, brand, onContentUpdate }) {
     setExporting(true);
     try {
       const opt = {
-        margin: 0,
+        // Margins + pagebreak avoidance so content isn't pinned to the page
+        // edges or sliced across the page boundary.
+        margin: [12, 12, 12, 12],
         filename: `${brandName.replace(/\s+/g, '_')}_newsletter.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       };
       await html2pdf().set(opt).from(previewRef.current).save();
     } catch (err) {

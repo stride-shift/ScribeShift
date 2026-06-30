@@ -85,6 +85,13 @@ export function useImageGeneration({ brand, setError }) {
             // guidelines + CI document without overriding visual style.
             brandGuidelines: brand.brandGuidelines,
             ciDocumentText: brand.ciDocumentText,
+            // Structured brand profile → drives the deck-style-lock + guardrails
+            // (exact palette, typography w/ analog fallbacks, motif, do/don'ts).
+            // Without these the lock falls back to primary/secondary colours only.
+            brand_palette: brand.brand_palette,
+            typography: brand.typography,
+            motif_description: brand.motif_description,
+            do_donts: brand.do_donts,
           },
           selectedStyles: [...imageConfig.selectedStyles],
           customGuidelines: imageConfig.customGuidelines,
@@ -99,6 +106,55 @@ export function useImageGeneration({ brand, setError }) {
         setError(prev => prev ? `${prev}\n${promptData.error}` : promptData.error);
         setIsImageGenerating(false);
         return;
+      }
+
+      // Fetch the active brand's TYPED assets once (logo/watermark/pattern/motif…)
+      // and download them to base64, so every image in the suite can attach them
+      // with kind-specific instructions. Skips the generic 'reference' kind
+      // (those are user-picked one-offs, handled via the reference-image flow).
+      let brandAssets = [];
+      if (brand.id) {
+        try {
+          const aRes = await fetch(`/api/brands/${brand.id}/assets`, { headers: authHeaders });
+          if (aRes.ok) {
+            const list = ((await aRes.json()).assets || []).filter(a => a.kind && a.kind !== 'reference').slice(0, 5);
+            brandAssets = (await Promise.all(list.map(async (a) => {
+              try {
+                const r = await fetch(a.storage_url);
+                const blob = await r.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                  const fr = new FileReader();
+                  fr.onload = () => resolve(String(fr.result));
+                  fr.onerror = reject;
+                  fr.readAsDataURL(blob);
+                });
+                return { base64: dataUrl.split(',')[1], mimeType: blob.type || 'image/png', kind: a.kind, usage_note: a.usage_note };
+              } catch { return null; }
+            }))).filter(Boolean);
+          }
+        } catch { /* non-fatal — generation proceeds without typed assets */ }
+      }
+
+      // User-picked References (from the Create tickbox) — attach the IMAGE ones
+      // as style references too. Purpose tags ('imagery'/'look') become the
+      // usage note so the model knows what to take from each.
+      const picks = (imageConfig.referencePicks || []).filter(r => r.kind === 'image' && r.storage_url).slice(0, 5);
+      if (picks.length) {
+        const refAssets = (await Promise.all(picks.map(async (r) => {
+          try {
+            const resp = await fetch(r.storage_url);
+            const blob = await resp.blob();
+            const dataUrl = await new Promise((resolve, reject) => {
+              const fr = new FileReader();
+              fr.onload = () => resolve(String(fr.result));
+              fr.onerror = reject;
+              fr.readAsDataURL(blob);
+            });
+            const note = (r.purposes || []).length ? `use for ${r.purposes.join(' + ')}` : null;
+            return { base64: dataUrl.split(',')[1], mimeType: blob.type || 'image/png', kind: 'reference', usage_note: note };
+          } catch { return null; }
+        }))).filter(Boolean);
+        brandAssets = [...brandAssets, ...refAssets];
       }
 
       const totalImages = promptData.prompts.length;
@@ -116,6 +172,7 @@ export function useImageGeneration({ brand, setError }) {
               logoBase64: brand.logoBase64,
               referenceImageBase64: imageConfig.referenceImageBase64,
               referenceImageMimeType: imageConfig.referenceImageMimeType,
+              brandAssets,
             }),
           });
           const data = await res.json();

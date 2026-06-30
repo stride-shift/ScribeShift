@@ -73,6 +73,13 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
   const [selectedLinkedInTargets, setSelectedLinkedInTargets] = useState(() => new Set(['person']));
   const pagesFetchedRef = useRef(false); // guard: fetch at most once per modal open
 
+  // Close on Escape (the modal already closes on overlay click).
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // Fetch LinkedIn pages + org scope flag once LinkedIn becomes the active / selected platform.
   // Guard with pagesFetchedRef so we don't refetch on every render or selectedPlatforms change.
   useEffect(() => {
@@ -315,6 +322,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
             post_text: postText,
             platform,
             scheduled_at: new Date(scheduledAt).toISOString(),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             ...mediaPayload,
             image_mode: imageMode,
             is_boosted: false,
@@ -384,6 +392,19 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
     PLATFORMS[0];
   const charCount = postText.length;
   const isOverLimit = charCount > activePlatform.charLimit;
+
+  // Shared delete button — rendered in both the compose and preview footers.
+  const deleteButton = editingPost && (
+    <button
+      type="button"
+      className="spm-btn spm-btn--danger"
+      onClick={handleDelete}
+      disabled={submitting}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+      Delete
+    </button>
+  );
 
   return (
     <div className="spm-overlay" onClick={onClose}>
@@ -803,17 +824,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
           {step === 'compose' ? (
             <>
               <button className="spm-btn spm-btn--secondary" onClick={onClose}>Cancel</button>
-              {editingPost && (
-                <button
-                  type="button"
-                  className="spm-btn spm-btn--danger"
-                  onClick={handleDelete}
-                  disabled={submitting}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-                  Delete
-                </button>
-              )}
+              {deleteButton}
               <button className="spm-btn spm-btn--primary" onClick={() => setStep('preview')} disabled={!canProceed}>
                 Preview Post
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -825,17 +836,7 @@ export default function SchedulePostModal({ onClose, onCreated, initialDate, ini
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
                 Back to Edit
               </button>
-              {editingPost && (
-                <button
-                  type="button"
-                  className="spm-btn spm-btn--danger"
-                  onClick={handleDelete}
-                  disabled={submitting}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-                  Delete
-                </button>
-              )}
+              {deleteButton}
               <button className="spm-btn spm-btn--primary" onClick={handleSubmit} disabled={submitting || isOverLimit}>
                 {submitting ? (
                   <>

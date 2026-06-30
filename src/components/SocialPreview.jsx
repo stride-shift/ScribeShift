@@ -57,12 +57,16 @@ function parseImageTags(text) {
   return tags;
 }
 
-// Remove [IMAGE: ...] tags from display text
-function stripImageTags(text) {
+// Remove [IMAGE: ...] tags from display text. Exported so the scheduler can
+// strip them too — otherwise a published post contains literal "[IMAGE: ...]".
+export function stripImageTags(text) {
   return text.replace(/\[IMAGE:\s*[^\]]+\]/gi, '').trim();
 }
 
-function parsePosts(rawContent) {
+// Exported so ScheduleFromResults can build its per-post list with the EXACT
+// same indexing — postImages/taggedImages are keyed by this function's output
+// index, so any divergent parser would attach images to the wrong post.
+export function parsePosts(rawContent) {
   if (!rawContent) return [];
   const posts = [];
 
@@ -288,13 +292,13 @@ function PostCard({ platform, text, index, onEdit, brand, authHeaders, postImage
         </div>
       )}
 
-      <div className="post-card-body" style={{ background: config.bgColor, color: config.textColor }}>
+      <div className="post-card-body" style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
         {editing ? (
           <textarea
             className="post-edit-textarea"
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
-            style={{ color: config.textColor, background: 'transparent' }}
+            style={{ color: 'var(--text)', background: 'transparent' }}
           />
         ) : (
           <>

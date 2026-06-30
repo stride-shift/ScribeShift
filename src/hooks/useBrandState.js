@@ -53,6 +53,7 @@ export function useBrandState() {
       if (active) {
         setBrand((prev) => ({
           ...prev,
+          id: active.id,
           brandName: active.brand_name || '',
           primaryColor: active.primary_color || '#3b82f6',
           secondaryColor: active.secondary_color || '#475569',
@@ -73,6 +74,12 @@ export function useBrandState() {
           // Structured colour palette extracted by Wave 1 AI — may be null for
           // legacy brands created before palette extraction was added.
           brand_palette: active.brand_palette ?? null,
+          // Justin-style profile fields — feed the deck-style-lock + guardrails
+          // at image generation. Null for brands extracted before these existed.
+          typography: active.typography ?? null,
+          motif_description: active.motif_description ?? null,
+          do_donts: active.do_donts ?? null,
+          cover_formula: active.cover_formula ?? null,
         }));
 
         // If the active brand has a logo URL but no base64 yet, fetch the
